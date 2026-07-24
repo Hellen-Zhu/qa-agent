@@ -142,9 +142,16 @@ Performance Testing
 │   ├── Execution SOP
 │   ├── Result Analysis Guide
 │   └── Report Template
-└── 7. Reports & Case Studies           报告归档与调优案例
-    ├── Release Performance Reports
-    └── Tuning Case Studies
+├── 7. Reports & Case Studies           报告归档与调优案例
+│   ├── Release Performance Reports
+│   └── Tuning Case Studies
+└── 8. Frontend / Web Performance       前端性能（Playwright + CDP）
+    ├── Strategy & Performance Budgets
+    ├── Playwright Perf Testing Guide
+    ├── Mock Market Data Feeder
+    ├── Frontend Scenario Library
+    ├── CI Tiers & Budget Gates
+    └── RUM & Field Data
 ```
 
 ### 3.1 Strategy & Workload Model
@@ -154,6 +161,8 @@ Performance Testing
 | **Performance Test Strategy** | 什么类型的改动必须做性能测试（触发规则）；测试类型定义——Smoke / Load / Stress / Spike / Soak / Capacity 各自的适用时机与**递进关系**（先 Smoke 验证脚本与系统能跑，Load 通过后才做 Stress/Spike/Soak）；交易类 Web 系统的性能特殊性：看尾延迟与抖动而非均值、负载呈脉冲型（开盘/行情剧烈波动可达日常数十倍）、报撤单比例高（做市/量化客户可达 10:1）、行情推送与交易链路要先分压再合压 |
 | **Workload Modeling** | API 清单与链路分级：P0 交易主链路（下单/撤单/回报推送 WS，延迟敏感）、P1 高频查询（持仓/资金/委托/行情快照）、P2 低频操作（登录/出入金/开销户），WebSocket 推送通道单独标注；全新系统无生产数据时用**假设驱动的 v0 模型**——客户数、日活比例、每户日均委托、报撤比、查询/交易比（通常 5~20 倍）、峰值系数（开盘按日常时段 10~30 倍），每条假设显式记录，上线后用真实数据修正；最终产出**目标容量表**（接口 → 目标 TPS + 延迟目标，如下单 P99 < 100ms） |
 | **KPI Definitions** | 指标口径统一定义——TPS、RT P50/P95/P99、错误率、饱和度指标怎么算。只报分位数**不报平均值**（均值掩盖尾部，用户抱怨的正是尾部）；延迟必须与错误率并排呈现（快速失败的系统会"看起来更快"）；拐点（knee point）定义：延迟开始爬升而吞吐不再增长的位置，即实际容量。口径不统一，两份报告就无法对比 |
+
+> 本组三页的初稿已在仓库中：[performance-test-strategy.md](performance/performance-test-strategy.md)、[workload-modeling.md](performance/workload-modeling.md)、[kpi-definitions.md](performance/kpi-definitions.md)，评审后搬入 Confluence。
 
 ### 3.2 Tooling
 
@@ -216,7 +225,20 @@ Performance Testing
 | **Release Performance Reports** | 按版本归档的正式压测报告（用 3.6 的模板生成） |
 | **Tuning Case Studies** | 调优案例沉淀：慢 SQL 发现过程、JVM 参数调整前后对比等。团队性能能力真正的复利来源 |
 
-### 3.8 模块首页导读 — 当前阶段 Roadmap（资产建设期）
+### 3.8 Frontend / Web Performance（前端性能）
+
+> 与 API 压测回答的是不同的问题：API 压测测"服务器能扛多少并发"，前端性能测"单个用户的浏览器里页面有多快"——变量是资源体积、JS 执行、渲染管线、设备性能，与并发无关。交易 Web 还有第三类独有问题：**高频行情推送下的持续渲染性能**（掉帧、内存泄漏），这是本模块的重心。前端"压测"= 单浏览器 + 高数据速率 + 长时间 + 弱设备模拟，不是开 1000 个浏览器。
+
+| Page | 内容 |
+|---|---|
+| **Strategy & Performance Budgets** | 三层测试模型：①加载性能（Core Web Vitals：LCP / INP / CLS + TTFB + bundle 体积）②运行时性能（行情推送渲染、交互延迟、大列表、挂机 soak）③高负载下的真实体验（与 3.4 的 E2E 场景联动）。关键用户旅程清单：登录→工作台首屏、订阅行情、下单→回报确认显示、切换合约、打开 K 线。**性能预算表 v0**（示例：工作台 LCP < 2.5s @ 4x CPU 节流、下单点击→界面确认 P95 < 200ms、行情 20 msg/s 掉帧率 < 5% 且无 >200ms 长任务、8h 挂机 JS 堆增长 < 50MB、首屏 bundle < 300KB gzip）——数值先拍 v0 并显式记录假设，上线后用 RUM 数据修正；所有 lab 测试统一在 CPU 4x 节流下跑，否则开发机上永远是绿的 |
+| **Playwright Perf Testing Guide** | **选型结论：前端性能统一用 Playwright + CDP**——登录后 SPA 场景 Lighthouse 覆盖不了，且可复用 ui-automation 的 fixtures、页面对象与 `storageState` 登录态，不另引入 Lighthouse CI / Sitespeed，少一套工具栈。采集方法：CDP tracing 拿帧率与 Long Task、`performance.memory` 拿堆内存、PerformanceObserver 拿 LCP/INP/CLS、自定义打点（下单点击→回报确认渲染完成）。工程约定：性能场景放**独立 Playwright project**（固定 workers=1 + CPU/网络节流配置，与功能回归的并行策略冲突，不能混跑）；断言即预算——超预算测试失败，与 k6 `thresholds` 同一哲学 |
+| **Mock Market Data Feeder** | 可控速率 WS 行情推送器：阶梯速率（5 / 20 / 50 msg/s）、录制数据回放、随机与突发模式；让前端性能测试完全不依赖后端进度，是前端运行时测试的**核心资产**。本页写使用方式、参数说明与维护人 |
+| **Frontend Scenario Library** | ①工作台首屏加载（节流条件下）②行情阶梯推送下的帧率与长任务 ③下单交互延迟 ④大列表渲染与滚动（验证虚拟滚动真的生效）⑤挂机 soak（4~8h 内存增长曲线与帧率趋势）⑥高负载下的体验（与 3.4 Scenario Library 的 E2E 场景同源，互相链接）。每个场景同样用统一规格模板：前置数据、推送速率、观测指标、预算阈值 |
+| **CI Tiers & Budget Gates** | 合码级（分钟）：bundle 体积预算（size-limit，最便宜的性能门禁，第一个上）+ 首屏加载与关键交互延迟断言；nightly（小时）：行情阶梯推送 + 2~4h 挂机 soak；趋势数据入时序库/Grafana，与 API 侧共用看板 |
+| **RUM & Field Data** | 上线前接入 web-vitals 上报（Sentry / Datadog / Grafana Faro 或自建）；lab 是假设、field 是校准——用真实用户的设备与网络分布回头修正性能预算和节流参数；RUM 指标同时是 Quality Metrics 模块的数据源之一 |
+
+### 3.9 模块首页导读 — 当前阶段 Roadmap（资产建设期）
 
 > 放在 Performance Testing 模块首页。这是**有时效的阶段性计划**，不是长期规范：压测环境到位、首轮压测完成后归档（可移入 Reports & Case Studies）。
 
@@ -231,8 +253,11 @@ Performance Testing
 | 5 | 测试数据工厂（幂等、规模参数化的造数脚本） | Test Data Preparation |
 | 6 | 可观测性需求提给开发（trace id、分段打点、指标暴露、压测流量标识） | Monitoring & Profiling |
 | 7 | CI 性能冒烟 + 低负载相对基线 | k6 / CI Integration、Performance Baselines |
+| 8 | 前端关键旅程清单 + 性能预算 v0 | Frontend / Strategy & Performance Budgets |
+| 9 | bundle 体积预算进 CI + Mock 行情推送器开发 | Frontend / CI Tiers & Budget Gates、Mock Market Data Feeder |
+| 10 | Playwright + CDP 首个运行时场景（行情帧率 + 下单交互延迟），随后 nightly 挂机 soak | Frontend Scenario Library |
 
-环境到位后，按 Execution SOP 的首轮执行顺序开跑。
+前端部分（8~10）完全不依赖压测环境，可与 API 侧并行推进；环境到位后，按 Execution SOP 的首轮执行顺序开跑。
 
 ### 建设顺序建议
 
@@ -242,3 +267,4 @@ Performance Testing
 2. **Baselines** + **Report Template** —— 让每次压测的产出可对比、可归档
 3. **Strategy & Workload Model** + **Performance Assets** —— 慢功夫，随场景积累逐步填充
 4. **Tool Comparison** 如果选型已定，一页纸记录结论即可，不必展开
+5. **Frontend / Web Performance** 与 API 侧并行：先建 Strategy & Performance Budgets + Mock Market Data Feeder——前端性能测试不依赖压测环境，是当前阶段就能全速建设的部分

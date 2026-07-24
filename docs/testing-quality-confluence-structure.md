@@ -112,7 +112,14 @@ Performance Testing
 │   └── KPI Definitions
 ├── 2. Tooling                          工具：选型、安装、使用
 │   ├── Tool Comparison & Selection
-│   ├── JMeter
+│   ├── k6（主力：REST + WebSocket）
+│   │   ├── Installation Guide
+│   │   ├── Getting Started
+│   │   ├── Scripting Standards
+│   │   ├── Scenarios & Load Profiles
+│   │   ├── CI Integration
+│   │   └── FAQ & Troubleshooting
+│   ├── JMeter（存量/备用）
 │   │   ├── Installation Guide
 │   │   ├── Getting Started
 │   │   ├── Scripting Standards
@@ -144,30 +151,36 @@ Performance Testing
 
 | Page | 内容 |
 |---|---|
-| **Performance Test Strategy** | 什么类型的改动必须做性能测试（触发规则）；测试类型定义——Load / Stress / Spike / Soak / Capacity 各自的适用时机 |
-| **Workload Modeling** | 业务流量模型：核心接口清单、各接口流量占比（来源于生产监控数据）、峰值场景（大促/月底结算等）构造方法 |
-| **KPI Definitions** | 指标口径统一定义——TPS、RT P95/P99、错误率、饱和度指标怎么算。口径不统一，两份报告就无法对比 |
+| **Performance Test Strategy** | 什么类型的改动必须做性能测试（触发规则）；测试类型定义——Smoke / Load / Stress / Spike / Soak / Capacity 各自的适用时机与**递进关系**（先 Smoke 验证脚本与系统能跑，Load 通过后才做 Stress/Spike/Soak）；交易类 Web 系统的性能特殊性：看尾延迟与抖动而非均值、负载呈脉冲型（开盘/行情剧烈波动可达日常数十倍）、报撤单比例高（做市/量化客户可达 10:1）、行情推送与交易链路要先分压再合压 |
+| **Workload Modeling** | API 清单与链路分级：P0 交易主链路（下单/撤单/回报推送 WS，延迟敏感）、P1 高频查询（持仓/资金/委托/行情快照）、P2 低频操作（登录/出入金/开销户），WebSocket 推送通道单独标注；全新系统无生产数据时用**假设驱动的 v0 模型**——客户数、日活比例、每户日均委托、报撤比、查询/交易比（通常 5~20 倍）、峰值系数（开盘按日常时段 10~30 倍），每条假设显式记录，上线后用真实数据修正；最终产出**目标容量表**（接口 → 目标 TPS + 延迟目标，如下单 P99 < 100ms） |
+| **KPI Definitions** | 指标口径统一定义——TPS、RT P50/P95/P99、错误率、饱和度指标怎么算。只报分位数**不报平均值**（均值掩盖尾部，用户抱怨的正是尾部）；延迟必须与错误率并排呈现（快速失败的系统会"看起来更快"）；拐点（knee point）定义：延迟开始爬升而吞吐不再增长的位置，即实际容量。口径不统一，两份报告就无法对比 |
 
 ### 3.2 Tooling
 
 | Page | 内容 |
 |---|---|
-| **Tool Comparison & Selection** | JMeter vs k6 vs Locust vs Gatling 选型对比：脚本语言、协议支持、分布式能力、CI 集成、学习成本；**写明团队选型结论和理由**——让"为什么用 JMeter"只被回答一次 |
+| **Tool Comparison & Selection** | JMeter vs k6 vs Locust vs Gatling 选型对比：脚本语言、协议支持、分布式能力、CI 集成、学习成本；**写明团队选型结论和理由**——让"为什么选它"只被回答一次。**当前结论：k6 为主力**——本系统是 REST + WebSocket 的 Web 系统，k6 脚本为 JS、原生支持 WS、`thresholds` 内置通过/失败判定、天然适合进 CI；JMeter 对 WS 和 CI 集成偏弱，保留用于存量脚本与图形化调试，不承担 WS 压测 |
+| **k6 / Installation Guide** | 各平台安装方式（brew / choco / Docker）、团队统一 k6 版本号、xk6 扩展构建说明（需要自定义协议或特殊输出时）、常见安装问题 |
+| **k6 / Getting Started** | 新人最小上手路径：第一个脚本（`options.stages` 阶梯加压 + `thresholds` 断言 + `check` 校验响应体）、`k6 run -e BASE_URL=... script.js` 运行方式、输出怎么读（P95/P99、`http_req_failed` 与 `checks` 失败分开看）。目标：新人半天内独立跑通一个冒烟压测（1~5 VU、1 分钟） |
+| **k6 / Scripting Standards** | 环境地址、账号、token 一律走 `__ENV` 外置，禁止硬编码；**通过/失败标准写进脚本 `thresholds`**，随脚本执行自动判定，不靠人肉看报告；`check` 失败与 HTTP 失败分开统计（返回 200 但响应体错误也是错误）；用 `sleep` 模拟真实 think time（0 等待测的是错误的东西）；命名约定与目录结构、公共模块引用方式 |
+| **k6 / Scenarios & Load Profiles** | scenarios/executors 用法：交易类接口用 `constant-arrival-rate` 按目标 TPS 恒定打量（固定 VU 在系统变慢时会"自动降压"，测出假容量）、`ramping-vus` 做爬坡与突发、多场景并行（REST 下单 + WS 行情订阅在同一脚本混压）的写法 |
+| **k6 / CI Integration** | CI 性能冒烟：低负载 + `thresholds` 阈值断言，每次合码跑约 2 分钟，性能劣化即流水线变红；结果输出对接时序库/Grafana 做长期趋势曲线 |
+| **k6 / FAQ & Troubleshooting** | 先标定压测机与工具自身容量，避免把工具极限当成系统极限；WS 大量长连接的 OS 参数（ulimit、临时端口范围）；其余按实际问题积累 |
 | **JMeter / Installation Guide** | 各平台安装步骤（含 JDK 版本要求）、团队统一 JMeter 版本号、必装插件清单（Plugins Manager、PerfMon、Ultimate Thread Group）、常见安装报错解决办法 |
 | **JMeter / Getting Started** | 新人最小上手路径：录制或手写第一个脚本、参数化（CSV Data Set）、断言、聚合报告怎么看。目标：新人半天内独立跑通一个压测 |
 | **JMeter / Scripting Standards** | 脚本规范：命名约定、目录结构、参数必须外置（禁止硬编码环境地址）、公共组件引用方式。这是 Assets 模块能维护得住的前提 |
 | **JMeter / Distributed Testing & CI** | 分布式压测（master/slave）搭建、命令行无 GUI 执行、CI 流水线接入说明 |
 | **JMeter / FAQ & Troubleshooting** | OOM 的 JVM 参数调整、GUI 卡顿、证书问题等，按实际问题积累 |
-| **Monitoring & Profiling** | 压测观测面：Grafana Dashboard 链接、APM 工具入口、服务端资源监控怎么看。压测不看服务端指标等于白压 |
+| **Monitoring & Profiling** | 压测观测面：Grafana Dashboard 链接、APM 工具入口、服务端资源监控怎么看。压测不看服务端指标等于白压。附**可观测性需求清单**（系统开发期就作为正式需求提给开发，越晚补越贵）：全链路 trace id（网关→风控→报盘→回报）、关键环节时间戳打点（能拆出分段耗时）、Prometheus 格式指标暴露（接口延迟直方图、队列深度、连接数）、压测流量标识 header（便于压测数据隔离与清理） |
 
-> 未来引入第二个工具（如 k6）时，在 Tooling 下平行建一组，结构复用 JMeter 的模板。
+> k6 与 JMeter 两组结构互为模板；未来引入其他工具时，在 Tooling 下平行再建一组。
 
 ### 3.3 Environment & Data
 
 | Page | 内容 |
 |---|---|
-| **Load Test Environments** | 压测专用环境清单、与生产的配置差异（缩容比例）、申请和预约流程 |
-| **Test Data Preparation** | 铺底数据构造（脚本入口、数据量级标准）、账号池管理 |
+| **Load Test Environments** | 压测专用环境清单、与生产的配置差异（缩容比例）、申请和预约流程。**当前阶段（无独立压测环境）**：在功能测试环境跑低负载相对基线与 CI 性能冒烟——结论只用于趋势对比和暴露实现级问题，不外推生产容量；压测环境到位后补齐与生产的差异折算说明并在报告中声明 |
+| **Test Data Preparation** | 铺底数据构造（脚本入口、数据量级标准）、账号池管理。**造数工厂**：幂等、规模参数化（100 户调试 / 10 万户压测）的批量开户、注资、建持仓、合约生成脚本，功能测试同样可复用；空库压测没有意义——很多问题（执行计划劣化、内存占用）只在生产级数据量下出现，铺底量级要贴近业务量模型的假设 |
 | **Load Testing Policy** | 压测纪律：哪些环境禁止压、压测前通知谁、限流和熔断的处理。做成必读页并附审批模板——避免把共享环境打挂 |
 
 ### 3.4 Performance Assets（资产建设）
@@ -177,24 +190,24 @@ Performance Testing
 | Page | 内容 |
 |---|---|
 | **Script Repository** | 脚本仓库（Git）入口与目录结构说明；场景索引表：场景 → 脚本路径 → 维护人 → 最后验证日期 |
-| **Scenario Library** | 可复用压测场景库：单接口基准场景、核心链路混合场景、峰值场景，每个场景写清流量模型和适用版本 |
-| **Reusable Components** | 公共函数（JSR223 脚本片段）、通用参数化文件、加密/签名等前置处理器的封装 |
+| **Scenario Library** | 可复用压测场景库，每个场景用**统一规格模板**描述：场景名、负载模型（各接口 TPS 配比）、加压方式、数据前提、通过标准。优先建六类：①单接口基准 ②混合日常负载 ③开盘突发（spike）④行情洪峰下的交易延迟（WS 满载 + 下单）⑤稳定性（soak ≥ 4h）⑥查询风暴（大量客户同时刷持仓）。另建**高负载下的 E2E 用户体验场景**：API 层压测进行的同时，用 5~10 个 Playwright 会话测量真实用户的页面体验（首屏、行情刷新延迟、下单到回报的界面响应）——API 层出容量数据，E2E 层出体验数据；在 Test Automation 模块放链接指向此页，避免两处维护 |
+| **Reusable Components** | 公共函数（k6 共享 JS 模块、JMeter JSR223 片段）、通用参数化文件、登录鉴权/加密/签名等前置处理的封装、数据关联套路（下单返回 orderId 供撤单用） |
 | **Asset Maintenance Rules** | 资产保鲜机制：接口变更时谁负责更新脚本、每季度对场景库做有效性验证。没有这页，资产库半年后就是废墟 |
 
 ### 3.5 Baselines & SLOs
 
 | Page | 内容 |
 |---|---|
-| **Performance Baselines** | 核心接口/链路基线表（版本、TPS、P95/P99、资源水位），每次大版本刷新。没有基线，压测报告就没有"变好还是变坏"的结论 |
-| **SLO & Pass/Fail Criteria** | 性能验收标准：比什么（对比基线还是对比 SLO）、劣化多少算不通过（如 P95 劣化 >10% 需审批） |
+| **Performance Baselines** | 核心接口/链路基线表（版本、TPS、P95/P99、资源水位），每次大版本刷新。没有基线，压测报告就没有"变好还是变坏"的结论。**当前阶段先建 CI 低负载相对基线**（功能环境、小并发下各 P0 接口的延迟与单机吞吐）：价值不在预测生产容量，而在暴露实现级问题（N+1 查询、缺索引、同步阻塞）并防止性能在开发期悄悄劣化——避免第一次正式压测才发现延迟是目标的 50 倍 |
+| **SLO & Pass/Fail Criteria** | 性能验收标准：比什么（对比基线还是对比 SLO）、劣化多少算不通过（如 P95 劣化 >10% 需审批）。标准同时落进 k6 脚本的 `thresholds`，每次执行自动判定——**没有通过/失败标准的压测是演示，不是测试** |
 
 ### 3.6 Execution Runbook
 
 | Page | 内容 |
 |---|---|
-| **Execution SOP** | 一次完整压测的标准流程 Checklist：压前检查（环境、数据、通知）、压中观测、压后恢复 |
-| **Result Analysis Guide** | 从聚合报告和监控定位瓶颈：应用/数据库/中间件；常见瓶颈模式（连接池打满、慢 SQL、GC 频繁）的判断特征 |
-| **Report Template** | 统一压测报告模板：结论先行（通过/不通过）、与基线对比、瓶颈分析、遗留风险 |
+| **Execution SOP** | 一次完整压测的标准流程 Checklist：压前检查（环境、数据、通知）、压中观测、压后恢复。**首轮执行顺序**（压测环境到位后）：压测工具自身容量标定 → Smoke → 单接口基准 → 单链路（下单全链路）→ 混合负载 → 突发/行情洪峰 → 稳定性 → 故障场景（主备切换），每轮之间预留瓶颈分析与调优时间——性能测试是"测试-分析-调优"的循环，不是一次性验收。方法纪律：单次只改一个变量；先预热（缓存/JIT/连接池）再测量；关键结果复跑一遍确认可重复 |
+| **Result Analysis Guide** | 从聚合报告和监控定位瓶颈：应用/数据库/中间件；常见瓶颈模式（连接池打满、慢 SQL、GC 频繁）的判断特征；结合分段打点把端到端延迟拆到具体环节 |
+| **Report Template** | 统一压测报告模板，结构固定：本次要回答的问题 → 结论（PASS/FAIL 一句话）→ 环境与数据量级（含缩容折算说明）→ 分阶段指标表（VU / RPS / P50 / P95 / P99 / 错误率）→ 拐点位置 → 瓶颈假设 → 建议与遗留风险 |
 
 ### 3.7 Reports & Case Studies
 
@@ -202,6 +215,24 @@ Performance Testing
 |---|---|
 | **Release Performance Reports** | 按版本归档的正式压测报告（用 3.6 的模板生成） |
 | **Tuning Case Studies** | 调优案例沉淀：慢 SQL 发现过程、JVM 参数调整前后对比等。团队性能能力真正的复利来源 |
+
+### 3.8 模块首页导读 — 当前阶段 Roadmap（资产建设期）
+
+> 放在 Performance Testing 模块首页。这是**有时效的阶段性计划**，不是长期规范：压测环境到位、首轮压测完成后归档（可移入 Reports & Case Studies）。
+
+**背景**：系统全新开发中，暂无独立压测环境。当前目标是**资产建设**——性能测试约 70% 的工作量（建模、场景、脚本、数据、可观测性）不需要压测环境，做到"环境到位第一天就能开跑"，而不是环境到位后再花一个月准备。
+
+| 步骤 | 做什么 | 产出落到哪页 |
+|---|---|---|
+| 1 | API 清单与链路分级（P0/P1/P2 + WS 推送通道） | Workload Modeling |
+| 2 | 假设驱动的业务量模型 v0 + 目标容量表（假设显式记录，上线后修正） | Workload Modeling / KPI Definitions |
+| 3 | 场景规格文档（六类优先场景 + E2E 体验场景） | Scenario Library |
+| 4 | k6 脚本开发，在功能环境用 1 并发验证正确性（鉴权、参数化、数据关联） | Script Repository / k6 子树 |
+| 5 | 测试数据工厂（幂等、规模参数化的造数脚本） | Test Data Preparation |
+| 6 | 可观测性需求提给开发（trace id、分段打点、指标暴露、压测流量标识） | Monitoring & Profiling |
+| 7 | CI 性能冒烟 + 低负载相对基线 | k6 / CI Integration、Performance Baselines |
+
+环境到位后，按 Execution SOP 的首轮执行顺序开跑。
 
 ### 建设顺序建议
 

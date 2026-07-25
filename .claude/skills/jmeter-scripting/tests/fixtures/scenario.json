@@ -1,0 +1,61 @@
+{
+  "name": "Demo Shop 混合流量压测",
+  "base_url": "http://staging.example.com:8080/api",
+  "data": {
+    "file": "tests/fixtures/users.csv",
+    "vars": ["username", "password"],
+    "recycle": true
+  },
+  "defaults": {
+    "headers": { "Content-Type": "application/json" },
+    "think_time": 1000
+  },
+  "thread_groups": [
+    {
+      "name": "主流量",
+      "load": { "threads": 500, "ramp_up": 120, "hold": 600 },
+      "login": {
+        "api": "POST /auth/login",
+        "body": { "username": "${username}", "password": "${password}" },
+        "extract": { "token": "$.data.accessToken" },
+        "assert": { "jsonpath": "$.code", "equals": "0" }
+      },
+      "auth_header": { "Authorization": "Bearer ${token}" },
+      "mix": [
+        { "flow": "商品浏览", "weight": 70 },
+        { "flow": "下单主链路", "weight": 30 }
+      ]
+    }
+  ],
+  "flows": [
+    {
+      "name": "商品浏览",
+      "steps": [
+        {
+          "api": "GET /products",
+          "query": { "page": 1, "size": 20 },
+          "extract": { "productId": "$.data.list[0].id" }
+        },
+        {
+          "api": "GET /products/{id}",
+          "path_vars": { "id": "${productId}" },
+          "think_time": 2000
+        }
+      ]
+    },
+    {
+      "name": "下单主链路",
+      "steps": [
+        {
+          "api": "GET /products",
+          "extract": { "buyId": "$.data.list[0].id" }
+        },
+        {
+          "api": "POST /orders",
+          "body": { "productId": "${buyId}", "qty": 1, "remark": "load-test" },
+          "assert": { "jsonpath": "$.code", "equals": "0" }
+        }
+      ]
+    }
+  ]
+}

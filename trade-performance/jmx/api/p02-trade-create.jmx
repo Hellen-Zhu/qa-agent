@@ -1,0 +1,170 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  api/p02-trade-create.jmx
+
+  【层级】api —— **可运行**。单接口容量测试，同样是薄壳。
+  【测什么】POST /trades/create 的纯服务端能力
+  【怎么跑】./scripts/run.sh p02-trade-create dev smoke
+
+  ── 与 scenarios/s01-create-trade-e2e.jmx 的关键差别 ──
+  1. **不含 refdata 查询**。参考数据在 setUp 里一次性解析好，主循环直接从池里取。
+     E2E 场景里 refdata 是被测链路的一部分（真实前端确实要查）；
+     单接口测试里它是噪音，会把别人的耗时算到 create 头上。
+  2. **不加 think time**。要测的是"服务端一秒能处理多少"，不是"用户体验如何"。
+     加了 think time 的单接口测试，压不出真实上限。
+  3. **不含 view-trade-details**。同理。
+
+  这两个文件引用的是**同一个** fragments/steps/create-trade.jmx。
+  接口变更时只改那一个文件，两边同时生效 —— 这就是四层架构的全部收益。
+
+  ── 对照实验开关（无需改脚本）──
+  -JportfolioSelect=fixed  全部线程打同一个 portfolio（测 portfolio 级锁竞争）
+  -JuserMode=fixed         全部线程用同一个 maker（测 per-user 锁 / 计数器竞争）
+-->
+<jmeterTestPlan version="1.2" properties="5.0" jmeter="5.6.3">
+  <hashTree>
+    <TestPlan guiclass="TestPlanGui" testclass="TestPlan" testname="p02-trade-create" enabled="true">
+      <stringProp name="TestPlan.comments">Runnable single-API capacity test. Thin shell.</stringProp>
+      <boolProp name="TestPlan.functional_mode">false</boolProp>
+      <boolProp name="TestPlan.serialize_threadgroups">false</boolProp>
+      <elementProp name="TestPlan.user_defined_variables" elementType="Arguments" guiclass="ArgumentsPanel" testclass="Arguments" testname="User Defined Variables" enabled="true">
+        <collectionProp name="Arguments.arguments"/>
+      </elementProp>
+      <stringProp name="TestPlan.user_define_classpath"></stringProp>
+    </TestPlan>
+    <hashTree>
+
+      <Arguments guiclass="ArgumentsPanel" testclass="Arguments" testname="UDV" enabled="true">
+        <collectionProp name="Arguments.arguments">
+          <elementProp name="basePath" elementType="Argument">
+            <stringProp name="Argument.name">basePath</stringProp>
+            <stringProp name="Argument.value">${__P(basePath,/api/v1)}</stringProp>
+            <stringProp name="Argument.metadata">=</stringProp>
+          </elementProp>
+          <elementProp name="datDir" elementType="Argument">
+            <stringProp name="Argument.name">datDir</stringProp>
+            <stringProp name="Argument.value">${__P(baseDir,.)}/data/dat</stringProp>
+            <stringProp name="Argument.metadata">=</stringProp>
+          </elementProp>
+          <elementProp name="refdataPageSize" elementType="Argument">
+            <stringProp name="Argument.name">refdataPageSize</stringProp>
+            <stringProp name="Argument.value">${__P(refdataPageSize,200)}</stringProp>
+            <stringProp name="Argument.metadata">=</stringProp>
+          </elementProp>
+        </collectionProp>
+      </Arguments>
+      <hashTree/>
+
+      <ConfigTestElement guiclass="HttpDefaultsGui" testclass="ConfigTestElement" testname="HTTP Request Defaults" enabled="true">
+        <elementProp name="HTTPsampler.Arguments" elementType="Arguments" guiclass="HTTPArgumentsPanel" testclass="Arguments" testname="User Defined Variables" enabled="true">
+          <collectionProp name="Arguments.arguments"/>
+        </elementProp>
+        <stringProp name="HTTPSampler.domain">${__P(host,localhost)}</stringProp>
+        <stringProp name="HTTPSampler.port">${__P(port,8080)}</stringProp>
+        <stringProp name="HTTPSampler.protocol">${__P(protocol,http)}</stringProp>
+        <stringProp name="HTTPSampler.connect_timeout">${__P(connectTimeout,5000)}</stringProp>
+        <stringProp name="HTTPSampler.response_timeout">${__P(responseTimeout,60000)}</stringProp>
+        <stringProp name="HTTPSampler.contentEncoding">UTF-8</stringProp>
+      </ConfigTestElement>
+      <hashTree/>
+
+      <!-- ⚠ 不要在这里加 Content-Type —— multipart 的 Content-Type 必须由 JMeter 生成（含 boundary） -->
+      <HeaderManager guiclass="HeaderPanel" testclass="HeaderManager" testname="HTTP Header Manager" enabled="true">
+        <collectionProp name="HeaderManager.headers">
+          <elementProp name="" elementType="Header">
+            <stringProp name="Header.name">accept</stringProp>
+            <stringProp name="Header.value">*/*</stringProp>
+          </elementProp>
+          <elementProp name="" elementType="Header">
+            <stringProp name="Header.name">X-User-ID</stringProp>
+            <stringProp name="Header.value">${__P(legacyUserId,anonymous)}</stringProp>
+          </elementProp>
+          <elementProp name="" elementType="Header">
+            <stringProp name="Header.name">X-User-Id</stringProp>
+            <stringProp name="Header.value">${effectiveUserId}</stringProp>
+          </elementProp>
+          <elementProp name="" elementType="Header">
+            <stringProp name="Header.name">X-Dyn-Run</stringProp>
+            <stringProp name="Header.value">${__P(dynRun,false)}</stringProp>
+          </elementProp>
+        </collectionProp>
+      </HeaderManager>
+      <hashTree/>
+
+      <JSR223PreProcessor guiclass="TestBeanGUI" testclass="JSR223PreProcessor" testname="resolve identity" enabled="true">
+        <stringProp name="cacheKey">true</stringProp>
+        <stringProp name="filename">${__P(baseDir,.)}/groovy/resolve-identity.groovy</stringProp>
+        <stringProp name="parameters"></stringProp>
+        <stringProp name="script"></stringProp>
+        <stringProp name="scriptLanguage">groovy</stringProp>
+      </JSR223PreProcessor>
+      <hashTree/>
+
+      <CSVDataSet guiclass="TestBeanGUI" testclass="CSVDataSet" testname="csv: accounts" enabled="true">
+        <stringProp name="filename">${__P(baseDir,.)}/data/shared/accounts.csv</stringProp>
+        <stringProp name="fileEncoding">UTF-8</stringProp>
+        <stringProp name="variableNames">userId,userRole,userNote</stringProp>
+        <boolProp name="ignoreFirstLine">true</boolProp>
+        <stringProp name="delimiter">,</stringProp>
+        <boolProp name="quotedData">false</boolProp>
+        <boolProp name="recycle">true</boolProp>
+        <boolProp name="stopThread">false</boolProp>
+        <stringProp name="shareMode">shareMode.all</stringProp>
+      </CSVDataSet>
+      <hashTree/>
+
+      <CSVDataSet guiclass="TestBeanGUI" testclass="CSVDataSet" testname="csv: create-trade data" enabled="true">
+        <stringProp name="filename">${__P(baseDir,.)}/data/create-trade/create-trade-data.csv</stringProp>
+        <stringProp name="fileEncoding">UTF-8</stringProp>
+        <stringProp name="variableNames">caseId,datFile,productType,datSize,notionalCurrency</stringProp>
+        <boolProp name="ignoreFirstLine">true</boolProp>
+        <stringProp name="delimiter">,</stringProp>
+        <boolProp name="quotedData">false</boolProp>
+        <boolProp name="recycle">true</boolProp>
+        <boolProp name="stopThread">false</boolProp>
+        <stringProp name="shareMode">shareMode.all</stringProp>
+      </CSVDataSet>
+      <hashTree/>
+
+      <SetupThreadGroup guiclass="SetupThreadGroupGui" testclass="SetupThreadGroup" testname="setUp: refdata + preflight" enabled="true">
+        <stringProp name="ThreadGroup.on_sample_error">continue</stringProp>
+        <elementProp name="ThreadGroup.main_controller" elementType="LoopController" guiclass="LoopControlPanel" testclass="LoopController" testname="Loop Controller" enabled="true">
+          <boolProp name="LoopController.continue_forever">false</boolProp>
+          <stringProp name="LoopController.loops">1</stringProp>
+        </elementProp>
+        <stringProp name="ThreadGroup.num_threads">1</stringProp>
+        <stringProp name="ThreadGroup.ramp_time">1</stringProp>
+        <boolProp name="ThreadGroup.scheduler">false</boolProp>
+        <stringProp name="ThreadGroup.duration"></stringProp>
+        <stringProp name="ThreadGroup.delay"></stringProp>
+      </SetupThreadGroup>
+      <hashTree>
+        <IncludeController guiclass="IncludeControllerGui" testclass="IncludeController" testname="inc: refdata-preflight" enabled="true">
+          <stringProp name="IncludeController.includepath">jmx/fragments/setup/refdata-preflight.jmx</stringProp>
+        </IncludeController>
+        <hashTree/>
+      </hashTree>
+
+      <ThreadGroup guiclass="ThreadGroupGui" testclass="ThreadGroup" testname="TG: create-trade capacity" enabled="true">
+        <stringProp name="ThreadGroup.on_sample_error">continue</stringProp>
+        <elementProp name="ThreadGroup.main_controller" elementType="LoopController" guiclass="LoopControlPanel" testclass="LoopController" testname="Loop Controller" enabled="true">
+          <boolProp name="LoopController.continue_forever">false</boolProp>
+          <stringProp name="LoopController.loops">${__P(loops,-1)}</stringProp>
+        </elementProp>
+        <stringProp name="ThreadGroup.num_threads">${__P(threads,1)}</stringProp>
+        <stringProp name="ThreadGroup.ramp_time">${__P(rampUp,1)}</stringProp>
+        <stringProp name="ThreadGroup.scheduler">${__P(scheduler,true)}</stringProp>
+        <stringProp name="ThreadGroup.duration">${__P(duration,60)}</stringProp>
+        <stringProp name="ThreadGroup.delay">0</stringProp>
+      </ThreadGroup>
+      <hashTree>
+        <!-- 直接 Include 原子步骤，不经过 journey：单接口测试要的就是纯净 -->
+        <IncludeController guiclass="IncludeControllerGui" testclass="IncludeController" testname="inc: create-trade" enabled="true">
+          <stringProp name="IncludeController.includepath">jmx/fragments/steps/create-trade.jmx</stringProp>
+        </IncludeController>
+        <hashTree/>
+      </hashTree>
+
+    </hashTree>
+  </hashTree>
+</jmeterTestPlan>

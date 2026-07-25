@@ -1,0 +1,168 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  fragments/steps/create-trade.jmx
+
+  【层级】fragment —— 不可独立运行（无 Thread Group）
+  【被谁引用】journeys/j01-create-trade.jmx、api/p02-trade-create.jmx
+  【唯一真相来源】create 接口的请求构造与断言只在这里定义一次。
+                 接口变更时只改本文件，所有引用方自动生效。
+
+  ══ Fragment 契约 ══════════════════════════════════════════════
+  【输入变量】
+    portfolioId       必填  由 groovy/select-refdata.groovy 从全局池写入
+    counterpartyFmId  必填  同上
+    counterpartyName  必填  同上（必须与 fmId 同源配对）
+    userId            必填  CSV(shared/accounts.csv) 或 fixedUserId 属性
+    datFile           必填  CSV，相对 ${datDir} 的路径
+    caseId            可选  CSV，用于结果归因；缺省时 tradeReference 记为 PREFLIGHT
+    notionalCurrency  可选  CSV 末列，通常为空串
+
+  【输入属性】
+    baseDir           项目根绝对路径，由 scripts/run.sh 注入
+    portfolioSelect   roundRobin(默认) | fixed
+    userMode          pool(默认) | fixed
+
+  【输出变量】
+    tradeId           成功时 TRD-<数字>，失败为 NOT_FOUND
+    taskId            成功时 CHK-<十六进制>，失败为 NOT_FOUND
+    errClass          ok | technical | business | script
+    tradeReference    本次业务唯一标识（仅存在于结果文件，未写入被测系统）
+
+  【产出事务】TX_Create_Trade
+  ═══════════════════════════════════════════════════════════════
+
+  ── multipart 要点（易错，勿改）──
+  DO_MULTIPART_POST=true            让 JMeter 自己生成 Content-Type 及其 boundary。
+                                     绝不能在 Header Manager 里手写 Content-Type：
+                                     手写值不带 boundary，且会覆盖生成值 → 服务端无法分段。
+  BROWSER_COMPATIBLE_MULTIPART=true 只给带 filename 的 part 写 Content-Type。
+                                     严格模式会给 trade 这个普通字段多加
+                                     Content-Type: text/plain 和 Content-Transfer-Encoding: 8bit，
+                                     与真实 curl 不一致。
+  trade 是普通表单字段（curl 用 -F 'trade={...}'），不是文件 part —— 所以不需要写临时文件。
+-->
+<jmeterTestPlan version="1.2" properties="5.0" jmeter="5.6.3">
+  <hashTree>
+    <TestPlan guiclass="TestPlanGui" testclass="TestPlan" testname="create-trade (fragment)" enabled="true">
+      <stringProp name="TestPlan.comments">Fragment container. Never run directly.</stringProp>
+      <boolProp name="TestPlan.functional_mode">false</boolProp>
+      <boolProp name="TestPlan.serialize_threadgroups">false</boolProp>
+      <elementProp name="TestPlan.user_defined_variables" elementType="Arguments" guiclass="ArgumentsPanel" testclass="Arguments" testname="User Defined Variables" enabled="true">
+        <collectionProp name="Arguments.arguments"/>
+      </elementProp>
+      <stringProp name="TestPlan.user_define_classpath"></stringProp>
+    </TestPlan>
+    <hashTree>
+
+      <TestFragmentController guiclass="TestFragmentControllerGui" testclass="TestFragmentController" testname="create-trade" enabled="true"/>
+      <hashTree>
+
+        <!-- includeTimers=false：think time 不计入事务耗时。
+             为 true 时报告里的 TX_Create_Trade 会被 think time 撑大，
+             那个数字既不是服务端能力也不是用户感受，没有意义。 -->
+        <TransactionController guiclass="TransactionControllerGui" testclass="TransactionController" testname="TX_Create_Trade" enabled="true">
+          <boolProp name="TransactionController.parent">false</boolProp>
+          <boolProp name="TransactionController.includeTimers">false</boolProp>
+        </TransactionController>
+        <hashTree>
+
+          <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="create_trade" enabled="true">
+            <elementProp name="HTTPsampler.Arguments" elementType="Arguments" guiclass="HTTPArgumentsPanel" testclass="Arguments" testname="User Defined Variables" enabled="true">
+              <collectionProp name="Arguments.arguments">
+                <elementProp name="trade" elementType="HTTPArgument">
+                  <boolProp name="HTTPArgument.always_encode">false</boolProp>
+                  <stringProp name="Argument.value">${tradePayload}</stringProp>
+                  <stringProp name="Argument.metadata">=</stringProp>
+                  <boolProp name="HTTPArgument.use_equals">true</boolProp>
+                  <stringProp name="Argument.name">trade</stringProp>
+                </elementProp>
+              </collectionProp>
+            </elementProp>
+            <elementProp name="HTTPsampler.Files" elementType="HTTPFileArgs">
+              <collectionProp name="HTTPFileArgs.files">
+                <elementProp name="datFile" elementType="HTTPFileArg">
+                  <stringProp name="File.path">${datDir}/${datFile}</stringProp>
+                  <stringProp name="File.paramname">datFile</stringProp>
+                  <stringProp name="File.mimetype">application/octet-stream</stringProp>
+                </elementProp>
+              </collectionProp>
+            </elementProp>
+            <stringProp name="HTTPSampler.path">${basePath}/trades/create</stringProp>
+            <stringProp name="HTTPSampler.method">POST</stringProp>
+            <boolProp name="HTTPSampler.DO_MULTIPART_POST">true</boolProp>
+            <boolProp name="HTTPSampler.BROWSER_COMPATIBLE_MULTIPART">true</boolProp>
+            <boolProp name="HTTPSampler.follow_redirects">true</boolProp>
+            <boolProp name="HTTPSampler.auto_redirects">false</boolProp>
+            <boolProp name="HTTPSampler.use_keepalive">true</boolProp>
+            <stringProp name="HTTPSampler.embedded_url_re"></stringProp>
+          </HTTPSamplerProxy>
+          <hashTree>
+
+            <JSR223PreProcessor guiclass="TestBeanGUI" testclass="JSR223PreProcessor" testname="select refdata" enabled="true">
+              <stringProp name="cacheKey">true</stringProp>
+              <stringProp name="filename">${__P(baseDir,.)}/groovy/select-refdata.groovy</stringProp>
+              <stringProp name="parameters"></stringProp>
+              <stringProp name="script"></stringProp>
+              <stringProp name="scriptLanguage">groovy</stringProp>
+            </JSR223PreProcessor>
+            <hashTree/>
+
+            <JSR223PreProcessor guiclass="TestBeanGUI" testclass="JSR223PreProcessor" testname="build trade payload" enabled="true">
+              <stringProp name="cacheKey">true</stringProp>
+              <stringProp name="filename">${__P(baseDir,.)}/groovy/build-trade-payload.groovy</stringProp>
+              <stringProp name="parameters"></stringProp>
+              <stringProp name="script"></stringProp>
+              <stringProp name="scriptLanguage">groovy</stringProp>
+            </JSR223PreProcessor>
+            <hashTree/>
+
+            <!-- HTTP 层断言。业务层断言在下面的 JSR223 Assertion —— 两者缺一不可：
+                 这个接口业务失败时照样返回 HTTP 200。 -->
+            <ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion" testname="http 200" enabled="true">
+              <collectionProp name="Asserion.test_strings">
+                <stringProp name="49586">200</stringProp>
+              </collectionProp>
+              <stringProp name="Assertion.custom_message"></stringProp>
+              <stringProp name="Assertion.test_field">Assertion.response_code</stringProp>
+              <boolProp name="Assertion.assume_success">false</boolProp>
+              <intProp name="Assertion.test_type">8</intProp>
+            </ResponseAssertion>
+            <hashTree/>
+
+            <JSR223Assertion guiclass="TestBeanGUI" testclass="JSR223Assertion" testname="business status + error class" enabled="true">
+              <stringProp name="cacheKey">true</stringProp>
+              <stringProp name="filename">${__P(baseDir,.)}/groovy/assert-create-response.groovy</stringProp>
+              <stringProp name="parameters"></stringProp>
+              <stringProp name="script"></stringProp>
+              <stringProp name="scriptLanguage">groovy</stringProp>
+            </JSR223Assertion>
+            <hashTree/>
+
+            <JSONPostProcessor guiclass="JSONPostProcessorGui" testclass="JSONPostProcessor" testname="ext tradeId" enabled="true">
+              <stringProp name="JSONPostProcessor.referenceNames">tradeId</stringProp>
+              <stringProp name="JSONPostProcessor.jsonPathExprs">$.data.trade.id</stringProp>
+              <stringProp name="JSONPostProcessor.match_numbers">1</stringProp>
+              <stringProp name="JSONPostProcessor.defaultValues">NOT_FOUND</stringProp>
+            </JSONPostProcessor>
+            <hashTree/>
+
+            <!-- TaskId 目前只存在于 msg 的自然语言里：
+                 "Submitted for checker approval. TaskId: CHK-98C0DF19"
+                 只能用正则捞。文案一改就断 —— 已作为 improvement 提给开发
+                 （README 待确认 #6：能否作为结构化字段返回）。 -->
+            <RegexExtractor guiclass="RegexExtractorGui" testclass="RegexExtractor" testname="ext taskId" enabled="true">
+              <stringProp name="RegexExtractor.useHeaders">false</stringProp>
+              <stringProp name="RegexExtractor.refname">taskId</stringProp>
+              <stringProp name="RegexExtractor.regex">TaskId:\s*(CHK-[A-Za-z0-9]+)</stringProp>
+              <stringProp name="RegexExtractor.template">$1$</stringProp>
+              <stringProp name="RegexExtractor.default">NOT_FOUND</stringProp>
+              <stringProp name="RegexExtractor.match_number">1</stringProp>
+            </RegexExtractor>
+            <hashTree/>
+
+          </hashTree>
+        </hashTree>
+      </hashTree>
+    </hashTree>
+  </hashTree>
+</jmeterTestPlan>

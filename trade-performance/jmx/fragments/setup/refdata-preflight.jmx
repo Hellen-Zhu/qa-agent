@@ -1,0 +1,195 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  fragments/setup/refdata-preflight.jmx
+
+  【层级】fragment —— 不可独立运行（无 Thread Group）
+  【被谁引用】scenarios/s01-create-trade-e2e.jmx、api/p02-trade-create.jmx 的 setUp Thread Group
+  【职责】解析参考数据池 → 前置校验 → 归档快照
+
+  ── 为什么放在 setUp Thread Group 而不是主循环 ──
+  Counterparty / Portfolio 由 sync batch job 从第三方同步进我们的数据库，属于
+  **测试无法控制的外部状态**。硬编码会过期；放进主循环又会把 refdata 的耗时
+  混进被测值、并给 DB 加额外负载。
+  setUp 是唯一同时满足"新鲜"和"不在测量窗口内"的位置。
+
+  【输出属性（全局，跨线程组可见）】
+    perfPortfolios      JSON 数组
+    perfCounterparties  JSON 数组 [{fmId, name}, ...]
+    refdataPoolError    池过小时的错误描述（正常时不存在）
+    preflightOutcome    abort | warn | pruned:N
+-->
+<jmeterTestPlan version="1.2" properties="5.0" jmeter="5.6.3">
+  <hashTree>
+    <TestPlan guiclass="TestPlanGui" testclass="TestPlan" testname="refdata-preflight (fragment)" enabled="true">
+      <stringProp name="TestPlan.comments">Fragment container. Never run directly.</stringProp>
+      <boolProp name="TestPlan.functional_mode">false</boolProp>
+      <boolProp name="TestPlan.serialize_threadgroups">false</boolProp>
+      <elementProp name="TestPlan.user_defined_variables" elementType="Arguments" guiclass="ArgumentsPanel" testclass="Arguments" testname="User Defined Variables" enabled="true">
+        <collectionProp name="Arguments.arguments"/>
+      </elementProp>
+      <stringProp name="TestPlan.user_define_classpath"></stringProp>
+    </TestPlan>
+    <hashTree>
+
+      <TestFragmentController guiclass="TestFragmentControllerGui" testclass="TestFragmentController" testname="refdata-preflight" enabled="true"/>
+      <hashTree>
+
+        <!-- ── 1. 查 Portfolio ─────────────────────────────────────── -->
+        <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="refdata_portfolios" enabled="true">
+          <elementProp name="HTTPsampler.Arguments" elementType="Arguments" guiclass="HTTPArgumentsPanel" testclass="Arguments" testname="User Defined Variables" enabled="true">
+            <collectionProp name="Arguments.arguments"/>
+          </elementProp>
+          <stringProp name="HTTPSampler.path">${basePath}/refdata/portfolios?status=ACTIVE&amp;size=${refdataPageSize}</stringProp>
+          <stringProp name="HTTPSampler.method">GET</stringProp>
+          <boolProp name="HTTPSampler.follow_redirects">true</boolProp>
+          <boolProp name="HTTPSampler.auto_redirects">false</boolProp>
+          <boolProp name="HTTPSampler.use_keepalive">true</boolProp>
+          <boolProp name="HTTPSampler.DO_MULTIPART_POST">false</boolProp>
+          <stringProp name="HTTPSampler.embedded_url_re"></stringProp>
+        </HTTPSamplerProxy>
+        <hashTree>
+          <ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion" testname="http 200" enabled="true">
+            <collectionProp name="Asserion.test_strings">
+              <stringProp name="49586">200</stringProp>
+            </collectionProp>
+            <stringProp name="Assertion.custom_message">refdata/portfolios did not return 200</stringProp>
+            <stringProp name="Assertion.test_field">Assertion.response_code</stringProp>
+            <boolProp name="Assertion.assume_success">false</boolProp>
+            <intProp name="Assertion.test_type">8</intProp>
+          </ResponseAssertion>
+          <hashTree/>
+          <!-- Match No. = -1 → 产出 portfolioIds_matchNr 与 portfolioIds_1..N -->
+          <!-- ⚠ JSONPath 需按真实响应校正，见 README「第一次跑之前」#1 -->
+          <JSONPostProcessor guiclass="JSONPostProcessorGui" testclass="JSONPostProcessor" testname="ext portfolioIds" enabled="true">
+            <stringProp name="JSONPostProcessor.referenceNames">portfolioIds</stringProp>
+            <stringProp name="JSONPostProcessor.jsonPathExprs">$.data[*].id</stringProp>
+            <stringProp name="JSONPostProcessor.match_numbers">-1</stringProp>
+            <stringProp name="JSONPostProcessor.defaultValues">NOT_FOUND</stringProp>
+          </JSONPostProcessor>
+          <hashTree/>
+        </hashTree>
+
+        <!-- ── 2. 查 Counterparty ──────────────────────────────────── -->
+        <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="refdata_counterparties" enabled="true">
+          <elementProp name="HTTPsampler.Arguments" elementType="Arguments" guiclass="HTTPArgumentsPanel" testclass="Arguments" testname="User Defined Variables" enabled="true">
+            <collectionProp name="Arguments.arguments"/>
+          </elementProp>
+          <stringProp name="HTTPSampler.path">${basePath}/refdata/counterparties?status=ACTIVE&amp;size=${refdataPageSize}</stringProp>
+          <stringProp name="HTTPSampler.method">GET</stringProp>
+          <boolProp name="HTTPSampler.follow_redirects">true</boolProp>
+          <boolProp name="HTTPSampler.auto_redirects">false</boolProp>
+          <boolProp name="HTTPSampler.use_keepalive">true</boolProp>
+          <boolProp name="HTTPSampler.DO_MULTIPART_POST">false</boolProp>
+          <stringProp name="HTTPSampler.embedded_url_re"></stringProp>
+        </HTTPSamplerProxy>
+        <hashTree>
+          <ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion" testname="http 200" enabled="true">
+            <collectionProp name="Asserion.test_strings">
+              <stringProp name="49586">200</stringProp>
+            </collectionProp>
+            <stringProp name="Assertion.custom_message">refdata/counterparties did not return 200</stringProp>
+            <stringProp name="Assertion.test_field">Assertion.response_code</stringProp>
+            <boolProp name="Assertion.assume_success">false</boolProp>
+            <intProp name="Assertion.test_type">8</intProp>
+          </ResponseAssertion>
+          <hashTree/>
+          <JSONPostProcessor guiclass="JSONPostProcessorGui" testclass="JSONPostProcessor" testname="ext cpFmIds" enabled="true">
+            <stringProp name="JSONPostProcessor.referenceNames">cpFmIds</stringProp>
+            <stringProp name="JSONPostProcessor.jsonPathExprs">$.data[*].fmId</stringProp>
+            <stringProp name="JSONPostProcessor.match_numbers">-1</stringProp>
+            <stringProp name="JSONPostProcessor.defaultValues">NOT_FOUND</stringProp>
+          </JSONPostProcessor>
+          <hashTree/>
+          <!-- name 与 fmId 必须同源同序提取：payload 里两者要配对，
+               分别硬编码或从不同来源取会产生"名字对不上号"的业务拒绝 -->
+          <JSONPostProcessor guiclass="JSONPostProcessorGui" testclass="JSONPostProcessor" testname="ext cpNames" enabled="true">
+            <stringProp name="JSONPostProcessor.referenceNames">cpNames</stringProp>
+            <stringProp name="JSONPostProcessor.jsonPathExprs">$.data[*].name</stringProp>
+            <stringProp name="JSONPostProcessor.match_numbers">-1</stringProp>
+            <stringProp name="JSONPostProcessor.defaultValues">NOT_FOUND</stringProp>
+          </JSONPostProcessor>
+          <hashTree/>
+          <JSR223PostProcessor guiclass="TestBeanGUI" testclass="JSR223PostProcessor" testname="build refdata pools" enabled="true">
+            <stringProp name="cacheKey">true</stringProp>
+            <stringProp name="filename">${__P(baseDir,.)}/groovy/build-refdata-pools.groovy</stringProp>
+            <stringProp name="parameters"></stringProp>
+            <stringProp name="script"></stringProp>
+            <stringProp name="scriptLanguage">groovy</stringProp>
+          </JSR223PostProcessor>
+          <hashTree/>
+        </hashTree>
+
+        <!-- ── 3. 前置校验：真实建一笔 trade ───────────────────────── -->
+        <!-- 只有这一步能发现"数据存在但业务上不可用"（如 counterparty 已被第三方停用）。
+             refdata 查询返回 200 证明不了这件事。 -->
+        <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="preflight_create" enabled="true">
+          <elementProp name="HTTPsampler.Arguments" elementType="Arguments" guiclass="HTTPArgumentsPanel" testclass="Arguments" testname="User Defined Variables" enabled="true">
+            <collectionProp name="Arguments.arguments">
+              <elementProp name="trade" elementType="HTTPArgument">
+                <boolProp name="HTTPArgument.always_encode">false</boolProp>
+                <stringProp name="Argument.value">${tradePayload}</stringProp>
+                <stringProp name="Argument.metadata">=</stringProp>
+                <boolProp name="HTTPArgument.use_equals">true</boolProp>
+                <stringProp name="Argument.name">trade</stringProp>
+              </elementProp>
+            </collectionProp>
+          </elementProp>
+          <elementProp name="HTTPsampler.Files" elementType="HTTPFileArgs">
+            <collectionProp name="HTTPFileArgs.files">
+              <elementProp name="preflightDat" elementType="HTTPFileArg">
+                <stringProp name="File.path">${datDir}/${__P(preflightDatFile,small/fx_trf_01.dat)}</stringProp>
+                <stringProp name="File.paramname">datFile</stringProp>
+                <stringProp name="File.mimetype">application/octet-stream</stringProp>
+              </elementProp>
+            </collectionProp>
+          </elementProp>
+          <stringProp name="HTTPSampler.path">${basePath}/trades/create</stringProp>
+          <stringProp name="HTTPSampler.method">POST</stringProp>
+          <boolProp name="HTTPSampler.DO_MULTIPART_POST">true</boolProp>
+          <boolProp name="HTTPSampler.BROWSER_COMPATIBLE_MULTIPART">true</boolProp>
+          <boolProp name="HTTPSampler.follow_redirects">true</boolProp>
+          <boolProp name="HTTPSampler.auto_redirects">false</boolProp>
+          <boolProp name="HTTPSampler.use_keepalive">true</boolProp>
+          <stringProp name="HTTPSampler.embedded_url_re"></stringProp>
+        </HTTPSamplerProxy>
+        <hashTree>
+          <JSR223PreProcessor guiclass="TestBeanGUI" testclass="JSR223PreProcessor" testname="select refdata" enabled="true">
+            <stringProp name="cacheKey">true</stringProp>
+            <stringProp name="filename">${__P(baseDir,.)}/groovy/select-refdata.groovy</stringProp>
+            <stringProp name="parameters"></stringProp>
+            <stringProp name="script"></stringProp>
+            <stringProp name="scriptLanguage">groovy</stringProp>
+          </JSR223PreProcessor>
+          <hashTree/>
+          <JSR223PreProcessor guiclass="TestBeanGUI" testclass="JSR223PreProcessor" testname="build trade payload" enabled="true">
+            <stringProp name="cacheKey">true</stringProp>
+            <stringProp name="filename">${__P(baseDir,.)}/groovy/build-trade-payload.groovy</stringProp>
+            <stringProp name="parameters"></stringProp>
+            <stringProp name="script"></stringProp>
+            <stringProp name="scriptLanguage">groovy</stringProp>
+          </JSR223PreProcessor>
+          <hashTree/>
+          <JSR223Assertion guiclass="TestBeanGUI" testclass="JSR223Assertion" testname="preflight policy" enabled="true">
+            <stringProp name="cacheKey">true</stringProp>
+            <stringProp name="filename">${__P(baseDir,.)}/groovy/preflight-policy.groovy</stringProp>
+            <stringProp name="parameters"></stringProp>
+            <stringProp name="script"></stringProp>
+            <stringProp name="scriptLanguage">groovy</stringProp>
+          </JSR223Assertion>
+          <hashTree/>
+        </hashTree>
+
+        <!-- ── 4. 归档快照 ─────────────────────────────────────────── -->
+        <JSR223Sampler guiclass="TestBeanGUI" testclass="JSR223Sampler" testname="archive refdata snapshot" enabled="true">
+          <stringProp name="cacheKey">true</stringProp>
+          <stringProp name="filename">${__P(baseDir,.)}/groovy/archive-refdata-snapshot.groovy</stringProp>
+          <stringProp name="parameters"></stringProp>
+          <stringProp name="script"></stringProp>
+          <stringProp name="scriptLanguage">groovy</stringProp>
+        </JSR223Sampler>
+        <hashTree/>
+
+      </hashTree>
+    </hashTree>
+  </hashTree>
+</jmeterTestPlan>

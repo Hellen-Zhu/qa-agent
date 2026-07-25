@@ -1,0 +1,95 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  journeys/j01-create-trade.jmx
+
+  【层级】journey —— 技术上仍是 Test Fragment，不可独立运行（无 Thread Group）
+  【被谁引用】scenarios/s01-create-trade-e2e.jmx
+  【职责】把 steps 组合成一条完整的前端用户路径。
+
+  ── journeys 和 fragments/steps 的区别 ──
+  两者都是 Test Fragment，元件类型相同。分目录分的是**复用层级**：
+    fragments/steps  原子步骤，被多个 journey 复用
+    journeys         完整用户路径，被多个 scenario / suite 复用
+  真正的分界线在 scenarios —— 那一层才开始有 Thread Group、才可运行。
+
+  ── 用户路径（前端 E2E）──
+    1. 打开 create-trade 页面 → 拉取下拉框数据      [TX_RefData_Load]
+       ↓ think time：用户选组合、选交易对手、挑 .dat 文件
+    2. 提交                                         [TX_Create_Trade]
+       ↓ think time：用户看提交结果
+    3. 查看刚建好的这笔                              [TX_View_Trade_Details]
+
+  ⚠ Include Controller 的路径**不支持变量和函数**（JMeter 已知限制），
+    只能写死。它按**当前工作目录**解析 —— 所以 scripts/run.sh 必须先 cd 到项目根，
+    否则 GUI 里能跑、命令行下静默地少执行一段。这是本工程最容易踩的坑。
+-->
+<jmeterTestPlan version="1.2" properties="5.0" jmeter="5.6.3">
+  <hashTree>
+    <TestPlan guiclass="TestPlanGui" testclass="TestPlan" testname="j01-create-trade (journey)" enabled="true">
+      <stringProp name="TestPlan.comments">Journey fragment. Never run directly.</stringProp>
+      <boolProp name="TestPlan.functional_mode">false</boolProp>
+      <boolProp name="TestPlan.serialize_threadgroups">false</boolProp>
+      <elementProp name="TestPlan.user_defined_variables" elementType="Arguments" guiclass="ArgumentsPanel" testclass="Arguments" testname="User Defined Variables" enabled="true">
+        <collectionProp name="Arguments.arguments"/>
+      </elementProp>
+      <stringProp name="TestPlan.user_define_classpath"></stringProp>
+    </TestPlan>
+    <hashTree>
+
+      <TestFragmentController guiclass="TestFragmentControllerGui" testclass="TestFragmentController" testname="j01-create-trade" enabled="true"/>
+      <hashTree>
+
+        <!-- 1. 打开页面，拉下拉框数据 -->
+        <IncludeController guiclass="IncludeControllerGui" testclass="IncludeController" testname="inc: refdata-load" enabled="true">
+          <stringProp name="IncludeController.includepath">jmx/fragments/steps/refdata-load.jmx</stringProp>
+        </IncludeController>
+        <hashTree/>
+
+        <!-- think time：用户填表。
+             用 Flow Control Action + 子 Timer，而不是直接挂 Timer。
+             ⚠ JMeter 的 Timer 按**作用域**生效，不按书写顺序：
+             直接挂在 fragment 下的 Timer 会给该子树里**每一个** sampler 都加延迟，
+             而不是"在这个位置停一下"。Flow Control Action 才是"停一下"。 -->
+        <TestAction guiclass="TestActionGui" testclass="TestAction" testname="think: fill form" enabled="true">
+          <intProp name="ActionProcessor.action">1</intProp>
+          <intProp name="ActionProcessor.target">0</intProp>
+          <stringProp name="ActionProcessor.duration">0</stringProp>
+        </TestAction>
+        <hashTree>
+          <UniformRandomTimer guiclass="UniformRandomTimerGui" testclass="UniformRandomTimer" testname="think time" enabled="true">
+            <stringProp name="ConstantTimer.delay">${__P(thinkTimeBase,2000)}</stringProp>
+            <stringProp name="RandomTimer.range">${__P(thinkTimeRange,3000)}</stringProp>
+          </UniformRandomTimer>
+          <hashTree/>
+        </hashTree>
+
+        <!-- 2. 提交 -->
+        <IncludeController guiclass="IncludeControllerGui" testclass="IncludeController" testname="inc: create-trade" enabled="true">
+          <stringProp name="IncludeController.includepath">jmx/fragments/steps/create-trade.jmx</stringProp>
+        </IncludeController>
+        <hashTree/>
+
+        <!-- think time：用户看结果 -->
+        <TestAction guiclass="TestActionGui" testclass="TestAction" testname="think: read result" enabled="true">
+          <intProp name="ActionProcessor.action">1</intProp>
+          <intProp name="ActionProcessor.target">0</intProp>
+          <stringProp name="ActionProcessor.duration">0</stringProp>
+        </TestAction>
+        <hashTree>
+          <UniformRandomTimer guiclass="UniformRandomTimerGui" testclass="UniformRandomTimer" testname="think time" enabled="true">
+            <stringProp name="ConstantTimer.delay">${__P(thinkTimeBase,2000)}</stringProp>
+            <stringProp name="RandomTimer.range">${__P(thinkTimeRange,3000)}</stringProp>
+          </UniformRandomTimer>
+          <hashTree/>
+        </hashTree>
+
+        <!-- 3. 查看刚建好的 trade（踩 UC gRPC 与 risk-engine 两条下游） -->
+        <IncludeController guiclass="IncludeControllerGui" testclass="IncludeController" testname="inc: view-trade-details" enabled="true">
+          <stringProp name="IncludeController.includepath">jmx/fragments/steps/view-trade-details.jmx</stringProp>
+        </IncludeController>
+        <hashTree/>
+
+      </hashTree>
+    </hashTree>
+  </hashTree>
+</jmeterTestPlan>

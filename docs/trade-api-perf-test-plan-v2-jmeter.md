@@ -248,6 +248,7 @@ GET /trades/{id} + GET /trades/{id}/risk-metrics
 | **幂等计算**（可复用，注意缓存） | calculate-risk、partial-novation-risk、calculate-risk-for-new、dat-to-json、schema parse | 池化 + 轮换不同输入，避免结果缓存掩盖真实耗时 |
 | **一次性消费**（状态迁移） | approve、reject、bulk-approve、bulk-reject、trigger-event、update | 见 4.2 |
 | **持续增长**（污染基线） | create | 独立 Portfolio 隔离；`GET /trades` 基线必须在 create 压测**之前**采集 |
+| **外部同步型**（不受测试控制） | counterparties、portfolios | 见 4.4 |
 
 ### 4.2 一次性消费的三种供给方案
 
@@ -274,6 +275,27 @@ data/pools/
 - 池由 `ops/z01-seed-pools.jmx` 或独立 SQL 脚本生成，**不在压测过程中生成**
 - 池规模、生成时间记入 run manifest，作为结果可复现的一部分
 - `pending-task-ids.csv` 每轮重新生成，用后即弃
+
+### 4.4 外部同步型参考数据（Counterparty / Portfolio）
+
+Counterparty 与 Portfolio 由 **sync batch job 从第三方同步进我们的数据库**，再经 refdata API 暴露。它们与前三类的本质区别是：**测试无法保证其存在性与有效性**。第三方随时可能停用、改名、重编号，环境 DB refresh 也会让 UUID 全部作废。
+
+固定值最危险的后果不是"跑不起来"，而是"**HTTP 200 但业务全拒**"——只看状态码的断言会报 0 错误率，报告上却是一条 trade 都没建成。
+
+**绑定时机决定一切：**
+
+| 方案 | 新鲜度 | 测量纯净度 | 可复现性 | 适用 |
+|---|---|---|---|---|
+| 硬编码 CSV | ✗ | ✓ | ✓ | 不可单独使用 |
+| 压测循环内查询 | ✓ | ✗ refdata 耗时混入被测值 | ✗ | **仅** E2E 场景（真实前端确实这么做，属被测链路） |
+| **setUp Thread Group 解析 + 归档快照** | ✓ | ✓ 不在测量窗口内 | ✓ | **单接口容量测试统一采用** |
+
+- **走 API 不走 DB 直连**：DB 里存在 ≠ API 能用（权限过滤、软删除、状态机），而 create 的校验与查询 API 同源。仅当需要 API 提供不了的批量筛选条件时才申请 JDBC 只读权限，且限 setUp 阶段
+- **setUp 内必须做一次真实业务冒烟**（建一笔 trade），把"数据失效"从压测中期的噪音变成开跑前的明确失败
+- 解析结果落盘 `results/${runId}/resolved-refdata.csv`，纳入 run manifest
+- **sync job 是 create 的资源竞争者**：与 API 共用 DB 实例时会争抢连接池与 IO。压测排期需避开其调度窗口；或专门测量该窗口内的退化（PT-CREATE-015）
+
+> 完整实现（setUp 元件树、池构建 Groovy、选取策略 property、前置校验策略）见 `trade-create-perf-testcases-jmeter.md` §2.4。该策略适用于**所有**需要有效 portfolio / counterparty 的接口，不限于 create。
 
 ---
 
@@ -542,6 +564,11 @@ if (riskPassed) {
 
 ## 7. JMeter 工程结构
 
+> **已落地**：本章的结构已实现在 [`../trade-performance/`](../trade-performance/)，
+> 以 create-trade 为样板（1 条 E2E 链路 + 1 个单接口容量测试）。
+> 其余 32 个 API 按同样模式扩展。运行方式与已知偏差见该目录的 `README.md`。
+> 下面的目录树是完整目标态，实际已建的是其中一个可运行子集。
+
 ### 7.1 四层架构
 
 ```text
@@ -560,10 +587,9 @@ if (riskPassed) {
 ```text
 trade-performance/
 ├── jmx/
-│   ├── fragments/
-│   │   ├── setup/
-│   │   │   ├── auth-login.jmx
-│   │   │   └── token-refresh.jmx
+│   ├── fragments/                          # ← 不可运行（Test Fragment，无 Thread Group）
+│   │   ├── setup/                          # 供 setUp Thread Group 引用
+│   │   │   └── refdata-preflight.jmx       # 参考数据解析 + 前置校验 + 快照归档
 │   │   ├── steps/                          # 被 2+ journey 复用
 │   │   │   ├── refdata-load.jmx            # counterparties + portfolios（并行）
 │   │   │   ├── build-trade-payload.jmx
@@ -574,7 +600,7 @@ trade-performance/
 │   │   ├── generic-sampler.jmx             # 数据驱动核心
 │   │   └── teardown.jmx
 │   │
-│   ├── api/                                # 单接口基线
+│   ├── api/                                # ← 可运行（单接口基线）
 │   │   ├── g00-generic.jmx                 # 17 个接口，Sweep / Focus 双模式
 │   │   ├── p01-trade-list.jmx              # 数据量分档 × 查询矩阵
 │   │   ├── p02-trade-write.jmx             # create / update
@@ -586,7 +612,7 @@ trade-performance/
 │   │   ├── b02-cashflow-batch.jmx
 │   │   └── g99-all-api-smoke.jmx           # 33 个各打一次，1 VU，CI 每晚
 │   │
-│   ├── journeys/
+│   ├── journeys/                           # ← 不可运行（Test Fragment，无 Thread Group）
 │   │   ├── j01-create-trade.jmx
 │   │   ├── j02-trade-query.jmx
 │   │   ├── j03-maker-checker.jmx           # 生产者—消费者
@@ -594,9 +620,9 @@ trade-performance/
 │   │   ├── j05-partial-novation.jmx
 │   │   └── j06-background-poll.jmx         # unread-count 轮询
 │   │
-│   ├── scenarios/                          # 薄壳 × 6
+│   ├── scenarios/                          # ← 可运行（薄壳：Thread Group + Include）
 │   │
-│   ├── suites/
+│   ├── suites/                             # ← 可运行（多 Thread Group）
 │   │   ├── m01-mixed-load.jmx
 │   │   ├── m02-degrade-uc.jmx              # 优先级最高
 │   │   ├── m03-degrade-risk-engine.jmx
@@ -604,15 +630,18 @@ trade-performance/
 │   │   ├── m05-dat-cpu-contention.jmx
 │   │   └── m06-batch-under-online-load.jmx
 │   │
-│   └── ops/
+│   └── ops/                                # ← 可运行
 │       ├── z01-seed-pools.jmx
 │       └── z99-cleanup.jmx
 │
 ├── groovy/                                 # 脚本外置，不内联
-│   ├── build-payload.groovy
-│   ├── risk-result-router.groovy
-│   ├── token-refresh.groovy
-│   └── lib/TradeUtils.groovy
+│   ├── resolve-identity.groovy             # X-User-Id（无 login/token）
+│   ├── build-refdata-pools.groovy
+│   ├── select-refdata.groovy
+│   ├── build-trade-payload.groovy
+│   ├── assert-create-response.groovy       # 三类错误分离
+│   ├── preflight-policy.groovy
+│   └── risk-result-router.groovy
 │
 ├── config/{dev,sit,perf}.properties        # 维度二：环境
 ├── profiles/                               # 维度三：负载模型
@@ -797,19 +826,32 @@ tearDown 中删除整个目录。v1 每迭代新建文件，8 小时 Soak 会产
 
 > **注意**：Create 自行解析原始 .dat，不需要合并 dat-to-json 的响应。该假设必须用 HAR 中的真实 create 请求体核实后才能定稿。
 
-### 8.4 Token 管理
+### 8.4 身份模型（无 login / 无 token）
 
-单次登录在 2~8 小时 Soak 中必然遇到 token 过期，导致全场 401 且前期数据一并作废。
+**本系统没有登录接口，也没有 token。所有 API 的权限由 `X-User-Id` 请求头决定。**
 
-```text
-Thread Group - Token Refresh
-  Threads: 1, Loop: Forever
-  ├── Constant Timer: {tokenTTL × 0.8}
-  ├── POST /auth/token (refresh)
-  └── JSR223 PostProcessor: props.put('accessToken', newToken)
-```
+这消掉了原方案里的整块内容：不需要 setUp 登录、不需要后台刷新 Thread Group、
+不需要 401 兜底重试、Soak 中也不存在 token 过期导致全场作废的风险。
+`fragments/setup/` 里因此**没有** `auth-login.jmx` 与 `token-refresh.jmx`。
 
-业务 Thread Group 的 Header Manager 引用 `${__P(accessToken)}`。另加 401 兜底：检出 401 时触发一次同步刷新。
+**但"身份"这个维度并没有消失。** 若服务端按 maker 做过滤、计数或加锁，
+20 个线程共用一个 `X-User-Id` 与分散到 20 个用户，压出来的数会显著不同。所以仍需参数化：
+
+| 属性 | 取值 | 用途 |
+|---|---|---|
+| `userMode` | `pool`（默认） | 从 `data/shared/accounts.csv` 轮换 |
+| | `fixed` | 全部线程共用 `fixedUserId`，测 per-user 锁/计数器竞争 |
+
+与 `portfolioSelect=roundRobin\|fixed` 完全同构——同一份脚本靠属性切换即可跑两个相反的对照实验。
+
+**身份解析必须挂在 Test Plan 层**（`groovy/resolve-identity.groovy`），不能挂在 create 上：
+E2E journey 里 refdata 查询跑在 create 之前，挂在 create 上会导致同一次迭代内出现两个身份，
+等于测了一个不存在的场景。
+
+> **待确认**：真实 curl 同时带了 `X-User-ID: anonymous` 和 `X-User-Id: maker@sc.com`。
+> 按 RFC 7230 §3.2 header 名大小写不敏感，两者是**同一个 header**。
+> 工程里暂时原样保留以复现"已知可用"的请求，但首次 smoke 必须确认实际发出去的是什么
+> ——JMeter 底层 HttpClient 可能合并或覆盖。见 `trade-performance/README.md`「第一次跑之前」#2。
 
 ### 8.5 结果打标
 
@@ -1062,7 +1104,7 @@ python3 scripts/assert-sla.py results/.../*.jtl config/sla.yaml
 | 5 | Build Payload 用 JSR223 Sampler | 虚假接口进 JTL，虚增 TPS | 改为 PreProcessor（8.3） |
 | 6 | 全部固定线程数（闭环） | 系统变慢时自动降压，假容量 | 容量测试改用到达率驱动（9.1） |
 | 7 | 无自动化通过/失败判定 | 结论依赖人工看报告 | Taurus passfail 或 assert-sla.py（10.4） |
-| 8 | 单次登录、单一账号 | Soak 中 token 过期使数据作废 | 后台刷新 Thread Group + 多账号（8.4、8.2） |
+| 8 | 身份未参数化 | 无 login/token，但 `X-User-Id` 集中到单一账号会掩盖 per-user 锁竞争 | `userMode=pool\|fixed` + accounts.csv（8.4） |
 | 9 | payload 是否需合并 dat 解析结果未确认 | Risk 耗时可能被低估 | 列入前置确认清单（第 16 章） |
 | 10 | 未考虑分布式线程号碰撞 | 多压力机时 tradeReference 重复 | 引用格式加压力机标识（8.2） |
 | 11 | 页面初始化请求串行 | 高估页面加载事务耗时 | Parallel Controller 按 HAR 还原（5.3） |

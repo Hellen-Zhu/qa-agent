@@ -96,11 +96,13 @@ data/dat/
 `data/create-trade/create-trade-data.csv`
 
 ```csv
-caseId,portfolioId,counterpartyFmId,counterpartyName,datFile,productType,datSize,notionalCurrency
-C001,546a832e-7602-327d-b2cf-9cfa6085c9bb,400954563,PRINTINGINT10LTD*HKG,dat/fx_trf/small/01.dat,FX_TRF,small,
-C002,546a832e-7602-327d-b2cf-9cfa6085c9bb,400954563,PRINTINGINT10LTD*HKG,dat/fx_trf/small/02.dat,FX_TRF,small,
-C003,<perf_portfolio_2>,<cp_fmid_2>,<cp_name_2>,dat/fx_trf/medium/01.dat,FX_TRF,medium,
+caseId,datFile,productType,datSize,notionalCurrency
+C001,dat/fx_trf/small/01.dat,FX_TRF,small,
+C002,dat/fx_trf/small/02.dat,FX_TRF,small,
+C003,dat/fx_trf/medium/01.dat,FX_TRF,medium,
 ```
+
+**CSV 里不再包含 portfolioId / counterpartyFmId / counterpartyName**——这三个字段是从第三方 sync 进我们数据库的参考数据，属于**不受测试控制的外部状态**，硬编码会失效。改由 setUp Thread Group 在运行时解析，见 §2.4。CSV 只保留测试自身拥有的维度（用例标识、.dat 文件、产品类型、规格）。
 
 **注意 `notionalCurrency` 放在最后一列且为空**：JMeter 的 CSV Data Set 在行尾缺字段时行为不直观。稳妥做法是**把可空字段放最后并保留结尾逗号**，或改用哨兵值（如 `_EMPTY_`）在 Groovy 里转换。本方案采用前者，并在 Smoke 阶段用 Debug Sampler 确认变量确实为空串。
 
@@ -108,17 +110,155 @@ C003,<perf_portfolio_2>,<cp_fmid_2>,<cp_name_2>,dat/fx_trf/medium/01.dat,FX_TRF,
 
 ```text
 Filename:        ./data/create-trade/create-trade-data.csv
-Variable Names:  caseId,portfolioId,counterpartyFmId,counterpartyName,datFile,productType,datSize,notionalCurrency
+Variable Names:  caseId,datFile,productType,datSize,notionalCurrency
 Recycle on EOF:      True
 Stop thread on EOF:  False
 Sharing mode:        All threads
 ```
 
-### 2.4 环境数据准备
+### 2.4 参考数据（Portfolio / Counterparty）获取策略
+
+#### 2.4.1 为什么不能硬编码
+
+Counterparty 与 Portfolio 由 **sync batch job 从第三方同步进我们的数据库**，再经 API 暴露。这意味着它们是**外部拥有、随时可变**的状态，与测试自己 create 出来的 trade 有本质区别。固定值的失效模式：
+
+| 失效场景 | 现象 | 危险之处 |
+|---|---|---|
+| 第三方将 counterparty 置为 inactive / closed，sync 同步过来 | create 返回业务拒绝 | **HTTP 200 + 业务失败**。只看状态码的断言会报"0 错误率"，实际一条都没建成 |
+| 第三方改名（如 `PRINTINGINT10LTD*HKG` 更名） | 若后端校验 name 与 fmId 一致性则全量拒绝 | 静默失效，改名频率高于直觉 |
+| 环境 DB refresh / 从生产 copy 重建 | portfolioId（UUID）全部失效 | 非生产环境常规操作，CSV 直接报废 |
+| 压测中途 sync job 触发 | 数据中途变化 + DB 承受额外写负载 | **同时污染数据与基线**，结果不可信（见 PT-CREATE-015） |
+
+前三种的共同后果是：**性能问题与数据问题混在一起，无法归因**。压测报告上的"错误率 12%"到底是系统扛不住，还是 counterparty 昨天被下线了？
+
+#### 2.4.2 三种绑定时机的取舍
+
+| 方案 | 新鲜度 | 测量纯净度 | 可复现性 | 结论 |
+|---|---|---|---|---|
+| A. 硬编码 CSV | ✗ 会过期 | ✓ | ✓ | 单独用不可接受 |
+| B. 压测循环内实时查询 | ✓ | ✗ **refdata 耗时混入 create 测量值，且给 DB 加额外负载** | ✗ | 单接口容量测试禁用 |
+| C. **setUp Thread Group 解析一次 + 归档快照** | ✓ | ✓ 不在任何测量窗口内 | ✓ 快照可追溯 | **采用** |
+
+方案 B 只在**前端 E2E 链路场景**中成立——因为真实前端确实会先查 refdata 再提交，那时 refdata 调用是被测链路的一部分（见 v2 方案 `steps/refdata-load.jmx`）。**单接口 create 容量测试必须用 C**。
+
+#### 2.4.3 走 API 还是直连 DB
+
+**默认走 API。**
+
+1. **API 才是契约。** DB 里存在 ≠ create 能用。权限过滤、软删除、状态机、租户隔离都可能让 DB 有而 API 无；而 create 的校验走应用层，与查询 API 同源。直连 DB 会取到"DB 合法但业务不可用"的数据。
+2. **依赖成本。** JMeter 连 DB 需要 JDBC Connection Configuration + 驱动 jar + 压测机到 DB 的网络与账号权限，类生产环境通常不批。
+3. **DB schema 比 API 契约变得勤**，维护负担落在测试侧。
+
+**直连 DB 才划算的场景**（值得单独申请只读权限）：需要按 API 提供不了的条件批量筛选，例如"取 200 个 `status=ACTIVE` 且当前无 pending trade 占用的 portfolio"。API 无此过滤条件时，拉全量分页再本地过滤代价过高。此时用 JDBC Request，且**仅在 setUp 阶段执行**。
+
+#### 2.4.4 setUp Thread Group 实现
+
+```text
+setUp Thread Group (1 thread, 1 loop)
+├── HTTP Request: GET /api/v1/refdata/portfolios?status=ACTIVE
+│   ├── JSON Extractor      $.data[*].id              → portfolioIds (Match No. -1)
+│   └── Response Assertion   HTTP 200
+├── HTTP Request: GET /api/v1/refdata/counterparties?status=ACTIVE
+│   ├── JSON Extractor      $.data[*].fmId            → cpFmIds     (Match No. -1)
+│   ├── JSON Extractor      $.data[*].name            → cpNames     (Match No. -1)
+│   └── Response Assertion   HTTP 200
+├── JSR223 PostProcessor: 构建参考数据池 → props
+├── HTTP Request: POST /api/v1/trades/create   ← 用池中第一条做真实冒烟
+│   └── JSR223 Assertion: 校验业务成功，失败则按策略处理
+└── JSR223 Sampler: 快照归档 → results/${runId}/resolved-refdata.csv
+```
+
+**构建池的 PostProcessor：**
+
+```groovy
+import groovy.json.JsonOutput
+
+int n = (vars.get('portfolioIds_matchNr') ?: '0') as int
+int m = (vars.get('cpFmIds_matchNr') ?: '0') as int
+
+def portfolios = (1..n).collect { vars.get("portfolioIds_${it}") }
+def counterparties = (1..m).collect {
+    [ fmId: vars.get("cpFmIds_${it}"), name: vars.get("cpNames_${it}") ]
+}
+
+props.put('perfPortfolios',    JsonOutput.toJson(portfolios))
+props.put('perfCounterparties', JsonOutput.toJson(counterparties))
+log.info("refdata resolved: ${n} portfolios, ${m} counterparties")
+```
+
+**主线程取用**（在 §5 的 payload 构建 PreProcessor 里，替换原先的 `vars.get('portfolioId')`）：
+
+```groovy
+import groovy.json.JsonSlurper
+
+def portfolios = new JsonSlurper().parseText(props.getProperty('perfPortfolios'))
+def cps        = new JsonSlurper().parseText(props.getProperty('perfCounterparties'))
+
+// portfolioSelect=roundRobin（默认，分散）| fixed（PT-CREATE-014 集中竞争）
+int idx = props.getProperty('portfolioSelect') == 'fixed'
+        ? 0
+        : ctx.getThreadNum() % portfolios.size()
+
+def cp = cps[ctx.getThreadNum() % cps.size()]
+vars.put('portfolioId',      portfolios[idx])
+vars.put('counterpartyFmId', cp.fmId)
+vars.put('counterpartyName', cp.name)
+```
+
+把 portfolio 选择策略做成 property 而非硬写，是因为 **PT-CREATE-014（同一 Portfolio 并发竞争）需要强制所有线程打同一个 portfolio**，其余用例需要分散。一个 `-JportfolioSelect=fixed` 就能切换，不必维护两份脚本。
+
+#### 2.4.5 前置校验：把数据失效变成开跑前的明确失败
+
+setUp 里那次真实 create 冒烟是关键——它把"数据失效"从**压测中期的噪音**变成**压测开始前的明确失败**。没有它，你会跑满 30 分钟才发现 counterparty 上周被停用了。
+
+校验必须覆盖三层，逐层收紧：
+
+1. **池非空** — `portfolios.size() > 0 && cps.size() > 0`，否则环境根本没数据
+2. **HTTP 层** — refdata 查询返回 200
+3. **业务层** — 用池中数据真实建一笔 trade，断言 `code == 200 && status == 'PENDING APPROVAL'`
+
+只有第 3 层能发现"数据存在但业务上不可用"，也正是硬编码最常踩的坑。
+
+**待实现 — `groovy/preflight-policy.groovy`**（校验失败时的处置策略，见 §7 确认项 11）：
+
+```groovy
+import groovy.json.JsonSlurper
+
+// 上下文可用：
+//   prev                     ← preflight create 的 SampleResult
+//   props.getProperty('perfPortfolios')     JSON 数组
+//   props.getProperty('perfCounterparties') JSON 数组
+// 可用动作：
+//   AssertionResult.setFailureMessage(msg) + setFailure(true)   → 标记失败，不阻断
+//   ctx.getEngine().stopTest()                                   → 优雅停止整轮
+//   ctx.getEngine().stopTestNow()                                → 立即停止
+//   props.put('perfPortfolios', ...)                             → 剔除失效条目后回写池
+
+def r = new JsonSlurper().parseText(prev.getResponseDataAsString())
+boolean dataUsable = r.code == 200 && r.status == 'PENDING APPROVAL'
+
+if (!dataUsable) {
+    // TODO: 在此实现处置策略
+    // (a) 中止    — 数据不可用则整轮无意义，立刻停，避免产出误导性报告
+    // (b) 剔除    — 移除失效条目，池中剩余 >= 阈值则继续，并在报告中标注降级
+    // (c) 仅告警  — 记录 log.warn 后继续，把判断留给结果分析阶段
+}
+```
+
+三种策略的取舍不是技术问题，而是**"阻塞排期"与"产出不可信结论"哪个代价更高**：
+
+- 共享 dev 环境数据波动频繁，(a) 可能天天把测试卡在开跑前，团队很快会开始绕过校验——那还不如不做
+- 正式基线测试要签 SLA，(b)(c) 让一份掺了脏数据的报告流到下游，比不跑更糟
+- (b) 的隐含前提是**池要足够大**才有剔除余地；若环境只有 3 个 portfolio，剔除一个就已经改变了 PT-CREATE-014 的对照条件
+
+如果 dev 与正式基线用同一套脚本，合理做法是把策略也做成 property（`-JpreflightPolicy=abort|prune|warn`），而非二选一。
+
+#### 2.4.6 环境数据准备
 
 - **专用 PERF Portfolio**（至少 3~5 个），避免污染他人功能测试数据，也便于清理
-- **专用 Counterparty**（或确认可复用现有的）
-- portfolioId / counterpartyFmId 通过 `GET /refdata/portfolios`、`GET /refdata/counterparties` 预先查询并写入 CSV，**不在压测过程中查询**（单接口测试要纯净）
+- **专用 Counterparty**——但注意：**如果 counterparty 完全由第三方 sync 而来，我们可能无法"创建"专用条目**，只能从既有 ACTIVE 集合中挑选。需确认是否支持本地新增/标记（见 §7 确认项 8）
+- 快照归档 `results/${runId}/resolved-refdata.csv`：记录本次运行实际使用的 portfolio / counterparty，使历史压测结果可追溯到具体数据集
+- **确认 sync batch job 的调度窗口**，压测排期避开；或按 PT-CREATE-015 专门测量其干扰
 
 ---
 
@@ -142,6 +282,7 @@ Sharing mode:        All threads
 | PT-CREATE-012 | 突增 Spike | Spike | 0→3~5 倍→回落 | 10 min | P1 |
 | PT-CREATE-013 | risk-engine 降级对照 | 隔离 | create 恒定 + 干扰 | 30 min | **P0** |
 | PT-CREATE-014 | 同一 Portfolio 并发竞争 | 竞争 | 20 VU 全打同一 portfolio | 10 min | P1 |
+| PT-CREATE-015 | RefData Sync Job 并发干扰 | 竞争 | 60% 容量稳态 + 同步作业窗口 | 覆盖作业完整周期 | P1 |
 
 ---
 
@@ -291,6 +432,22 @@ Sharing mode:        All threads
 | 负载 | 20 线程全部使用**同一个** portfolioId，10 分钟；与"20 线程分散到 5 个 portfolio"对比 |
 | 通过标准 | 两者 P95 差异 < 20% |
 | 失败信号 | 集中打同一 portfolio 时显著变慢 → 存在 portfolio 级锁或计数器竞争，生产中大客户集中交易时会出问题 |
+| 配置 | `-JportfolioSelect=fixed`（见 §2.4.4），无需单独脚本 |
+
+#### PT-CREATE-015 RefData Sync Job 并发干扰
+
+| 项 | 内容 |
+|---|---|
+| 目的 | 测量 counterparty / portfolio 同步批处理作业运行期间，create 的性能退化幅度 |
+| 背景 | refdata 由 sync batch job 从第三方拉取写入我们的数据库。该作业与 create 争抢**同一 DB 实例**的连接池、IO 与锁，且可能持有长事务。这是生产中周期性必然发生的最坏情况，却不会出现在任何常规压测里 |
+| 负载 | 稳态负载（取 PT-CREATE-003 的 60% 容量点），持续跑；中途手动/定时触发一次 sync job，覆盖作业的完整生命周期 |
+| 对比基线 | 同等负载下无 sync job 运行的 PT-CREATE-004 稳定性测试结果 |
+| 观察 | create P95/P99 在作业窗口内的抬升；DB 连接池等待数；慢查询；**作业期间是否出现 refdata 短暂不可读**（若 sync 采用 truncate-reload 而非 upsert，窗口内可能查不到数据） |
+| 通过标准 | 作业窗口内 create P95 退化 < 30%，错误率仍为 0 |
+| 失败信号 | 退化显著或出现超时 → 需要资源隔离（独立只读副本 / 作业限流 / 错峰调度），或明确"sync 窗口内不承诺 SLA" |
+| 前置确认 | sync job 的调度频率、单次时长、写入模式（upsert vs truncate-reload）、是否与 API 共用 DB 实例——见 §7 确认项 12 |
+
+> 这个用例的价值在于它测的是**你控制不了的东西**。前 14 个用例都在测系统对请求负载的响应，只有它测系统对**并发后台作业**的响应。同类风险还包括对账作业、报表生成、EOD 批处理——如果这些存在，应按同一模式扩展。
 
 ---
 
@@ -304,6 +461,14 @@ Test Plan  [api/p02-trade-create.jmx]
 ├── HTTP Request Defaults
 ├── HTTP Header Manager
 ├── CSV Data Set Config
+│
+├── setUp Thread Group  ［1 / 1 / 1］                 ← 参考数据解析与前置校验，见 §2.4.4
+│   ├── HTTP Request  "refdata_portfolios"
+│   ├── HTTP Request  "refdata_counterparties"
+│   ├── JSR223 PostProcessor  "build refdata pools"   → groovy/build-refdata-pools.groovy
+│   ├── HTTP Request  "preflight_create"              ← 真实建一笔，验证数据业务可用
+│   │   └── JSR223 Assertion  "preflight policy"      → groovy/preflight-policy.groovy 【待实现】
+│   └── JSR223 Sampler  "archive refdata snapshot"     → results/${runId}/resolved-refdata.csv
 │
 ├── Thread Group  ［${__P(threads,1)} / ${__P(rampUp,1)} / ${__P(duration,60)}］
 │   └── Transaction Controller  "TX_Create_Trade"    ［不勾选 Include timer］
@@ -428,8 +593,22 @@ JMeter 的两种模式对比：
 
 ```groovy
 import groovy.json.JsonOutput
+import groovy.json.JsonSlurper
 
-// payload 极简：仅 4 个字段，业务数据由 .dat 提供
+// --- 1. 从 setUp 解析的参考数据池中选取（见 §2.4.4）---
+def portfolios = new JsonSlurper().parseText(props.getProperty('perfPortfolios'))
+def cps        = new JsonSlurper().parseText(props.getProperty('perfCounterparties'))
+
+int idx = props.getProperty('portfolioSelect') == 'fixed'
+        ? 0
+        : ctx.getThreadNum() % portfolios.size()
+def cp = cps[ctx.getThreadNum() % cps.size()]
+
+vars.put('portfolioId',      portfolios[idx])
+vars.put('counterpartyFmId', cp.fmId)
+vars.put('counterpartyName', cp.name)
+
+// --- 2. 构建 payload：仅 4 个字段，业务数据由 .dat 提供 ---
 def trade = [
     basic: [
         portfolioId     : vars.get('portfolioId'),
@@ -441,6 +620,10 @@ def trade = [
 
 vars.put('tradePayload', JsonOutput.toJson(trade))
 ```
+
+portfolio / counterparty 的选取合并在同一个 PreProcessor 里，而不是拆成独立元件——它们同属"构造本次请求的输入"，拆开只会增加元件树噪音，且引入执行顺序依赖。
+
+`vars.put` 三个字段虽然随后就被读走，但**保留它们是必要的**：`sample_variables=caseId,tradeId,taskId,datFile,productType,datSize` 之外，若要在结果分析时按 portfolio 归因（PT-CREATE-014 需要），只需把 `portfolioId` 加进 `sample_variables` 即可直接落到 jtl 列里。
 
 **相比 v2 方案的简化**：`trade` 是表单字段而非文件 part，因此**不需要**写临时文件、不需要每线程文件管理、不需要 tearDown 清理目录。整套文件 I/O 机制删除。
 
@@ -663,6 +846,10 @@ dev 环境（HTTP、9089、无鉴权）与 perf/生产环境可能差异较大�
 | 5 | create 的 SLA 目标（P95 / P99 / 错误率） | PT-005 的通过判定 | 业务 |
 | 6 | API Service 对下游是否使用独立线程池/连接池 | PT-013 的预期结论 | 开发 |
 | 7 | dev 环境可承受的压测数据量与压测窗口 | 全部 | 环境负责人 |
-| 8 | 专用 PERF Portfolio / Counterparty 的创建 | 全部 | 业务/开发 |
+| 8 | 专用 PERF Portfolio / Counterparty 能否创建；counterparty 若纯由第三方 sync 而来，是否只能从既有 ACTIVE 集合中挑选 | §2.4.6 数据准备方式 | 业务/开发 |
 | 9 | payload 是否接受额外字段（如自定义 reference） | 清理策略可优化 | 开发 |
 | 10 | TaskId 能否改为结构化字段返回 | 提取健壮性 | 开发（improvement） |
+| 11 | **setUp 前置校验失败时的处置策略**：中止 / 剔除后继续 / 仅告警 | §2.4.5 待实现 | 测试团队决策 |
+| 12 | **RefData sync job 的调度频率、单次时长、写入模式（upsert vs truncate-reload）、是否与 API 共用 DB 实例** | PT-CREATE-015 可行性与压测排期 | 开发/运维 |
+| 13 | 后端是否校验 `counterpartyName` 与 `counterpartyFmId` 的一致性 | 决定 name 是否必须与 fmId 同源取值 | 开发 |
+| 14 | `GET /refdata/portfolios`、`GET /refdata/counterparties` 是否支持按 status 过滤与分页上限 | setUp 池构建方式（API vs JDBC） | 开发 |

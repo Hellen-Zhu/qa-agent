@@ -1,0 +1,6 @@
+caseId,datFile,productType,datSize,notionalCurrency
+C001,small/fx_trf_01.dat,FX_TRF,small,
+C002,small/fx_trf_02.dat,FX_TRF,small,
+C003,medium/fx_trf_01.dat,FX_TRF,medium,
+C004,medium/fx_trf_02.dat,FX_TRF,medium,
+C005,large/fx_trf_01.dat,FX_TRF,large,

@@ -1,0 +1,188 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  scenarios/s01-create-trade-e2e.jmx
+
+  【层级】scenario —— **可运行**。这是一个薄壳：Thread Group + Include，不含任何业务逻辑。
+  【测什么】前端 create-trade 完整链路：拉下拉框 → 提交 → 查看详情
+  【怎么跑】./scripts/run.sh s01-create-trade-e2e dev smoke
+
+  ── 为什么 scenario 必须是薄壳 ──
+  含 Thread Group 的 jmx 无法被 Include Controller 引用（JMeter 要求被引用文件用
+  Test Fragment）。业务逻辑一旦写进这里，就再也无法被别的场景复用。
+  所以这一层只负责三件事：施加负载、连上 journey、提供环境配置。
+
+  ── 三维正交 ──
+  维度一 场景：本文件
+  维度二 环境：-q config/{dev,sit,perf}.properties
+  维度三 负载：-q profiles/{smoke,baseline,load,stress,soak}.properties
+  线程数/时长/ramp-up 一律不写死，全部走 ${__P()}。
+-->
+<jmeterTestPlan version="1.2" properties="5.0" jmeter="5.6.3">
+  <hashTree>
+    <TestPlan guiclass="TestPlanGui" testclass="TestPlan" testname="s01-create-trade-e2e" enabled="true">
+      <stringProp name="TestPlan.comments">Runnable scenario. Thin shell — logic lives in journeys/ and fragments/.</stringProp>
+      <boolProp name="TestPlan.functional_mode">false</boolProp>
+      <boolProp name="TestPlan.serialize_threadgroups">false</boolProp>
+      <elementProp name="TestPlan.user_defined_variables" elementType="Arguments" guiclass="ArgumentsPanel" testclass="Arguments" testname="User Defined Variables" enabled="true">
+        <collectionProp name="Arguments.arguments"/>
+      </elementProp>
+      <stringProp name="TestPlan.user_define_classpath"></stringProp>
+    </TestPlan>
+    <hashTree>
+
+      <!-- ── 变量：把属性收敛成变量，fragment 只认变量不认属性 ────────── -->
+      <Arguments guiclass="ArgumentsPanel" testclass="Arguments" testname="UDV" enabled="true">
+        <collectionProp name="Arguments.arguments">
+          <elementProp name="basePath" elementType="Argument">
+            <stringProp name="Argument.name">basePath</stringProp>
+            <stringProp name="Argument.value">${__P(basePath,/api/v1)}</stringProp>
+            <stringProp name="Argument.metadata">=</stringProp>
+          </elementProp>
+          <!-- 绝对路径。相对路径在 JMeter 里按"jmx 文件所在目录"解析，
+               本工程的 jmx 分散在 4 层目录下，相对路径必然对不上。 -->
+          <elementProp name="datDir" elementType="Argument">
+            <stringProp name="Argument.name">datDir</stringProp>
+            <stringProp name="Argument.value">${__P(baseDir,.)}/data/dat</stringProp>
+            <stringProp name="Argument.metadata">=</stringProp>
+          </elementProp>
+          <elementProp name="refdataPageSize" elementType="Argument">
+            <stringProp name="Argument.name">refdataPageSize</stringProp>
+            <stringProp name="Argument.value">${__P(refdataPageSize,200)}</stringProp>
+            <stringProp name="Argument.metadata">=</stringProp>
+          </elementProp>
+        </collectionProp>
+      </Arguments>
+      <hashTree/>
+
+      <ConfigTestElement guiclass="HttpDefaultsGui" testclass="ConfigTestElement" testname="HTTP Request Defaults" enabled="true">
+        <elementProp name="HTTPsampler.Arguments" elementType="Arguments" guiclass="HTTPArgumentsPanel" testclass="Arguments" testname="User Defined Variables" enabled="true">
+          <collectionProp name="Arguments.arguments"/>
+        </elementProp>
+        <stringProp name="HTTPSampler.domain">${__P(host,localhost)}</stringProp>
+        <stringProp name="HTTPSampler.port">${__P(port,8080)}</stringProp>
+        <stringProp name="HTTPSampler.protocol">${__P(protocol,http)}</stringProp>
+        <stringProp name="HTTPSampler.connect_timeout">${__P(connectTimeout,5000)}</stringProp>
+        <stringProp name="HTTPSampler.response_timeout">${__P(responseTimeout,60000)}</stringProp>
+        <stringProp name="HTTPSampler.contentEncoding">UTF-8</stringProp>
+      </ConfigTestElement>
+      <hashTree/>
+
+      <!-- ══ 身份 ══════════════════════════════════════════════════════
+           本项目无 login、无 token，权限完全由 X-User-Id 决定。
+
+           ⚠ 绝不要在这里加 Content-Type。
+           create 是 multipart，Content-Type 必须由 JMeter 自己生成（含 boundary）。
+           手写的值不带 boundary 且会覆盖生成值 → 服务端无法分段解析。
+
+           ⚠ X-User-ID 与 X-User-Id 仅大小写不同，按 RFC 7230 §3.2 是**同一个 header**。
+           真实 curl 两个都发了。这里保留原样以复现已知可用的请求，但
+           **首次 smoke 必须确认实际发出去的是什么** —— 见 README「第一次跑之前」#2。
+      ═══════════════════════════════════════════════════════════════ -->
+      <HeaderManager guiclass="HeaderPanel" testclass="HeaderManager" testname="HTTP Header Manager" enabled="true">
+        <collectionProp name="HeaderManager.headers">
+          <elementProp name="" elementType="Header">
+            <stringProp name="Header.name">accept</stringProp>
+            <stringProp name="Header.value">*/*</stringProp>
+          </elementProp>
+          <elementProp name="" elementType="Header">
+            <stringProp name="Header.name">X-User-ID</stringProp>
+            <stringProp name="Header.value">${__P(legacyUserId,anonymous)}</stringProp>
+          </elementProp>
+          <elementProp name="" elementType="Header">
+            <stringProp name="Header.name">X-User-Id</stringProp>
+            <stringProp name="Header.value">${effectiveUserId}</stringProp>
+          </elementProp>
+          <elementProp name="" elementType="Header">
+            <stringProp name="Header.name">X-Dyn-Run</stringProp>
+            <stringProp name="Header.value">${__P(dynRun,false)}</stringProp>
+          </elementProp>
+        </collectionProp>
+      </HeaderManager>
+      <hashTree/>
+
+      <!-- 身份解析放在 Test Plan 层：作用域覆盖 setUp 与主线程组的**全部** sampler。
+           挂在 create 上会导致同一次迭代里 refdata 查询和 create 用不同身份。 -->
+      <JSR223PreProcessor guiclass="TestBeanGUI" testclass="JSR223PreProcessor" testname="resolve identity" enabled="true">
+        <stringProp name="cacheKey">true</stringProp>
+        <stringProp name="filename">${__P(baseDir,.)}/groovy/resolve-identity.groovy</stringProp>
+        <stringProp name="parameters"></stringProp>
+        <stringProp name="script"></stringProp>
+        <stringProp name="scriptLanguage">groovy</stringProp>
+      </JSR223PreProcessor>
+      <hashTree/>
+
+      <CSVDataSet guiclass="TestBeanGUI" testclass="CSVDataSet" testname="csv: accounts" enabled="true">
+        <stringProp name="filename">${__P(baseDir,.)}/data/shared/accounts.csv</stringProp>
+        <stringProp name="fileEncoding">UTF-8</stringProp>
+        <stringProp name="variableNames">userId,userRole,userNote</stringProp>
+        <boolProp name="ignoreFirstLine">true</boolProp>
+        <stringProp name="delimiter">,</stringProp>
+        <boolProp name="quotedData">false</boolProp>
+        <boolProp name="recycle">true</boolProp>
+        <boolProp name="stopThread">false</boolProp>
+        <stringProp name="shareMode">shareMode.all</stringProp>
+      </CSVDataSet>
+      <hashTree/>
+
+      <!-- notionalCurrency 是末列且为空。
+           保留结尾逗号，JMeter 才会把它解析成空串而不是缺列。 -->
+      <CSVDataSet guiclass="TestBeanGUI" testclass="CSVDataSet" testname="csv: create-trade data" enabled="true">
+        <stringProp name="filename">${__P(baseDir,.)}/data/create-trade/create-trade-data.csv</stringProp>
+        <stringProp name="fileEncoding">UTF-8</stringProp>
+        <stringProp name="variableNames">caseId,datFile,productType,datSize,notionalCurrency</stringProp>
+        <boolProp name="ignoreFirstLine">true</boolProp>
+        <stringProp name="delimiter">,</stringProp>
+        <boolProp name="quotedData">false</boolProp>
+        <boolProp name="recycle">true</boolProp>
+        <boolProp name="stopThread">false</boolProp>
+        <stringProp name="shareMode">shareMode.all</stringProp>
+      </CSVDataSet>
+      <hashTree/>
+
+      <!-- ══ setUp：参考数据解析 + 前置校验 ═══════════════════════════
+           跑一次，不计入测量。失败时按 preflightPolicy 处置。 -->
+      <SetupThreadGroup guiclass="SetupThreadGroupGui" testclass="SetupThreadGroup" testname="setUp: refdata + preflight" enabled="true">
+        <stringProp name="ThreadGroup.on_sample_error">continue</stringProp>
+        <elementProp name="ThreadGroup.main_controller" elementType="LoopController" guiclass="LoopControlPanel" testclass="LoopController" testname="Loop Controller" enabled="true">
+          <boolProp name="LoopController.continue_forever">false</boolProp>
+          <stringProp name="LoopController.loops">1</stringProp>
+        </elementProp>
+        <stringProp name="ThreadGroup.num_threads">1</stringProp>
+        <stringProp name="ThreadGroup.ramp_time">1</stringProp>
+        <boolProp name="ThreadGroup.scheduler">false</boolProp>
+        <stringProp name="ThreadGroup.duration"></stringProp>
+        <stringProp name="ThreadGroup.delay"></stringProp>
+      </SetupThreadGroup>
+      <hashTree>
+        <IncludeController guiclass="IncludeControllerGui" testclass="IncludeController" testname="inc: refdata-preflight" enabled="true">
+          <stringProp name="IncludeController.includepath">jmx/fragments/setup/refdata-preflight.jmx</stringProp>
+        </IncludeController>
+        <hashTree/>
+      </hashTree>
+
+      <!-- ══ 主负载 ═══════════════════════════════════════════════════
+           on_sample_error=continue 是刻意的：
+           单个 sample 失败不应终止线程，否则一次下游抖动就会让并发数悄悄下降，
+           后面的数据全部失真（"错误率 2%"其实是因为只剩一半线程在跑）。 -->
+      <ThreadGroup guiclass="ThreadGroupGui" testclass="ThreadGroup" testname="TG: create-trade E2E" enabled="true">
+        <stringProp name="ThreadGroup.on_sample_error">continue</stringProp>
+        <elementProp name="ThreadGroup.main_controller" elementType="LoopController" guiclass="LoopControlPanel" testclass="LoopController" testname="Loop Controller" enabled="true">
+          <boolProp name="LoopController.continue_forever">false</boolProp>
+          <stringProp name="LoopController.loops">${__P(loops,-1)}</stringProp>
+        </elementProp>
+        <stringProp name="ThreadGroup.num_threads">${__P(threads,1)}</stringProp>
+        <stringProp name="ThreadGroup.ramp_time">${__P(rampUp,1)}</stringProp>
+        <stringProp name="ThreadGroup.scheduler">${__P(scheduler,true)}</stringProp>
+        <stringProp name="ThreadGroup.duration">${__P(duration,60)}</stringProp>
+        <stringProp name="ThreadGroup.delay">0</stringProp>
+      </ThreadGroup>
+      <hashTree>
+        <IncludeController guiclass="IncludeControllerGui" testclass="IncludeController" testname="inc: j01-create-trade" enabled="true">
+          <stringProp name="IncludeController.includepath">jmx/journeys/j01-create-trade.jmx</stringProp>
+        </IncludeController>
+        <hashTree/>
+      </hashTree>
+
+    </hashTree>
+  </hashTree>
+</jmeterTestPlan>

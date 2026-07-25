@@ -73,6 +73,24 @@ def _segments_match(a: str, b: str) -> bool:
     return all(x == y or x.startswith("{") or y.startswith("{") for x, y in zip(sa, sb))
 
 
+def _suffix_match(template_path: str, concrete_path: str):
+    """用 curl 的完整路径去匹配 swagger 的相对路径。
+
+    Swagger 2.0 把 basePath 抽出来单独放,path 是 `/orders`;curl 的 URL
+    天然是完整的 `/api/orders`。段数不等,直接比会漏掉所有合并机会。
+    取 curl 路径的末 N 段来比(N = swagger 路径段数),任何前缀都能吸收掉。
+
+    返回对齐后的 curl 段列表,不匹配则返回 None。
+    """
+    tsegs = template_path.strip("/").split("/")
+    csegs = concrete_path.strip("/").split("/")
+    if len(csegs) < len(tsegs):
+        return None
+    tail = csegs[len(csegs) - len(tsegs):]
+    ok = all(t == c or t.startswith("{") for t, c in zip(tsegs, tail))
+    return tail if ok else None
+
+
 def reconcile(apis: dict) -> dict:
     """把 curl 抓到的真实数据,合并进对应的 swagger 模板化条目。
 
@@ -84,20 +102,25 @@ def reconcile(apis: dict) -> dict:
     curl_keys = [k for k, v in apis.items() if v.get("origin", "").startswith("curl")]
     for ck in curl_keys:
         centry = apis[ck]
-        targets = [
-            k for k, v in apis.items()
-            if k != ck and not v.get("origin", "").startswith("curl")
-            and v["method"] == centry["method"] and _segments_match(v["path"], centry["path"])
-        ]
-        if len(targets) != 1:
+        candidates = []
+        for k, v in apis.items():
+            if k == ck or v.get("origin", "").startswith("curl"):
+                continue
+            if v["method"] != centry["method"]:
+                continue
+            tail = _suffix_match(v["path"], centry["path"])
+            if tail is not None:
+                candidates.append((k, tail))
+        if len(candidates) != 1:
             continue  # 无对应模板 或 多个候选歧义 → 保留 curl 条目独立存在
-        target = apis[targets[0]]
+        target_key, tail = candidates[0]
+        target = apis[target_key]
 
-        examples = {}
-        for tseg, cseg in zip(target["path"].strip("/").split("/"),
-                              centry["path"].strip("/").split("/")):
-            if tseg.startswith("{") and tseg.endswith("}"):
-                examples[tseg[1:-1]] = cseg
+        examples = {
+            tseg[1:-1]: cseg
+            for tseg, cseg in zip(target["path"].strip("/").split("/"), tail)
+            if tseg.startswith("{") and tseg.endswith("}")
+        }
 
         target["headers"] = {**target.get("headers", {}), **centry.get("headers", {})}
         target["query"] = {**target.get("query", {}), **centry.get("query", {})}

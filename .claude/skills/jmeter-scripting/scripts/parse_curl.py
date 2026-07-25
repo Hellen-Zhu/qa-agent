@@ -145,16 +145,30 @@ def parse_one(command: str) -> dict | None:
     }
 
 
-def build_catalog(text: str) -> dict:
-    apis, base_hint = {}, ""
+# 抓包瞬间的凭据。留着会悄悄覆盖登录流程动态提取的 ${token},
+# 脚本一跑全 401 且极难排查——curl 里的 token 必然是过期的。
+VOLATILE_HEADERS = {"authorization", "cookie", "x-csrf-token", "x-xsrf-token"}
+
+
+def strip_volatile(entry: dict) -> list:
+    dropped = [k for k in entry["headers"] if k.lower() in VOLATILE_HEADERS]
+    for key in dropped:
+        del entry["headers"][key]
+    return dropped
+
+
+def build_catalog(text: str) -> tuple:
+    apis, base_hint, all_dropped = {}, "", set()
     for command in split_commands(text):
         entry = parse_one(command)
         if not entry:
             continue
         base_hint = base_hint or entry.pop("_base_url", "")
         entry.pop("_base_url", None)
+        all_dropped.update(strip_volatile(entry))
         apis[f"{entry['method']} {entry['path']}"] = entry
-    return {"version": 1, "spec_version": "curl", "base_url_hint": base_hint, "apis": apis}
+    catalog = {"version": 1, "spec_version": "curl", "base_url_hint": base_hint, "apis": apis}
+    return catalog, sorted(all_dropped)
 
 
 def main() -> int:
@@ -164,7 +178,7 @@ def main() -> int:
     args = ap.parse_args()
 
     text = sys.stdin.read() if args.source == "-" else open(args.source, encoding="utf-8").read()
-    catalog = build_catalog(text)
+    catalog, dropped = build_catalog(text)
 
     if not catalog["apis"]:
         print("未解析出任何 curl 命令。", file=sys.stderr)
@@ -177,6 +191,10 @@ def main() -> int:
     print(f"接口数   : {len(catalog['apis'])}  →  {args.output}")
     for key in catalog["apis"]:
         print(f"  {key}")
+    if dropped:
+        print(f"\n已丢弃抓包凭据请求头: {', '.join(dropped)}")
+        print("这些是抓包瞬间的值,必然过期。压测的鉴权走 scenario 里的")
+        print("login + auth_header,由每个虚拟用户动态登录获取。")
     return 0
 
 

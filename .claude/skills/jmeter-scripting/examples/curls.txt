@@ -1,0 +1,8 @@
+curl 'http://staging.example.com:8080/api/products/SKU-8871' \
+  -H 'Authorization: Bearer eyJhbGciOi' \
+  -H 'X-Tenant: shop-cn' \
+  --compressed
+
+curl -X POST 'http://staging.example.com:8080/api/orders' \
+  -H 'Content-Type: application/json' \
+  -d '{"productId":"SKU-8871","qty":2,"remark":"real","channel":"APP"}'

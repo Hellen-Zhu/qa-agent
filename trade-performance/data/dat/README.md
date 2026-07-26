@@ -24,19 +24,44 @@ invalid/   坏文件           —— 验证 fail-fast，不应把 CPU 浪费在
 **为什么 invalid 用例算性能测试**：一个不能 fail-fast 的解析器，在生产里被批量坏文件打中时会
 把 CPU 全部吃掉，拖垮同进程内所有接口——包括与它毫无业务关系的 refdata 查询。
 
+## 分档的真实含义：productType 决定体积，不是相反
+
+`small/ medium/ large/` 是按**体积**分的，但体积不是一个可以自由设定的变量——
+**它是产品结构的结果**。一笔 TARF 的文件之所以大，是因为它有 24 个定盘；
+现实中不存在"TARF × small"这种组合。
+
+所以采样时**按 productType 收集，让体积自然落到某一档**，不要反过来"为 large 档凑一个文件"。
+详见 [Workload Modeling §4.7](../../../docs/performance/workload-modeling.zh.md)。
+
+需要收集的是 [A26](../../../docs/performance/workload-modeling.zh.md) 的**三个代表产品**：
+
+| 代表 | 选取依据 | 用途 |
+|---|---|---|
+| **最便宜** | 定盘 1 次、bullet、封闭解定价 | 成本下界 |
+| **最贵** | 定盘最多、schedule 最长、路径依赖定价 | **成本上界 —— 决定并发目标与内存上限** |
+| **最常见** | 迁移数据集里占比最高的类型 | 常态验收 |
+
+按成本驱动因子分类而非枚举全部产品的理由，以及**成本信封**（新产品何时需要重测）见
+[Workload Modeling §4.7.2 / §4.7.5](../../../docs/performance/workload-modeling.zh.md)。
+
 ## 目前状态
 
 **空目录，需要业务/开发提供真实样本。** 未提供前只有 smoke 能跑（且会失败在文件不存在）。
 
-需要确认（README「待确认事项」#3）：
-- 支持哪些产品类型
-- 各类型的典型文件大小区间（决定 small/medium/large 的实际阈值）
-- 生产中的产品分布占比（决定混合场景里各类型的权重）
+需要确认：
+- **Composer 产品目录**（A24）：支持哪些 productType，各自定盘次数与 schedule 形态
+- **迁移数据集 / 前置系统的产品分布统计**（A25）——这一条把配比从"猜"变成"统计"，
+  是 [§4.7.6](../../../docs/performance/workload-modeling.zh.md) 里可靠性最高的数据来源
+- 各类型的典型文件大小区间（据此定 small/medium/large 的实际阈值）
 
 ## 命名与 CSV 的对应
 
 `data/create-trade/create-trade-data.csv` 的 `datFile` 列是**相对 `data/dat/` 的路径**，
 在 JMX 里拼成 `${datDir}/${datFile}`。新增文件后同步加 CSV 行即可，不必改脚本。
+
+CSV 的 `costTier` 与 `fixings` 两列是**结果标签**（进 jtl 的额外列，用于按成本维度切分），
+不影响请求内容。**当前它们是 `TBC`，`scripts/validate.py` 会因此报错**——
+这是刻意的：带着 TBC 能跑得通，但"P95 对定盘次数"这条成本曲线整列是 TBC，整轮数据白跑。
 
 ## 不要提交大文件
 

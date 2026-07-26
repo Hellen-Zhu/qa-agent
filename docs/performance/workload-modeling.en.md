@@ -183,7 +183,7 @@ Status flow: ⚠️ Unconfirmed → ✅ Confirmed (business sign-off) → 📊 C
 
 | ID | Assumption | v0 value | Basis | Status |
 |---|---|---|---|---|
-| A14 | `.dat` file size distribution | small 70% / medium 25% / large 5% | Matches the `trade-performance/data/dat/` tiers | ⚠️ Unconfirmed |
+| A14 | `.dat` file size distribution | small 70% / medium 25% / large 5% | **Not an independent assumption — derived from A24/A25 in §4.7**; size is a consequence of product structure | ⚠️ Pending §4.7 |
 | A15 | Large-tier file size | Assumed 20 MB | **Determines the peak-memory ceiling** | ⚠️ **Unconfirmed** |
 | A16 | Trade table size at 3 years | 250,000 rows | A5 × 250 trading days × 3 years + migrated book | ⚠️ Unconfirmed |
 | A17 | Default rows per blotter | 200 | **Determines UC gRPC fan-out multiplier** | ⚠️ **Unconfirmed** |
@@ -198,6 +198,139 @@ Status flow: ⚠️ Unconfirmed → ✅ Confirmed (business sign-off) → 📊 C
 | A21 | Peak coefficient (cutoff hour / period mean) | **4×** | Manual operation has a speed ceiling; no retail-style 20× pulse | ⚠️ Unconfirmed |
 | A22 | Month / quarter-end multiplier | 3× a normal day | Rolls, valuation, portfolio reassignment cluster | ⚠️ Unconfirmed |
 | A23 | Design safety factor | 2× peak | Team convention, growth headroom | ⚠️ Unconfirmed |
+
+### 4.7 productType — a cost multiplier, not a traffic weight
+
+**This is the dimension most easily modelled wrongly.**
+
+The conventional approach treats product type as a traffic weight in a mixed scenario ("70% browse
++ 30% order"). That is wrong for OREO: productType determines **how expensive one request is**, not
+how often it occurs.
+
+| productType determines | Path affected |
+|---|---|
+| `.dat` structure and size | Parse CPU / memory → `create`, `dat-to-json` |
+| Observation / fixing count (digital = 1, TARF / accumulator = 24+) | Risk computation complexity → `calculate-risk-for-new`, `risk-metrics` |
+| Cashflow schedule length | `generate-schedule`, `sync-cashflows-batch` |
+| Set of available lifecycle events (configured in Composer) | Which right-click events can be raised |
+| Field configuration (`live-fields`) | Payload size and validation cost |
+
+productType therefore belongs to the **Cost Profile sweep dimension** (Test Plan S-01). It appears
+as a mix weight only in the full-capacity mixed scenario (S-16) — and there it must be the
+**worst plausible mix**, for the reason in §4.7.3.
+
+#### 4.7.1 Assumption register
+
+| ID | Assumption | v0 value | Basis | Status |
+|---|---|---|---|---|
+| A24 | List and count of supported productTypes | **Awaiting the Composer product catalogue** | The catalogue is a complete enumeration, not a sample | ⚠️ **Unconfirmed** |
+| A25 | productType daily mix | Awaiting migration-dataset statistics | See the source ranking in §4.7.6 | ⚠️ **Unconfirmed** |
+| A26 | Cost representative products | 3: cheapest / **most expensive** / most common | Result of the §4.7.2 classification | ⚠️ Unconfirmed |
+| A27 | **Degenerate mix** (worst plausible case) | 5 consecutive bookings of the single most expensive type | §4.7.3 | ⚠️ Unconfirmed |
+| A28 | Cost envelope (ceiling per driver) | Awaiting S-01 measurement | §4.7.5 | ⚠️ **Must be measured** |
+
+> **A14 (`.dat` size distribution) is no longer an independent assumption** — it is **derived from
+> A24 / A25**. File size is a consequence of product structure, not a freely settable parameter.
+> "TARF × small" does not exist in reality; treating the two as orthogonal dimensions generates
+> test cases that cannot occur.
+
+#### 4.7.2 Classify by cost driver rather than enumerating products
+
+Product count grows without bound as the business expands, so testing them one by one does not
+scale. Instead, classify by the factors that **drive cost** and test only the boundaries:
+
+| Cost driver | Cheap end | Expensive end |
+|---|---|---|
+| `.dat` size / field count | Single-leg vanilla | Multi-leg, many fixings |
+| Fixing / observation count | 1 (digital) | 24+ (TARF, accumulator) |
+| Schedule length | Single bullet | Monthly amortising over 5 years |
+| Risk model | Closed form | Path-dependent / Monte Carlo |
+| Lifecycle event surface | Few events | Full novation / step-out set |
+
+Then pick **3 representative products** (A26): cheapest, most expensive, most common. This is
+**equivalence partitioning plus boundary values** from functional testing, applied to performance —
+the goal is to **bound** the cost space, not to sample it.
+
+#### 4.7.3 Why the degenerate mix must be tested, not the average mix
+
+**At 120 bookings/day, the "average mix" never actually occurs.**
+
+The law of large numbers needs sample size. A cutoff hour holds only 48 bookings (§5.2), and
+arrivals are **correlated** — one salesperson running a campaign on a product books five of the same
+type back to back. That is normal, not exceptional.
+
+This yields a counter-intuitive conclusion:
+
+> **High-throughput systems test the average mix; low-throughput systems must test the degenerate mix.**
+
+Consequence: negotiating with the business over "is it 30% or 40% TARF" is low-value work; testing
+"all the most expensive type, back to back" (A27) is high-value work. S-16 therefore needs a
+degenerate-mix sub-scenario.
+
+#### 4.7.4 The concurrency target is derived from measured duration, not assumed
+
+This section answers "how much concurrency should we apply". The answer is **single digits**, and
+it **cannot be computed until S-01 has measured per-request duration**.
+
+Cutoff-hour booking arrivals follow a Poisson process (λ = 0.0133/s, one every 75 s), so the number
+in system is Poisson(λ × duration) (M/G/∞):
+
+| Duration | Offered load | P(≥2 concurrent) | P(≥3) | P(≥4) | **Concurrency target** |
+|---:|---:|---:|---:|---:|:---:|
+| 5 s | 0.067 | 0.21% | 0.005% | — | **3** |
+| 10 s | 0.133 | 0.81% | 0.036% | — | **3** |
+| 15 s | 0.200 | 1.75% | 0.115% | 0.006% | **4** |
+| 20 s | 0.267 | 2.98% | 0.259% | 0.017% | **4** |
+| 30 s | 0.400 | 6.16% | 0.793% | 0.078% | **4** |
+| 45 s | 0.600 | **12.19%** | **2.31%** | 0.336% | **5** |
+| 60 s | 0.800 | 19.12% | 4.74% | 0.908% | **6** |
+| 90 s | 1.200 | 33.74% | 12.05% | 3.38% | **7** |
+
+**Selection rule**: the smallest k satisfying `P(≥k) < 0.1%`. At 0.1%, that state occurs roughly
+once per 1,000 bookings (≈ 8 trading days) — a reasonable bar for "rare but certain to happen".
+
+> **The A23 safety factor is not applied here.** The percentile already targets the tail; applying
+> it again would double-count.
+
+**Two conclusions:**
+
+1. **The concurrency target is 2–7, not 50.** Driving `create` with dozens or hundreds of threads
+   does not test anything OREO will encounter.
+2. **Note the feedback loop in the last three rows.** If the most expensive product takes 45 s per
+   request, P(≥2) jumps from 3% to 12% and 3-concurrent happens several times an hour.
+   **More overlap → more contention → slower → more overlap.** Congestion collapse remains possible
+   at an absurdly low 0.013 TPS — which is the direct justification for [NFR](oreo-nfr.en.md) RES-01
+   requiring an explicit concurrency gate.
+
+#### 4.7.5 Cost envelope and re-test trigger
+
+Once S-01 has measured each representative product, record the ceiling for each driver as the
+**cost envelope** (A28), with this rule:
+
+> **When a new product goes live, no performance re-test is needed if its cost drivers fall inside
+> the tested envelope. If it exceeds the envelope (larger `.dat`, more fixings, longer schedule,
+> heavier risk model), S-01 must be re-run and the concurrency target recomputed per §4.7.4.**
+
+This keeps a Composer product addition from triggering a full performance regression every time,
+while still preventing a product that exceeds the envelope from shipping unnoticed. It pairs with
+[NFR](oreo-nfr.en.md) MAINT-01 / MAINT-02 and the trigger rules in
+[Strategy](performance-test-strategy.en.md) §5.
+
+#### 4.7.6 Where to get real productType data before launch
+
+**"We haven't launched, so we have no data" is usually false.** Ranked by reliability:
+
+| # | Source | Why it *is* production data |
+|---|---|---|
+| **1** | **Migration dataset / initial book load** | OREO must load the existing book; that set's product distribution is a **real historical trade distribution** |
+| **2** | **Predecessor system's trade history** | If OREO replaces an existing system, that system's trade table is production data |
+| 3 | **Composer product catalogue** | A **complete enumeration** rather than a sample — stronger than production data for coverage |
+| 4 | Real `.dat` samples per type | Size and field count are structural facts measurable today |
+| 5 | Business case / project approval documents | The material that authorised building OREO contains quantified expectations somebody signed |
+| 6 | Trading-desk interviews + term-sheet approval list | Which products are open to which counterparties |
+
+**Sources 1 and 2 are the highest priority and the most commonly overlooked**: the migration dataset
+converts A5 (daily volume), A7 (event mix), and A25 (product mix) from guesses into statistics.
 
 ---
 
@@ -272,7 +405,8 @@ list-query capacity  = 4.13 × 4 × 2            ~ 33 TPS
 | UC gRPC fan-out (derived) | **826 QPS ⚠️** | — | Primary bottleneck if N+1 holds |
 | `checker_tasks` queue depth | No monotonic growth at steady state | See NFR §6 | A queue metric, not a rate metric |
 | Trade table volume | Queries meet target at 250,000 rows | See NFR §6 | A16 |
-| Concurrent `.dat` parses | 3 concurrent large-tier without OOM | See NFR §10 | A14 / A15 / A18, must be measured |
+| **Concurrent `.dat` parses** | **Read from the §4.7.4 table using measured duration (3–7)** | See NFR §11 | Not an assumed value; 20s → 4 concurrent, 45s → 5 |
+| Degenerate mix (expensive product arriving back to back) | A27: 5 consecutive of the single most expensive type | See NFR §2 | §4.7.3; Test Plan S-16 sub-scenario |
 
 > **Latency thresholds are never defined on this page.** This page produces "how much load"; thresholds live in [OREO NFR](oreo-nfr.en.md) and measurement definitions in [KPI Definitions](kpi-definitions.en.md). Each page owns one layer, so the same number never appears in three places with three values.
 
@@ -298,6 +432,10 @@ A retail system peaks at market open. OREO has four entirely different peak sour
 | Trigger | Action |
 |---|---|
 | **Frontend confirms polling parameters (A10–A12)** | **Highest priority.** These three determine ~97% of request volume; recompute §5.2 and refresh §6 immediately |
+| **Obtain the migration dataset / predecessor trade history** | **Second only to polling parameters.** It converts A5, A7, and A25 from guesses into statistics in one step — see §4.7.6 |
+| Obtain the Composer product catalogue (A24) | Fixes the productType universe; pick the 3 representatives (A26) per §4.7.2 |
+| S-01 measures per-request duration for each representative | Read the concurrency target from §4.7.4; record the cost envelope (A28) |
+| A new product goes live | Check whether its cost drivers exceed the A28 envelope; if so, re-run S-01 per §4.7.5 |
 | Confirm large-tier `.dat` size (A15) and blotter row count (A17) | Recompute peak memory and gRPC fan-out; may relocate the bottleneck |
 | Measure parse memory amplification (A18) | The one parameter that **may not be assumed**: an OOM threshold cannot be guessed |
 | Confirm whether UC enrichment is N+1 | If so, 826 QPS becomes the primary capacity constraint and needs architecture review |

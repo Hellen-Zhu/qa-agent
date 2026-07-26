@@ -179,9 +179,13 @@ python3 scripts/validate.py
 `run.sh` 通过 `sample_variables` 把这些字段写进 jtl 的额外列：
 
 ```
-caseId, tradeId, taskId, datFile, productType, datSize,
+caseId, tradeId, taskId, datFile, productType, costTier, fixings, datSize,
 errClass, riskOk, riskFailCode, portfolioId, effectiveUserId
 ```
+
+`costTier` 与 `fixings` 是**成本维度**标签：`.dat` 体积与解析成本由 productType 的结构
+（定盘次数、schedule 长度）决定，所以成本画像要按这两列切分，而不是按 `datSize`。
+见 [Workload Modeling §4.7](../docs/performance/workload-modeling.zh.md)。
 
 **`errClass` 是最重要的一列**，它把错误分成三类（`groovy/assert-create-response.groovy`）：
 

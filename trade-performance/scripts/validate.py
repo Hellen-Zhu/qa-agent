@@ -9,8 +9,9 @@
   4. fragments/ journeys/ 的顶层是 TestFragmentController
   5. IncludeController 的路径存在（且不指向含 Thread Group 的文件）
   6. JSR223 引用的 .groovy 文件存在
-  7. CSVDataSet 引用的 .csv 文件存在
+  7. CSVDataSet 引用的 .csv 文件存在，且列数与 variableNames 一致
   8. element / hashTree 配对（JMeter 靠这个还原树形结构，错了会静默丢元件）
+  9. CSV 中无 TBC 占位值（带着 TBC 能跑，但结果列全是 TBC，整轮白跑）
 
 ⚠ 它验证不了 JSONPath 是否匹配真实响应、断言是否成立、服务端是否接受请求。
    这些只能靠真跑一次 smoke。
@@ -178,6 +179,20 @@ def check(path: Path) -> None:
                         f"{r}: {raw} 第 {i} 行 {len(line.split(','))} 列，"
                         f"应为 {len(names)} 列（末列可空时别漏结尾逗号）")
                     break
+
+        # TBC 占位值。这类字段（costTier / fixings）只进 jtl 的结果列，不影响请求能否发出——
+        # 所以带着 TBC 跑不会报错，只会让"P95 对定盘次数"这条成本曲线整列变成 TBC，
+        # 事后才发现整轮数据白跑。宁可在这里红。
+        tbc_rows = [
+            i for i, line in enumerate(target.read_text(encoding="utf-8").splitlines()[1:], start=2)
+            if "TBC" in line
+        ]
+        if tbc_rows:
+            shown = ", ".join(map(str, tbc_rows[:5])) + ("..." if len(tbc_rows) > 5 else "")
+            errors.append(
+                f"{r}: {raw} 有 {len(tbc_rows)} 行含 TBC 占位值（第 {shown} 行）—— "
+                f"需填入真实值后才能出成本画像结论（见 docs/performance/"
+                f"workload-modeling.zh.md §4.7）")
 
 
 def check_groovy_orphans(referenced: set[Path]) -> None:

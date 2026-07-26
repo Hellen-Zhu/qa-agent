@@ -87,13 +87,23 @@ OREO's test targets are organised by **user entry point** rather than as a flat 
 
 | Item | Content |
 |---|---|
-| **Goal** | Answer "how much time, CPU, and memory does **one** create / dat-to-json consume", producing the basis for deriving a concurrency ceiling |
-| **Load shape** | **1 concurrent**, sweeping file tiers: small / medium / large (30 runs each for a distribution) |
-| **Variable** | File size only. Everything else fixed |
-| **Key metrics** | Duration per tier · **peak memory per parse** · memory amplification factor · CPU time · shape of duration-vs-size |
-| **Pass criteria** | PERF-07/08/09/10 met; **duration is linear or sub-linear in file size** |
-| **Impl** | 🟨 Script exists (`jmx/api/p02-trade-create.jmx` + `smoke` profile + tiered CSV); **no collection mechanism for memory** |
-| **Blocked by** | **OBS-02** (parse peak memory not observable). Currently only duration conclusions are possible, not memory conclusions |
+| **Goal** | Answer "how much time, CPU, and memory does **one** create / dat-to-json consume", producing the basis for the concurrency target and the cost envelope |
+| **Load shape** | **1 concurrent**, sweeping the **productType representatives** ([Workload Modeling](workload-modeling.en.md) A26: cheapest / most expensive / most common), 30 runs each for a distribution |
+| **Variable** | **productType.** File size, fixing count, and schedule length are all **consequences** of productType, not independent variables |
+| **Key metrics** | Duration per productType · **peak memory per parse** · memory amplification factor · CPU time · **shape of duration vs cost driver (fixing count / file size)** |
+| **Pass criteria** | PERF-07/08/09/10 met; **duration is linear or sub-linear in the cost drivers** |
+| **Outputs** | ① Per-representative duration → read the **concurrency target** from [Workload Modeling](workload-modeling.en.md) §4.7.4 (input to S-14)<br>② **Cost envelope A28** (ceiling per driver) → baseline for the new-product re-test trigger |
+| **Impl** | 🟨 Script exists (`jmx/api/p02-trade-create.jmx` + `smoke` profile + CSV), but **the CSV currently holds only one productType (FX_TRF) and must be extended to the A26 representatives**; **no collection mechanism for memory** |
+| **Blocked by** | **OBS-02** (parse peak memory not observable) · **A24 Composer catalogue unconfirmed** · no real `.dat` samples. Currently only duration conclusions are possible, not memory conclusions |
+
+**Why the sweep dimension is productType rather than file tier**: file size is a **consequence** of
+product structure. "TARF × small" does not exist in reality, so treating productType and datSize as
+orthogonal dimensions generates test cases that cannot occur. See
+[Workload Modeling](workload-modeling.en.md) §4.7.
+
+**This scenario's outputs determine how two others are designed**: S-14's concurrency tiers come from
+the durations measured here, and S-16's degenerate mix comes from whichever product is identified as
+most expensive. **Without its results, neither of the other two can be designed.**
 
 **Why it is priority 1**: the progression rule in [Strategy](performance-test-strategy.en.md) §4 requires Cost Profile before Load. Applying concurrency without knowing that one parse takes 3 seconds and 2 GB produces a crash you cannot attribute — you do not know whether it is a concurrency problem or a single request already over the limit.
 
@@ -187,11 +197,19 @@ The two answers imply entirely different capacity plans and optimisation directi
 | Item | Content |
 |---|---|
 | **Goal** | Verify that exceeding the concurrent `.dat` parse limit **queues or rejects rather than OOMs** |
-| **Load shape** | Derive theoretical ceiling N from S-01's measured peak memory, then run N-1 / N / N+2 / 2N concurrent large-tier parses |
+| **Load shape** | The lesser of two ceilings:<br>① **Business concurrency target K** — read from the [Workload Modeling](workload-modeling.en.md) §4.7.4 table using S-01's measured duration (**3–7**, not an assumed value)<br>② **Theoretical resource ceiling N** = available heap ÷ peak memory per parse<br>Run K-1 / K / N / N+2 / 2N concurrent, all using the **most expensive productType** |
 | **Key metrics** | Peak heap · GC pauses · rejection rate and rejection mode · **degradation of unrelated endpoints during the window** |
 | **Pass criteria** | RES-01: over-limit returns an explicit business error or queues; **never OOM**; unrelated endpoints degrade ≤ 20% (RESIL-03) |
 | **Impl** | ⬜ |
-| **Blocked by** | Depends on S-01's memory conclusion (therefore on OBS-02) |
+| **Blocked by** | Depends on S-01's duration and memory conclusions (therefore on OBS-02) |
+
+**If N < K, that is a hard capacity ceiling with no remedy but more memory** — and it must surface
+before launch. See [NFR](oreo-nfr.en.md) RES-01.
+
+**Note the feedback loop from §4.7.4**: the concurrency target K is itself a function of per-request
+duration. If the most expensive product takes 45 s, P(≥2 concurrent) jumps from 3% to 12% and K rises
+from 4 to 5. **A slower product overlaps more readily, and overlapping makes it slower still** —
+congestion collapse remains possible at 0.013 TPS. That is the risk this scenario exists to falsify.
 
 **The consequence of OOM is not "this request fails" but "the whole JVM dies"** — taking down every unrelated in-flight request with it, including someone else's blotter query and someone else's task approval. So this scenario does not verify "how much concurrency it survives"; it verifies **whether an explicit concurrency gate exists at all**. Without a gate, the capacity ceiling is a cliff rather than a curve.
 
@@ -232,11 +250,40 @@ If interleaving genuinely needs verification (e.g. suspicion that submit and app
 | **S-02** | Booking cutoff peak | 4× mean sustained for one hour | PERF-07, PERF-19 | Close out with S-18 |
 | **S-13** | Batch jobs in parallel with online traffic | trade-aging / sync-cashflows / refdata sync alongside online load | RESIL-04, degradation ≤ 20% | Requires confirming the refdata sync write mode (upsert vs truncate-reload) — the two have entirely different failure models |
 | **S-04** | Checker batch queue-clearing | `bulk-approve` at batch 1/5/20/50, 3 concurrent batches | PERF-15/16; **per-unit latency must not rise with batch size** | A burst shape; do not use constant arrival rate |
-| **S-16** | Full-capacity mixed load | All design capacities from [Workload Modeling](workload-modeling.en.md) §6 applied together | **PERF-19** (all thresholds met simultaneously) | The only scenario that can expose cross-path resource competition |
+| **S-16** | Full-capacity mixed load | All design capacities from [Workload Modeling](workload-modeling.en.md) §6 applied together | **PERF-19** (all thresholds met simultaneously) | The only scenario that can expose cross-path resource competition. **Has two productType mix sub-scenarios, see below** |
 | **S-07** | Month / quarter-end roll | 3× a normal day, all day | PERF-20, degradation ≤ 20% | Event mix weighted toward rolls / reassignment |
 | **S-17** | Soak — long trading day | Design capacity for 4–8 hours | AVAIL-01, MAINT-04; no memory or connection leak | **Ranks above Spike**: blotter auto-refresh runs constantly all day |
 | **S-06** | Market-volatility event surge | Surge in early termination / novation | PERF-12, PERF-19 | Multiplier awaits business confirmation |
 | **S-08** | Combined layer | S-16 load + 3–5 Playwright sessions | Frontend metrics ([KPI](kpi-definitions.en.md) §3) | Verifies "backend passing ≠ UI is smooth" |
+
+### 3.5 S-16's two productType mix sub-scenarios
+
+S-16 is the only scenario where productType acts as a **mix weight** rather than a sweep dimension.
+It must run twice:
+
+| Sub-scenario | Mix | Purpose |
+|---|---|---|
+| **S-16a average mix** | The daily product distribution from [Workload Modeling](workload-modeling.en.md) A25 | Normal-state acceptance against PERF-19 |
+| **S-16b degenerate mix** | **A27: 5 consecutive bookings, all the most expensive productType** | Find the real capacity boundary |
+
+**S-16b is not a stress test — it is the normal case.** The reasoning is in
+[Workload Modeling](workload-modeling.en.md) §4.7.3:
+
+> The law of large numbers needs sample size. A cutoff hour holds only 48 bookings, and arrivals are
+> **correlated** — one salesperson running a campaign books five of the same type back to back.
+> **At this volume, the "average mix" never actually occurs.**
+
+Hence a counter-intuitive but binding rule:
+
+> **High-throughput systems test the average mix; low-throughput systems must test the degenerate mix.**
+
+**Practical consequence**: negotiating with the business over "is it 30% or 40% TARF" is low-value
+work — that percentage has no statistical meaning across 48 bookings. The question actually worth
+asking the business is: **"are there product campaign periods? can one product type cluster over a
+short window?"** That determines how extreme A27 must be.
+
+**S-16a passing while S-16b fails must be recorded as a failure.** The degenerate mix is a situation
+that genuinely occurs; it is not headroom that can be filed as "extreme scenario, monitor later".
 
 ---
 
@@ -245,7 +292,9 @@ If interleaving genuinely needs verification (e.g. suspicion that submit and app
 | Data | Quantity | Supply method | Status |
 |---|---|---|---|
 | **Trade seed data** | Three tiers: 1k / 50k / 250k | Data factory; distribution must span portfolios / counterparties / states / product types | ⬜ **Blocks S-10** |
-| **`.dat` samples** | Several each of small / medium / large / invalid | Business provides real samples | ⬜ **Blocks S-01** (`data/dat/` is currently empty) |
+| **`.dat` samples** | **Several per A26 representative productType**, plus invalid cases | Business provides real samples; directories keyed by productType, not size alone | ⬜ **Blocks S-01** (`data/dat/` is currently empty) |
+| **Composer product catalogue** | Full productType list with fixing counts / schedule shapes | Product owner provides (A24) | ⬜ **Blocks A26 representative selection** |
+| **Migration dataset statistics** | productType distribution of the existing book | Architecture / DBA produce the statistics (A25) | ⬜ **Blocks the S-16a mix** |
 | **Counterparty / Portfolio** | Resolved per run | **setUp query + real trade creation to validate + archived snapshot** | ✅ Implemented |
 | **Pending task pool** | For S-15, N ≈ 200 | Pre-seeded submissions in setUp (option A) | ⬜ |
 | **Shared contention target trade** | For S-05, one per sub-scenario | Created and recorded in setUp | ⬜ |
@@ -339,7 +388,8 @@ A full performance round may be declared "passed" only when all of the following
 |---|---|---|---|
 | 1 | **OBS-01/02/05 unmet** | Four of the priority-1/2 scenarios cannot produce complete conclusions | Raise as requirements in Phase 1; S-09 can fall back to DB-side counting |
 | 2 | **Frontend polling parameters (A10–A12) unconfirmed** | The base for every capacity figure is wrong, potentially by 6× | Confirmation is very cheap (frontend config); **flagged highest priority** |
-| 3 | **No real `.dat` samples** | S-01 cannot run, breaking the first link of the progression chain | Request real samples per tier from business |
+| 3 | **No real `.dat` samples** | S-01 cannot run, breaking the first link of the progression chain | Request real samples for the **A26 representative products** from business |
+| 3b | **productType universe and mix unknown (A24 / A25)** | S-01 cannot sweep completely; S-16 has no basis for its mix | Obtain the Composer catalogue plus **migration-dataset statistics** (the latter converts A5/A7/A25 from guesses into statistics, see [Workload Modeling](workload-modeling.en.md) §4.7.6) |
 | 4 | **Data factory not built** | S-10 cannot run; and every blotter conclusion is invalid on an empty DB | Progress in parallel during Phase 1 |
 | 5 | **S-05 expected behaviour undefined** | The scenario runs but cannot be judged | Needs a product/architecture decision, see §3.3 |
 | 6 | **SEC-01 identity model unconfirmed** | If gateway authentication is introduced, the load-test entry point needs rework | See [NFR](oreo-nfr.en.md) §6; architecture to answer |

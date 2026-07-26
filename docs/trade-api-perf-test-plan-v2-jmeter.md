@@ -1,8 +1,21 @@
 # Trade API 性能测试方案 v2（JMeter）
 
-> 版本：v2.1  
+> 版本：v2.2  
 > 适用范围：已识别的 11 个 P0 + 22 个 P1 API，共 33 个接口  
 > 核心变化：依赖关系重新建模、按依赖爆炸半径重排降级测试优先级、脚本形态按 API 分级分流、测试数据供给策略显式化、工程结构面向 33 个 API 规模化
+>
+> **本文档的定位**：本文是**实现层**方案——回答"JMeter 怎么写、33 个 API 怎么组织"。
+> 业务量模型、验收阈值、场景库属于上层文档，见 `docs/performance/`：
+>
+> | 文档 | 回答 |
+> |---|---|
+> | [Workload Modeling](performance/workload-modeling.zh.md) | 打多少量（OREO 假设登记与推导） |
+> | [OREO NFR](performance/oreo-nfr.zh.md) | 什么算通过（10 类非功能需求 + 验证方式标签） |
+> | [OREO Performance Test Plan](performance/oreo-performance-test-plan.zh.md) | 18 个场景的场景库与排期 |
+> | [KPI Definitions](performance/kpi-definitions.zh.md) | 指标口径 |
+> | [Performance Test Strategy](performance/performance-test-strategy.zh.md) | 何时测、测什么类型 |
+>
+> ⚠️ **本文 §10.3 的 SLA 模板已被 [OREO NFR](performance/oreo-nfr.zh.md) §2 取代。** 阈值以 NFR 为准，本文不再维护数值。
 
 ---
 
@@ -20,6 +33,10 @@
 | 8 | 工程结构改为**四层 + 数据驱动 runner**，面向 33 个 API | 每 API 一棵元件树的做法在此规模下不可维护 |
 | 9 | WebSocket 推送通道登记为**已知覆盖缺口**（附录 C） | 本轮 out of scope，但需显式记录风险 |
 | 10 | 保留并强化 v1 的 15 项脚本级修复（附录 A） | 任一未修都会导致测试失败或数据作废 |
+| **11** | **`trigger-event` 由"一个批量写接口"重新认识为"10 种生命周期事件的共用载体"**（§2.5.1） | OREO 业务背景：右键菜单有 10 个事件，成本画像各不相同 |
+| **12** | **审批类接口重新认识为"两阶段写路径的后半段"**（§2.5.2） | 单独测 approve 只测了一半功能；submit 与 approve 必须分别计时 |
+| **13** | **新增 `pending approve` 锁争用与 reject 成本两个维度**（§2.5.3） | 常规"每线程打不同 trade"的压测设计永远碰不到同实体争用 |
+| **14** | **补入 Blotter 请求放大与 Composer 两个未建模面**（§2.5.4） | 单页多 blotter 使列表查询成为全系统请求量最大来源 |
 
 ---
 
@@ -159,6 +176,119 @@ GET /trades/{id} + GET /trades/{id}/risk-metrics
 | 风控失败后实际多少比例用户继续创建？ | 路径权重与真实 Create 到达量 | 50%（`riskFailProceedPct` 可配） |
 | dat-to-json 失败时前端是否阻止继续？ | 该路径是否存在 | 提示错误但允许继续 |
 | `trigger-event` 单次请求影响多少笔 trade？ | 决定写放大测试维度 | 见 5.6，需确认 |
+
+---
+
+## 2.5 OREO 业务背景带来的四处修正
+
+本章 §2.1~§2.4 的依赖分析是从 **API 清单与 HAR 抓包**反推出来的。补入 OREO 的业务模型
+（四眼原则、Trade Portal 右键菜单、Composer）后，其中四处需要修正——它们都不是"补充细节"，
+而是**改变了测试对象的粒度**。
+
+业务模型定义见 [Workload Modeling](performance/workload-modeling.zh.md) §3。
+
+### 2.5.1 `trigger-event` 是 10 种事件的共用载体，不是一个接口
+
+§2.1 把 `POST /trades/trigger-event` 列为一个 Batch/Write 接口，§2.4 的待确认项只问了
+"单次请求影响多少笔 trade"。实际上 Trade Portal 的右键菜单包含 **10 个生命周期事件**：
+
+`View Details` · `PartialNovationRemaining` · `PartialNovation` · `PortfolioReassignment` ·
+`Cancellation` · `EarlyTermination` · `NovationRemaining` · `StepOutFull` · `StepOutPartial` ·
+`Allocation`
+
+**后果**：它们的成本画像互不相同，不能用一条 SLA 覆盖。
+
+| 事件 | 成本特征 | 测试影响 |
+|---|---|---|
+| `Allocation` | **一笔拆多组合 → 写放大**，倍数上限未知 | 需按拆分数分档计时（单位工作量耗时） |
+| `PartialNovation` / `StepOutPartial` | 需重算剩余名义本金，可能触发 risk 计算 | 可能落入 risk-engine 依赖链，需重查依赖矩阵 |
+| `Cancellation` | **需 checker 审批** → 两阶段路径 | 与其余 9 个形态不同，见 §2.5.2 |
+| `EarlyTermination` | 市场波动时到达量激增 | 峰值形态独立，见 Test Plan S-06 |
+| `View Details` | 只读 | 不属于事件，归入读路径 |
+
+**待确认**：这 10 个事件是共用 `trigger-event` 一个端点（用 payload 里的 eventType 区分），
+还是各有独立端点？这决定脚本是"一个数据驱动 fragment + eventType 参数"还是"10 个 fragment"。
+按 §3.1 的判定规则，若共用端点则应归入**数据驱动型**，`endpoints.csv` 增加 `eventType` 维度。
+
+### 2.5.2 审批类接口是两阶段写路径的后半段
+
+§2.1 把 `approve` / `reject` / `bulk-approve` / `bulk-reject` 列为独立的 Write 接口，
+§2.2 把 checker workflow 列为 `trigger-event` 的一个"依赖"。这个建模丢掉了业务事务边界。
+
+真实形态是**一个业务动作横跨两个事务**：
+
+```
+maker 提交 ──► trade 锁定为 pending approve ──► 写 checker_tasks ──► 发通知 ──► 存 snapshot
+                                    ↓  人工间隔（分钟~小时级）
+checker ──┬─ approve ──► 执行 → 状态更新 → 发确认
+          └─ reject  ──► 取消 → 从 snapshot 恢复 → 写审计
+```
+
+**三条后果：**
+
+1. **只测 `approve` 只测了一半功能。** 必须成对测量 submit + approve/reject，且**分别计时**。
+2. **两者之间的间隔不能计入任何事务。** 它由人决定，拼成端到端事务的数字主要反映
+   checker 什么时候去吃饭。计时口径见 [KPI Definitions](performance/kpi-definitions.zh.md) §2.1。
+3. **审批范围因事件而异**：new booking / amendment / cancellation 需审批；
+   novation / step-in / step-out / early termination 等**暂不**需要。
+   同一个 `trigger-event` 端点因此有两种截然不同的下游行为——单阶段与两阶段。
+
+> ⚠️ "暂不"（not yet）意味着审批范围是过渡状态，预期会变。脚本与负载模型都应做到
+> "只改配置不改结构"，见 [OREO NFR](performance/oreo-nfr.zh.md) MAINT-01。
+
+### 2.5.3 两个缺失的测试维度：锁争用与 reject 成本
+
+**(a) `pending approve` 锁是争用维度。** §5 的全部场景都隐含"每个线程打不同的 trade"
+（为避免互相干扰），因此**永远不会触发同实体争用**。而四眼原则恰恰在同一笔 trade 上串行化操作。
+
+需新增"低并发打同一目标"场景（Test Plan S-05），验证：
+
+- 并发提交时是否有且仅有一个成功
+- 是否死锁
+- 并发 amendment 是否丢更新
+- **服务重启时锁是否成为孤儿**（trade 永久冻结或锁凭空消失）
+
+**(b) reject 比 approve 贵。** approve 走正常执行路径；reject 额外要做 snapshot 恢复 +
+审计写入。§5 与 §10.3 都只覆盖了 approve，会系统性低估审批路径成本。
+拒绝率需作为负载模型参数（Workload Modeling A8，v0 = 5%）。
+
+**一个用性能数据反查功能正确性的例子**：若实测 reject 与 approve 耗时相同，
+应怀疑 snapshot 恢复没有真正执行。
+
+### 2.5.4 两个未建模的面：Blotter 请求放大与 Composer
+
+**(a) Blotter：单页多个 blotter。** §2.3 的页面初始化序列只列了一次 `GET /trades`。
+实际 Trade Portal 含**多个 trade blotter**，每个是一次独立列表查询，且可能自动刷新：
+
+```
+稳态列表查询 TPS = 并发用户数 × 每页 blotter 数 ÷ 自动刷新间隔
+```
+
+按 Workload Modeling 的 v0 假设（31 并发 × 4 blotter ÷ 30s）这是 **4.13 TPS 恒定负载**——
+**全系统请求量最大的单一来源**，超过真实业务负载约两个数量级。若列表还逐行走 UC gRPC 富化，
+扇出再放大 200 倍。
+
+这使 §2.2 结论 1（"UC gRPC 优先级最高"）**比原先论证的更强**：原论证依据是"UC 命中两个
+High 频 P0 读"，实际情况是这两个读接口本身被 blotter 自动刷新恒定放大。
+
+**(b) Composer 完全未建模。** §2.1 列了 `/products`、`/products/schema/parse`、
+`/product-field-configs/{id}/live-fields` 三个接口，但没有把 Composer 作为一个操作面考虑：
+
+- 产品定义 / 更新 / 标记删除
+- 产品的生命周期事件配置
+
+它本身是低频操作，但**其配置被热路径读取**——产品字段配置与可用事件列表在每次 booking 与
+每次事件提交时都要读。因此 Composer 的风险不在自身吞吐，而在**配置缓存失效时对在线路径的影响**
+（见 [OREO NFR](performance/oreo-nfr.zh.md) MAINT-02 / MAINT-04）。
+
+### 2.5.5 修正后的优先级影响
+
+| 修正 | 对本方案的影响 |
+|---|---|
+| §2.5.1 | §3.2 形态归属表需为 `trigger-event` 增加 `eventType` 维度；`endpoints.csv`（§7.6）加一列 |
+| §2.5.2 | §5 需新增两阶段审批场景；§10.3 的 SLA 模板需拆出 submit / approve / reject 三行（已由 NFR PERF-12/13/14 承接） |
+| §2.5.3 | §5 需新增同实体争用场景（Test Plan S-05）；负载模型加拒绝率参数 |
+| §2.5.4 | §2.2 结论 1 论证加强；blotter 列表升为请求量第一的路径；Composer 配置缓存纳入互扰场景 |
 
 ---
 
@@ -918,6 +1048,10 @@ JTL 追加对应列，分析时按 `pathFlavor` 过滤，得到 happy path 的 P
 - 批量接口额外记录：**单位工作量耗时**（总耗时 ÷ 批次大小），用于判断是否线性
 
 ### 10.3 SLA 模板
+
+> ⚠️ **本表已被 [OREO NFR](performance/oreo-nfr.zh.md) §2 取代**，保留仅作历史对照。
+> NFR 中的 PERF-01~21 给出了带推导依据的提议值，并按文件档位拆分了上传类阈值、
+> 按 submit / approve / reject 拆分了审批类阈值。**阈值以 NFR 为准，本表不再维护。**
 
 | API / 场景 | P95 | P99 | 技术错误率 | 备注 |
 |---|---:|---:|---:|---|

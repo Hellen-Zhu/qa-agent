@@ -128,7 +128,25 @@ Reports must always state the **batch size** — a batch-endpoint latency figure
 
 **Backlog is the failure mode of a queue system, not a rate problem.** A system processing 100/s while 101/s arrive may show all-green latency while it is failing.
 
-### 2.6 Data-volume scaling
+### 2.6 Transaction naming and nesting
+
+Transaction names carry service and module, so the jtl can be sliced by service with no extra instrumentation:
+
+```
+TX_<svc>_<module>_<api>    atomic transaction, 1:1 with §2 here and the PERF-xx NFR IDs
+TX_flow_<name>             composite transaction spanning several atomics (e.g. TX_flow_refdata_load)
+```
+
+Filtering the JMeter report by label regex `TX_workers_.*` answers "how slow is the workers service overall".
+
+**Two binding rules:**
+
+| Rule | Reason |
+|---|---|
+| **TX_flow_\* and its inner TX_\<svc\>_\* must never be summed** | A composite **contains** its atomics. Summing counts the same work twice and doubles TPS. Pick one level when computing throughput |
+| **Filter to `runPhase=main` first** | setUp preflight includes the *same* fragment as the main path, so its transaction names are identical. Without filtering, preflight samples enter capacity statistics — at OREO's single-digit TPS, one extra sample is a several-percent error |
+
+### 2.7 Data-volume scaling
 
 The same load repeated at several data-volume tiers, reporting a **degradation curve** rather than a single point:
 

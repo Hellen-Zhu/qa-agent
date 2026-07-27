@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  fragments/steps/refdata/portfolios-list.jmx
+
+  【层级】原子 fragment —— 一个 API 一个文件，一个 sampler，不可独立运行
+  【API】  refdata.portfolios.list  ·  GET /refdata/portfolios
+  【服务】 refdata  →  必须使用 ${__P(refdata.*)} 寻址（校验规则 R3）
+
+  ══ 原子 fragment 的职责边界（重要）═══════════════════════════════
+  本文件**只**定义请求契约：path / method / 寻址 / HTTP 层断言。
+  它**不**定义"响应拿来干什么"——因为同一个 API 有两种用法：
+
+    setUp 前置        提取**全部** id 建全局池   → 调用方挂 refdata-pool-portfolios.groovy
+    journey 主循环    随机挑**一条**当本次入参   → 调用方挂 refdata-pick-portfolio.groovy
+
+  提取逻辑放在调用方（Include Controller 的同级 PostProcessor，按 JMeter 作用域
+  规则会作用到本 fragment 内的 sampler）。这样接口契约只有一份，用途差异由外层表达。
+  ⚠ 不要把提取器塞回本文件 —— 那会立刻退化成"为了第二种用法再复制一份 fragment"。
+  ═══════════════════════════════════════════════════════════════
+
+  【输入属性】refdata.host / refdata.port / refdata.protocol / refdata.basePath / refdataPageSize
+  【产出事务】TX_refdata_portfolios_list
+-->
+<jmeterTestPlan version="1.2" properties="5.0" jmeter="5.6.3">
+  <hashTree>
+    <TestPlan guiclass="TestPlanGui" testclass="TestPlan" testname="refdata.portfolios.list (fragment)" enabled="true">
+      <stringProp name="TestPlan.comments">Atomic fragment. Never run directly.</stringProp>
+      <boolProp name="TestPlan.functional_mode">false</boolProp>
+      <boolProp name="TestPlan.serialize_threadgroups">false</boolProp>
+      <elementProp name="TestPlan.user_defined_variables" elementType="Arguments" guiclass="ArgumentsPanel" testclass="Arguments" testname="User Defined Variables" enabled="true">
+        <collectionProp name="Arguments.arguments"/>
+      </elementProp>
+      <stringProp name="TestPlan.user_define_classpath"></stringProp>
+    </TestPlan>
+    <hashTree>
+
+      <TestFragmentController guiclass="TestFragmentControllerGui" testclass="TestFragmentController" testname="refdata.portfolios.list" enabled="true"/>
+      <hashTree>
+
+        <TransactionController guiclass="TransactionControllerGui" testclass="TransactionController" testname="TX_refdata_portfolios_list" enabled="true">
+          <boolProp name="TransactionController.parent">false</boolProp>
+          <boolProp name="TransactionController.includeTimers">false</boolProp>
+        </TransactionController>
+        <hashTree>
+
+          <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="refdata_portfolios_list" enabled="true">
+            <elementProp name="HTTPsampler.Arguments" elementType="Arguments" guiclass="HTTPArgumentsPanel" testclass="Arguments" testname="User Defined Variables" enabled="true">
+              <collectionProp name="Arguments.arguments"/>
+            </elementProp>
+            <stringProp name="HTTPSampler.domain">${__P(refdata.host,localhost)}</stringProp>
+            <stringProp name="HTTPSampler.port">${__P(refdata.port,8080)}</stringProp>
+            <stringProp name="HTTPSampler.protocol">${__P(refdata.protocol,http)}</stringProp>
+            <stringProp name="HTTPSampler.path">${__P(refdata.basePath,/api/v1)}/refdata/portfolios?status=ACTIVE&amp;size=${__P(refdataPageSize,200)}</stringProp>
+            <stringProp name="HTTPSampler.method">GET</stringProp>
+            <boolProp name="HTTPSampler.follow_redirects">true</boolProp>
+            <boolProp name="HTTPSampler.auto_redirects">false</boolProp>
+            <boolProp name="HTTPSampler.use_keepalive">true</boolProp>
+            <boolProp name="HTTPSampler.DO_MULTIPART_POST">false</boolProp>
+            <stringProp name="HTTPSampler.embedded_url_re"></stringProp>
+          </HTTPSamplerProxy>
+          <hashTree>
+            <ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion" testname="http 200" enabled="true">
+              <collectionProp name="Asserion.test_strings">
+                <stringProp name="49586">200</stringProp>
+              </collectionProp>
+              <stringProp name="Assertion.custom_message">refdata/portfolios did not return 200</stringProp>
+              <stringProp name="Assertion.test_field">Assertion.response_code</stringProp>
+              <boolProp name="Assertion.assume_success">false</boolProp>
+              <intProp name="Assertion.test_type">8</intProp>
+            </ResponseAssertion>
+            <hashTree/>
+          </hashTree>
+
+        </hashTree>
+      </hashTree>
+    </hashTree>
+  </hashTree>
+</jmeterTestPlan>

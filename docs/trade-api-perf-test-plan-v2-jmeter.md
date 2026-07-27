@@ -816,7 +816,7 @@ steps/create-trade.jmx
   createdTradeId    成功时的 id，失败为 NOT_FOUND
 
 【依赖属性】  templateDir, payloadPoolDir
-【产出事务】  TX_Create_Trade
+【产出事务】  TX_workers_trademgmt_create
 ```
 
 `payloadSource` 是同一 fragment 服务 E2E 与单接口测试的关键：E2E 走 `built`（现场构建），单接口基线走 `pool`（读预生成文件，排除脚本计算开销）。**没有参数化的 fragment 复用不了。**
@@ -1086,8 +1086,8 @@ JMeter 无内置 threshold，需外挂一层：
 reporting:
   - module: passfail
     criteria:
-      - 'p95 of TX_Create_Trade>1500ms for 1m, stop as failed'
-      - 'failures of TX_Create_Trade>0.5% for 1m, stop as failed'
+      - 'p95 of TX_workers_trademgmt_create>1500ms for 1m, stop as failed'
+      - 'failures of TX_workers_trademgmt_create>0.5% for 1m, stop as failed'
       - 'failures of TX_Page_Init>0.1% for 1m, stop as failed'
 ```
 

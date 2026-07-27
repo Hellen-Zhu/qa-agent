@@ -25,17 +25,22 @@
 
 ```
 trade-performance/
+├── api-registry.csv     ← API 清单的单一事实源（哪些 API、实现在哪、谁维护）
 ├── jmx/
 │   ├── fragments/       ← 不可运行（Test Fragment，无 Thread Group）
-│   │   ├── setup/       ← 供 setUp Thread Group 引用
-│   │   └── steps/       ← 原子步骤，被多个 journey 复用
-│   ├── journeys/        ← 不可运行（Test Fragment，无 Thread Group）
+│   │   ├── setup/       ← 供 setUp Thread Group 引用（组合，只 Include）
+│   │   └── steps/
+│   │       ├── <svc>/<module>/   ← 原子 fragment：一个 API 一个文件
+│   │       │   ├── refdata/                    portfolios-list · counterparties-list
+│   │       │   └── workers/trade-management/   create-trade · trade-detail · trade-risk-metrics
+│   │       └── _composites/      ← 组合 fragment：只 Include 原子，自己不定义 sampler
+│   ├── journeys/        ← 不可运行（按**业务流程**组织，天然横跨多个 svc）
 │   ├── scenarios/       ← 可运行（薄壳：Thread Group + Include）
 │   ├── api/             ← 可运行（单接口基线）
 │   ├── suites/          ← 可运行（多 Thread Group 混合负载，本次未建）
 │   └── ops/             ← 可运行（灌数、清理，本次未建）
 ├── groovy/              ← 脚本外置，绝不内联进 jmx
-├── config/              ← 维度二：环境
+├── config/              ← 维度二：环境（5 个 svc 各自寻址）
 ├── profiles/            ← 维度三：负载模型
 ├── data/
 ├── scripts/run.sh       ← 唯一执行入口
@@ -56,12 +61,50 @@ Test Fragment）。这条约束**反向决定**了整个结构：
           → 那个文件就只剩一个壳
 ```
 
-收益：`s01-create-trade-e2e` 和 `p02-trade-create` 引用的是**同一个**
-`fragments/steps/create-trade.jmx`。接口改了只动一处，两边同时生效。
+收益：`s01-create-trade-e2e`、`p02-trade-create` 与 setUp 前置校验引用的是**同一个**
+`fragments/steps/workers/trade-management/create-trade.jmx`。接口改了只动一处，三边同时生效。
 
-`journeys/` 里的文件技术上也是 Test Fragment，分目录分的是**复用层级**不是元件类型：
-steps 被 journey 复用，journey 被 scenario 复用。真正的分界线在 `scenarios/`——那一层才有
-Thread Group、才可运行。
+### 两套分类法，不要合并成一棵树
+
+5 svc × N module × M api 规模下最容易犯的错，是想用一个目录树同时表达"系统架构"和"业务流程"：
+
+| 目录 | 组织方式 | 理由 |
+|---|---|---|
+| `fragments/steps/<svc>/<module>/` | **按系统架构** | 镜像 5 个服务的模块划分，对应代码归属与 CODEOWNERS |
+| `fragments/steps/_composites/` · `journeys/` | **按业务流程** | 一条 journey 天然横跨 refdata + workers + uc，放进任何一个 svc 目录都是错的 |
+
+强行合并的结果就是有人开始复制 fragment。
+
+### 原子 vs 组合：职责边界
+
+| 层 | 内容 | 举例 |
+|---|---|---|
+| **原子** | 一个 API 的**请求契约** + 该 API 固有的响应契约 | `refdata/portfolios-list.jmx` |
+| **组合** | 只 Include 原子，加事务边界与**调用方特有**的处理 | `_composites/refdata-load.jmx` |
+
+关键在于**同一个 API 的不同用法不复制 fragment，而是由调用方挂不同的 PostProcessor**：
+
+```
+GET /refdata/portfolios  ← 只定义一次
+   ├── setUp 前置：挂 refdata-pool-portfolios.groovy    → 取全部建全局池
+   └── journey：  挂 refdata-pick-portfolio.groovy      → 随机挑一条当入参
+```
+
+⚠ 这类 PostProcessor 必须包在 Simple Controller 里与 Include 同级。直接挂在 Transaction
+Controller 下会按 JMeter 作用域规则作用到该 TX 内**全部** sampler——于是 pick-portfolio 会去
+解析 counterparties 的响应，静默出错。
+
+### 事务命名即寻址
+
+```
+TX_<svc>_<module>_<api>    原子事务，与 NFR 的 PERF-xx 一一对应
+TX_flow_<name>             组合事务，横跨多个原子
+```
+
+收益：JMeter 报告按 label 聚合，`TX_workers_.*` 就能过滤出 workers 服务的全部事务，
+**不需要额外埋点就能回答"哪个服务慢"**。
+
+⚠ **统计口径**：`TX_flow_*` 包含其内部的 `TX_<svc>_*`。算 TPS 时二选一，不可相加。
 
 ### 三维正交
 
@@ -103,10 +146,10 @@ Thread Group、才可运行。
 
 ```
 setUp Thread Group (1 线程 1 轮，不计入测量)
-├── GET /refdata/portfolios      → 提取全部 id
-├── GET /refdata/counterparties  → 提取全部 fmId + name（成对）
-├── build-refdata-pools.groovy   → 写进全局 props（跨线程组唯一途径）
-├── POST /trades/create          → 真实建一笔，验证数据"业务上可用"
+├── Include portfolios-list      → 提取全部 id（与主链路同一份 fragment）
+├── Include counterparties-list  → 提取全部 fmId + name（成对）
+├── refdata-pool-*.groovy        → 写进全局 props（跨线程组唯一途径）
+├── Include create-trade         → 真实建一笔，验证数据"业务上可用"
 │   └── preflight-policy.groovy  → abort / prune / warn
 └── archive-refdata-snapshot.groovy → results/<runId>/resolved-refdata.csv
 ```
@@ -125,7 +168,8 @@ setUp Thread Group (1 线程 1 轮，不计入测量)
 
 ### 1. 校正 refdata 的 JSONPath
 
-`fragments/setup/refdata-preflight.jmx` 和 `fragments/steps/refdata-load.jmx` 里假设了：
+`fragments/steps/refdata/{portfolios,counterparties}-list.jmx` 的调用方脚本
+（`groovy/refdata-pool-*.groovy` 与 `groovy/refdata-pick-*.groovy`）里假设了：
 
 ```
 $.data[*].id      ← portfolio
@@ -167,8 +211,19 @@ JMeter 底层用 HttpClient，可能把它们合并或后者覆盖前者——**
 python3 scripts/validate.py
 ```
 
-不需要 Java/JMeter，检查：XML 合法性、fragment 里是否混入 Thread Group、
-可运行 plan 是否真的有 Thread Group、Include 路径是否存在、Groovy/CSV 文件是否存在。
+不需要 Java/JMeter。除结构性检查（XML 合法性、Thread Group 归属、Include 路径、
+Groovy/CSV 存在性与列数、TBC 占位值）外，还强制**五条"每个 API 只维护一份"的规则**：
+
+| 规则 | 内容 | 拦住什么 |
+|---|---|---|
+| **R1** | HTTPSampler 只允许在 `fragments/` 下定义 | 有人图省事直接在 scenario 里塞 sampler。把"能定义 API 的地方"收缩到一处，查重才只需查一处 |
+| **R2** | 同一 `method + 规范化 path` 不得在两个 fragment 中重复 | 复制粘贴出第二份契约。path 里的 `${...}` 会归一为 `{}` 再比对，换个变量名也躲不掉 |
+| **R3** | `steps/<svc>/` 下的 fragment 必须用 `${__P(<svc>.host)}` | 放错服务目录；以及 sampler 漏写 domain 后**静默继承**全局默认值、打到别的服务上 |
+| **R4** | 每个 fragment 必须被某个可运行 plan 间接引用 | 改名后 fragment 成孤儿，改它对结果毫无影响而报告依然全绿 |
+| **R5** | `api-registry.csv` 与磁盘一致 | 登记的实现不存在 / 一个 fragment 被两个 API 登记 / 新增 fragment 忘记登记 |
+
+在 5 svc × N module × M api 的规模上，"每个 API 只维护一份"靠约定守不住——
+本工程在只有 4 个 fragment 时就已经出现过 3 个端点各存在两份。所以它必须是校验规则。
 
 **这不能替代真实运行。** 它验证不了 JSONPath 是否匹配、断言是否成立、服务端是否接受请求。
 
@@ -179,9 +234,13 @@ python3 scripts/validate.py
 `run.sh` 通过 `sample_variables` 把这些字段写进 jtl 的额外列：
 
 ```
-caseId, tradeId, taskId, datFile, productType, costTier, fixings, datSize,
+runPhase, caseId, tradeId, taskId, datFile, productType, costTier, fixings, datSize,
 errClass, riskOk, riskFailCode, portfolioId, effectiveUserId
 ```
+
+**`runPhase` 必须先用来过滤。** setUp 前置校验 Include 的是与主链路**同一份** create
+fragment，所以它产生的样本事务名完全相同。不按 `runPhase=main` 过滤，preflight 的那一笔
+create 会混进容量统计——量小的时候尤其致命：0.1 TPS 的场景里多一笔就是百分之几的偏差。
 
 `costTier` 与 `fixings` 是**成本维度**标签：`.dat` 体积与解析成本由 productType 的结构
 （定盘次数、schedule 长度）决定，所以成本画像要按这两列切分，而不是按 `datSize`。
@@ -204,11 +263,12 @@ errClass, riskOk, riskFailCode, portfolioId, effectiveUserId
 | 项 | 状态 | 影响 |
 |---|---|---|
 | `preflightPolicy=prune` | **未实现**，回退为 abort | 见 `groovy/preflight-policy.groovy` 的 TODO —— 需要团队决策，不是纯技术问题 |
-| refdata 两个查询串行 | 已知偏差 | 真实前端并发拉取，串行会让 `TX_RefData_Load` 偏慢。装 bzm Parallel Controller 后改 `refdata-load.jmx` 一处即可 |
+| refdata 两个查询串行 | 已知偏差 | 真实前端并发拉取，串行会让 `TX_flow_refdata_load` 偏慢。装 bzm Parallel Controller 后改 `_composites/refdata-load.jmx` 一处即可 |
 | `stress` 用普通 Thread Group | 已知偏差 | 阶梯加压需要 bzm Concurrency Thread Group；当前 `steps`/`holdPerStep` 两个属性是预留的，尚未生效 |
 | WebSocket | 不在 scope | create 会触发 WebSocket 推送，当前完全未覆盖 |
 | `suites/`、`ops/` | 空目录 | 混合负载与降级场景、灌数与清理脚本尚未建 |
-| 其余 32 个 API | 未建 | 按 `p02-trade-create` 的模式扩展 |
+| 其余 28 个 API | 未建 | 见 `api-registry.csv` 的 `status=todo` 行 |
+| 5 个 svc 的真实 host | 占位值 | `config/*.properties` 里 5 组 `<svc>.host` 全指向同一个占位地址，待运维提供 |
 
 ---
 
@@ -233,13 +293,28 @@ errClass, riskOk, riskFailCode, portfolioId, effectiveUserId
 
 ## 加一个新 API 要做什么
 
-以 `GET /trades/{id}` 为例：
+以 `POST /checker/tasks/{taskId}/approve` 为例：
 
-1. `jmx/fragments/steps/trade-detail.jmx` —— Test Fragment + Transaction Controller + Sampler，
-   顶部写清 fragment 契约（输入变量、输出变量、产出事务）
-2. 需要它的 journey 里加一个 Include Controller
-3. 要单独测容量，复制 `jmx/api/p02-trade-create.jmx` 改两处：testname、Include 的路径
-4. 有新数据需求就加 CSV，**不要**把数据写进 jmx
+1. **先在 `api-registry.csv` 登记一行**（apiId / svc / module / method / path / mode / owner）。
+   registry 是清单的单一事实源，先登记才知道这个 API 是否已经有人实现过。
+2. 判断形态：
+   - **专用 fragment** —— multipart 上传 / 复杂 payload / 响应要关联给后续步骤 / 定制断言
+   - **数据驱动行** —— 只是 GET + 参数 + 状态码断言，则 mode 填 `datadriven`，不建 jmx
+3. 专用 fragment 建在 `jmx/fragments/steps/workers/checker-flow/approve.jmx`：
+   - 一个 sampler，事务名 `TX_workers_checkerflow_approve`
+   - domain 必须写 `${__P(workers.host,localhost)}`（R3 会检查目录与前缀一致）
+   - 顶部写清 fragment 契约（输入变量、输出变量、产出事务）
+   - **只放该 API 固有的响应处理**；调用方特有的处理挂在 Include 外层
+4. 把 registry 那行的 `impl` 填成这个路径（R5 会检查存在且唯一）
+5. 需要它的 journey / composite 里加 Include Controller（R4 要求至少被引用一次）
+6. 要单独测容量，复制 `jmx/api/p02-trade-create.jmx` 改两处：testname、Include 的路径
+7. 有新数据需求就加 CSV，**不要**把数据写进 jmx
+8. `python3 scripts/validate.py` —— 上面每一步漏做都会在这里红
+
+**不要**为了"结构整齐"给只被一个 journey 用到的步骤建组合 fragment。
+JMeter 过度拆分的代价（路径解析、GUI 跳转、调试困难）通常大于收益——
+组合层只有被 **2 个以上** journey 使用时才值得抽出来。原子层不受此限：
+一个 API 一个文件是 R2 的前提。
 
 **不要**为了"结构整齐"给只被一个 journey 用到的步骤建 fragment。
 JMeter 过度拆分的代价（路径解析、GUI 跳转、调试困难）通常大于收益——

@@ -1,6 +1,7 @@
 /*
- * pick-counterparty.groovy
- * 挂载点：steps/refdata-load.jmx → refdata_counterparties → JSR223 PostProcessor
+ * refdata-pick-counterparty.groovy
+ * 挂载点：_composites/refdata-load.jmx → "counterparties" Simple Controller 下的 JSR223 PostProcessor
+ * （原 pick-counterparty.groovy，随四层重构改名以与 refdata-pool-* 配套）
  *
  * 职责：从 counterparty 列表里随机挑一条，**成对**取出 fmId 和 name。
  *
@@ -11,6 +12,8 @@
  * 是最难定位的一类脚本 bug。
  *
  * 提取器之间没有"同一条记录"这个概念，配对只能在代码里做。
+ *
+ * ⚠ 作用域：必须包在 Simple Controller 里与 Include 同级，理由见 refdata-pick-portfolio.groovy。
  */
 
 import groovy.json.JsonSlurper
@@ -37,7 +40,7 @@ def cp = list[ThreadLocalRandom.current().nextInt(list.size())]
 vars.put('counterpartyFmId', cp.fmId as String)
 vars.put('counterpartyName', (cp.name ?: '') as String)
 
-// 告诉下游的 create-trade fragment：数据已由本步骤现场绑定，不要再从全局池挑。
-// portfolioId 由同 fragment 内的 JSON Extractor 设置。
+// 告诉下游的 create fragment：数据已由本步骤现场绑定，不要再从全局池挑。
+// portfolioId 由同 TX 内先执行的 refdata-pick-portfolio.groovy 设置。
 vars.put('refdataBound', vars.get('portfolioId') && vars.get('portfolioId') != 'NOT_FOUND'
                          ? 'true' : 'false')

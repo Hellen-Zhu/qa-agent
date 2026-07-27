@@ -2,23 +2,33 @@
 """
 静态校验 JMeter 工程 —— 不需要 Java / JMeter。
 
-检查项：
+结构性检查：
   1. 每个 .jmx 是合法 XML
   2. fragments/ 和 journeys/ 里不含 Thread Group（含了就无法被 Include）
-  3. scenarios/ api/ suites/ ops/ 里至少有一个 Thread Group（没有就是空转）
+  3. scenarios/ api/ suites/ ops/ 里至少有一个**主** Thread Group（没有就是空转）
   4. fragments/ journeys/ 的顶层是 TestFragmentController
   5. IncludeController 的路径存在（且不指向含 Thread Group 的文件）
   6. JSR223 引用的 .groovy 文件存在
-  7. CSVDataSet 引用的 .csv 文件存在，且列数与 variableNames 一致
+  7. CSVDataSet 引用的 .csv 存在，且列数与 variableNames 一致
   8. element / hashTree 配对（JMeter 靠这个还原树形结构，错了会静默丢元件）
   9. CSV 中无 TBC 占位值（带着 TBC 能跑，但结果列全是 TBC，整轮白跑）
+
+"每个 API 只维护一份"的五条强制规则（5 svc × N module × M api 规模下，
+约定守不住，只能靠机器）：
+  R1 HTTPSampler 只允许出现在 fragments/ 下；其余目录只能 Include
+  R2 同一 method + 规范化 path 不得在两个 fragment 中重复定义
+  R3 steps/<svc>/ 下的 fragment 必须用 ${__P(<svc>.host)} 寻址
+  R4 每个 fragment 必须被某个可运行 plan 间接引用（孤儿检测）
+  R5 api-registry.csv 与磁盘一致：登记的实现存在、不重复、无未登记的 fragment
 
 ⚠ 它验证不了 JSONPath 是否匹配真实响应、断言是否成立、服务端是否接受请求。
    这些只能靠真跑一次 smoke。
 """
+import csv
 import re
 import sys
 import xml.etree.ElementTree as ET
+from collections import defaultdict
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -26,8 +36,8 @@ THREAD_GROUPS = {"ThreadGroup", "SetupThreadGroup", "PostThreadGroup",
                  "com.blazemeter.jmeter.threads.concurrency.ConcurrencyThreadGroup",
                  "kg.apc.jmeter.threads.SteppingThreadGroup"}
 
-# fragments/ journeys/ 不可运行；其余目录必须可运行
 NON_RUNNABLE = ("jmx/fragments", "jmx/journeys")
+RUNNABLE_DIRS = ("jmx/scenarios", "jmx/api", "jmx/suites", "jmx/ops")
 
 errors, warnings = [], []
 
@@ -38,7 +48,7 @@ def rel(p: Path) -> str:
 
 def resolve(raw: str) -> Path | None:
     """把 jmx 里的路径还原成磁盘路径。${__P(baseDir,.)} → 项目根。"""
-    s = raw.strip()
+    s = (raw or "").strip()
     if not s:
         return None
     s = re.sub(r"\$\{__P\(baseDir,[^)]*\)\}", str(ROOT), s)
@@ -46,6 +56,29 @@ def resolve(raw: str) -> Path | None:
         return None
     p = Path(s)
     return p if p.is_absolute() else ROOT / p
+
+
+def norm_path(raw: str) -> str:
+    """
+    规范化 sampler path，用于 R2 查重。
+      ${__P(workers.basePath,/api/v1)}/trades/${tradeId}/risk-metrics?x=1
+        → /trades/{}/risk-metrics
+    去掉 basePath 前缀、把所有 ${...} 变量归一为 {}、丢掉 query string。
+    不归一化就查不出重复：同一个端点在两处可能写成不同的变量名。
+    """
+    s = (raw or "").strip()
+    s = re.sub(r"\$\{__P\([A-Za-z0-9_.]*basePath[^)]*\)\}", "", s)
+    s = s.split("?", 1)[0]
+    s = re.sub(r"\$\{[^}]*\}", "{}", s)
+    return s.rstrip("/") or "/"
+
+
+def svc_of(r: str) -> str | None:
+    """steps/<svc>/... → svc；_composites 与 setup 不属于任何单一服务。"""
+    parts = Path(r).parts
+    if len(parts) >= 4 and parts[:3] == ("jmx", "fragments", "steps"):
+        return None if parts[3] == "_composites" else parts[3]
+    return None
 
 
 def check_hashtree_pairing(path: Path, root: ET.Element) -> None:
@@ -71,7 +104,7 @@ def check_hashtree_pairing(path: Path, root: ET.Element) -> None:
                 i += 2
 
 
-def check(path: Path) -> None:
+def check(path: Path, endpoint_index: dict) -> None:
     try:
         tree = ET.parse(path)
     except ET.ParseError as e:
@@ -83,6 +116,7 @@ def check(path: Path) -> None:
 
     tgs = [e for e in root.iter() if e.tag in THREAD_GROUPS]
     frags = [e for e in root.iter() if e.tag == "TestFragmentController"]
+    samplers = list(root.iter("HTTPSamplerProxy"))
 
     if non_runnable:
         if tgs:
@@ -100,6 +134,37 @@ def check(path: Path) -> None:
                 f"{r}: 可运行的 plan 里没有主 Thread Group"
                 f"（只有 {[e.tag for e in tgs] or '无'}）—— 跑起来是空转")
 
+    # ── R1：HTTPSampler 只允许在 fragments/ 下定义 ──
+    # 把"能定义 API 的地方"从 6 个目录收缩到 1 个，查重才只需要在一处查。
+    if samplers and not r.startswith("jmx/fragments"):
+        names = [s.get("testname") for s in samplers[:3]]
+        errors.append(
+            f"R1 {r}: 在 fragments/ 之外定义了 {len(samplers)} 个 HTTPSampler（{names}）—— "
+            f"scenarios/journeys/api 只能 Include，不能自己定义接口")
+
+    # ── R3：目录与服务寻址前缀必须一致 ──
+    svc = svc_of(r)
+    for s in samplers:
+        dom = s.find("stringProp[@name='HTTPSampler.domain']")
+        dom_txt = (dom.text or "").strip() if dom is not None else ""
+        if not dom_txt:
+            errors.append(
+                f"R3 {r}: sampler '{s.get('testname')}' 没有显式 domain —— "
+                f"会静默继承全局默认值并可能打到错误的服务")
+        elif svc and f"__P({svc}." not in dom_txt:
+            errors.append(
+                f"R3 {r}: sampler '{s.get('testname')}' 位于 steps/{svc}/ 却使用 "
+                f"'{dom_txt}' —— 应为 ${{__P({svc}.host,...)}}")
+
+    # ── R2 索引：同一 method + 规范化 path 只允许定义一次 ──
+    if r.startswith("jmx/fragments"):
+        for s in samplers:
+            m = s.find("stringProp[@name='HTTPSampler.method']")
+            p_ = s.find("stringProp[@name='HTTPSampler.path']")
+            key = ((m.text or "?").strip() if m is not None else "?",
+                   norm_path(p_.text if p_ is not None else ""))
+            endpoint_index[key].append(r)
+
     check_hashtree_pairing(path, root)
 
     # Include 路径
@@ -111,14 +176,12 @@ def check(path: Path) -> None:
             continue
         if "${" in raw:
             errors.append(
-                f"{r}: IncludeController 路径含变量 '{raw}' —— "
-                f"JMeter 不支持，必须写死")
+                f"{r}: IncludeController 路径含变量 '{raw}' —— JMeter 不支持，必须写死")
             continue
         target = ROOT / raw
         if not target.exists():
             errors.append(f"{r}: Include 目标不存在 — {raw}")
             continue
-        # 被 Include 的文件不能有 Thread Group
         try:
             sub = ET.parse(target).getroot()
             if any(e.tag in THREAD_GROUPS for e in sub.iter()):
@@ -139,7 +202,8 @@ def check(path: Path) -> None:
                         f"{r}: <{tag} testname='{el.get('testname')}'> 用了内联脚本 —— "
                         f"约定是外置到 groovy/")
                 else:
-                    errors.append(f"{r}: <{tag} testname='{el.get('testname')}'> 既无脚本文件也无内联脚本")
+                    errors.append(
+                        f"{r}: <{tag} testname='{el.get('testname')}'> 既无脚本文件也无内联脚本")
                 continue
             target = resolve(raw)
             if target is None:
@@ -164,7 +228,8 @@ def check(path: Path) -> None:
         # 请求带着一个不存在的文件名发出去。这类错误在报告里表现为业务失败，极难倒推。
         vn = el.find("stringProp[@name='variableNames']")
         names = [n for n in (vn.text or "").split(",") if n.strip()] if vn is not None else []
-        header = target.read_text(encoding="utf-8").splitlines()[0] if target.stat().st_size else ""
+        lines = target.read_text(encoding="utf-8").splitlines()
+        header = lines[0] if lines else ""
         ncols = len(header.split(",")) if header else 0
         if names and ncols and ncols != len(names):
             errors.append(
@@ -173,7 +238,7 @@ def check(path: Path) -> None:
 
         # 末列可空的字段必须保留结尾逗号，否则 JMeter 解析成"缺列"而非空串
         if names and header:
-            for i, line in enumerate(target.read_text(encoding="utf-8").splitlines()[1:], start=2):
+            for i, line in enumerate(lines[1:], start=2):
                 if line.strip() and len(line.split(",")) != len(names):
                     errors.append(
                         f"{r}: {raw} 第 {i} 行 {len(line.split(','))} 列，"
@@ -183,16 +248,92 @@ def check(path: Path) -> None:
         # TBC 占位值。这类字段（costTier / fixings）只进 jtl 的结果列，不影响请求能否发出——
         # 所以带着 TBC 跑不会报错，只会让"P95 对定盘次数"这条成本曲线整列变成 TBC，
         # 事后才发现整轮数据白跑。宁可在这里红。
-        tbc_rows = [
-            i for i, line in enumerate(target.read_text(encoding="utf-8").splitlines()[1:], start=2)
-            if "TBC" in line
-        ]
+        tbc_rows = [i for i, line in enumerate(lines[1:], start=2) if "TBC" in line]
         if tbc_rows:
             shown = ", ".join(map(str, tbc_rows[:5])) + ("..." if len(tbc_rows) > 5 else "")
             errors.append(
                 f"{r}: {raw} 有 {len(tbc_rows)} 行含 TBC 占位值（第 {shown} 行）—— "
                 f"需填入真实值后才能出成本画像结论（见 docs/performance/"
                 f"workload-modeling.zh.md §4.7）")
+
+
+def includes_of(jmx: Path) -> list[str]:
+    try:
+        root = ET.parse(jmx).getroot()
+    except ET.ParseError:
+        return []
+    out = []
+    for inc in root.iter("IncludeController"):
+        sp = inc.find("stringProp[@name='IncludeController.includepath']")
+        raw = (sp.text or "").strip() if sp is not None else ""
+        if raw and "${" not in raw:
+            out.append(raw)
+    return out
+
+
+def check_r4_orphans(all_jmx: list[Path]) -> None:
+    """R4：每个 fragment 必须被某个可运行 plan 间接引用。
+    改名后忘记更新引用方 → fragment 变孤儿，改动它对结果毫无影响，
+    而报告依然全绿。这是最容易长期无人察觉的一类腐化。"""
+    reachable, stack = set(), []
+    for j in all_jmx:
+        if any(rel(j).startswith(d) for d in RUNNABLE_DIRS):
+            stack.extend(includes_of(j))
+    while stack:
+        cur = stack.pop()
+        if cur in reachable:
+            continue
+        reachable.add(cur)
+        t = ROOT / cur
+        if t.exists():
+            stack.extend(includes_of(t))
+    for j in all_jmx:
+        r = rel(j)
+        if r.startswith("jmx/fragments") and r not in reachable:
+            errors.append(f"R4 {r}: 孤儿 fragment —— 没有任何可运行 plan 引用它")
+
+
+def check_r5_registry(all_jmx: list[Path]) -> None:
+    """R5：api-registry.csv 与磁盘一致。
+    registry 是"哪些 API 存在、各自实现在哪"的单一事实源；
+    没有它，覆盖率和归属都只能靠人记。"""
+    reg = ROOT / "api-registry.csv"
+    if not reg.exists():
+        errors.append("R5 api-registry.csv 不存在 —— 它是 API 清单的单一事实源")
+        return
+    rows = list(csv.DictReader(reg.open(encoding="utf-8")))
+    seen_id, seen_impl = {}, {}
+    for i, row in enumerate(rows, start=2):
+        aid = (row.get("apiId") or "").strip()
+        if not aid:
+            errors.append(f"R5 api-registry.csv 第 {i} 行缺 apiId")
+            continue
+        if aid in seen_id:
+            errors.append(f"R5 api-registry.csv: apiId '{aid}' 重复（第 {seen_id[aid]} 与 {i} 行）")
+        seen_id[aid] = i
+
+        impl = (row.get("impl") or "").strip()
+        if not impl:
+            continue
+        if not (ROOT / impl).exists():
+            errors.append(f"R5 api-registry.csv 第 {i} 行 impl 不存在 — {impl}")
+        if impl in seen_impl:
+            errors.append(
+                f"R5 api-registry.csv: impl '{impl}' 被两个 API 登记"
+                f"（第 {seen_impl[impl]} 与 {i} 行）—— 一个 fragment 只能实现一个 API")
+        seen_impl[impl] = i
+
+    # 反向：有 sampler 的原子 fragment 必须在 registry 里登记
+    for j in all_jmx:
+        r = rel(j)
+        if not r.startswith("jmx/fragments/steps/") or "/_composites/" in r:
+            continue
+        try:
+            has_sampler = next(ET.parse(j).getroot().iter("HTTPSamplerProxy"), None) is not None
+        except ET.ParseError:
+            continue
+        if has_sampler and r not in seen_impl:
+            errors.append(f"R5 {r}: 定义了接口但未登记进 api-registry.csv")
 
 
 def check_groovy_orphans(referenced: set[Path]) -> None:
@@ -224,11 +365,23 @@ def main() -> int:
         print("没有找到任何 .jmx", file=sys.stderr)
         return 1
 
+    endpoint_index: dict = defaultdict(list)
     for f in files:
-        check(f)
+        check(f, endpoint_index)
+
+    # ── R2：同一端点只允许定义一次 ──
+    for (method, path), where in sorted(endpoint_index.items()):
+        if len(where) > 1:
+            errors.append(
+                f"R2 端点 {method} {path} 在 {len(where)} 个 fragment 中重复定义："
+                f"{', '.join(where)} —— 一个 API 只能有一份契约定义")
+
+    check_r4_orphans(files)
+    check_r5_registry(files)
     check_groovy_orphans(collect_referenced())
 
-    print(f"检查了 {len(files)} 个 jmx 文件\n")
+    print(f"检查了 {len(files)} 个 jmx 文件，"
+          f"{len(endpoint_index)} 个不同端点\n")
     for w in warnings:
         print(f"  WARN  {w}")
     for e in errors:

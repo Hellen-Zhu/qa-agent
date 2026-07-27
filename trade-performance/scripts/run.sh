@@ -48,7 +48,7 @@ for d in jmx/scenarios jmx/api jmx/suites jmx/ops; do
     [[ -f "$d/$PLAN.jmx" ]] && { PLAN_FILE="$d/$PLAN.jmx"; break; }
 done
 if [[ -z "$PLAN_FILE" ]]; then
-    if [[ -f "jmx/fragments/steps/$PLAN.jmx" || -f "jmx/fragments/setup/$PLAN.jmx" || -f "jmx/journeys/$PLAN.jmx" ]]; then
+    if find jmx/fragments jmx/journeys -name "$PLAN.jmx" | grep -q .; then
         echo "ERROR: '$PLAN' is a fragment/journey — it has no Thread Group and cannot be run directly." >&2
         echo "       Run a scenario or api plan that includes it instead." >&2
         exit 2
@@ -115,7 +115,7 @@ jmeter -n \
     -q "$PROFILE_FILE" \
     -JbaseDir="$PROJECT_ROOT" \
     -JrunResultDir="$PROJECT_ROOT/$RUN_DIR" \
-    -Jsample_variables=caseId,tradeId,taskId,datFile,productType,costTier,fixings,datSize,errClass,riskOk,riskFailCode,portfolioId,effectiveUserId \
+    -Jsample_variables=runPhase,caseId,tradeId,taskId,datFile,productType,costTier,fixings,datSize,errClass,riskOk,riskFailCode,portfolioId,effectiveUserId \
     -Jjmeter.save.saveservice.output_format=csv \
     -Jjmeter.save.saveservice.response_data.on_error=true \
     "${EXTRA[@]}" \

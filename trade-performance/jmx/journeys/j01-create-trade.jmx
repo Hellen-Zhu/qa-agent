@@ -13,11 +13,11 @@
   真正的分界线在 scenarios —— 那一层才开始有 Thread Group、才可运行。
 
   ── 用户路径（前端 E2E）──
-    1. 打开 create-trade 页面 → 拉取下拉框数据      [TX_RefData_Load]
+    1. 打开 create-trade 页面 → 拉取下拉框数据      [TX_flow_refdata_load]
        ↓ think time：用户选组合、选交易对手、挑 .dat 文件
-    2. 提交                                         [TX_Create_Trade]
+    2. 提交                                         [TX_workers_trademgmt_create]
        ↓ think time：用户看提交结果
-    3. 查看刚建好的这笔                              [TX_View_Trade_Details]
+    3. 查看刚建好的这笔                              [TX_flow_view_trade_details]
 
   ⚠ Include Controller 的路径**不支持变量和函数**（JMeter 已知限制），
     只能写死。它按**当前工作目录**解析 —— 所以 scripts/run.sh 必须先 cd 到项目根，
@@ -41,7 +41,7 @@
 
         <!-- 1. 打开页面，拉下拉框数据 -->
         <IncludeController guiclass="IncludeControllerGui" testclass="IncludeController" testname="inc: refdata-load" enabled="true">
-          <stringProp name="IncludeController.includepath">jmx/fragments/steps/refdata-load.jmx</stringProp>
+          <stringProp name="IncludeController.includepath">jmx/fragments/steps/_composites/refdata-load.jmx</stringProp>
         </IncludeController>
         <hashTree/>
 
@@ -65,7 +65,7 @@
 
         <!-- 2. 提交 -->
         <IncludeController guiclass="IncludeControllerGui" testclass="IncludeController" testname="inc: create-trade" enabled="true">
-          <stringProp name="IncludeController.includepath">jmx/fragments/steps/create-trade.jmx</stringProp>
+          <stringProp name="IncludeController.includepath">jmx/fragments/steps/workers/trade-management/create-trade.jmx</stringProp>
         </IncludeController>
         <hashTree/>
 
@@ -85,7 +85,7 @@
 
         <!-- 3. 查看刚建好的 trade（踩 UC gRPC 与 risk-engine 两条下游） -->
         <IncludeController guiclass="IncludeControllerGui" testclass="IncludeController" testname="inc: view-trade-details" enabled="true">
-          <stringProp name="IncludeController.includepath">jmx/fragments/steps/view-trade-details.jmx</stringProp>
+          <stringProp name="IncludeController.includepath">jmx/fragments/steps/_composites/view-trade-details.jmx</stringProp>
         </IncludeController>
         <hashTree/>
 

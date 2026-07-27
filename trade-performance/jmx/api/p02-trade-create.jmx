@@ -36,11 +36,6 @@
 
       <Arguments guiclass="ArgumentsPanel" testclass="Arguments" testname="UDV" enabled="true">
         <collectionProp name="Arguments.arguments">
-          <elementProp name="basePath" elementType="Argument">
-            <stringProp name="Argument.name">basePath</stringProp>
-            <stringProp name="Argument.value">${__P(basePath,/api/v1)}</stringProp>
-            <stringProp name="Argument.metadata">=</stringProp>
-          </elementProp>
           <elementProp name="datDir" elementType="Argument">
             <stringProp name="Argument.name">datDir</stringProp>
             <stringProp name="Argument.value">${__P(baseDir,.)}/data/dat</stringProp>
@@ -59,9 +54,10 @@
         <elementProp name="HTTPsampler.Arguments" elementType="Arguments" guiclass="HTTPArgumentsPanel" testclass="Arguments" testname="User Defined Variables" enabled="true">
           <collectionProp name="Arguments.arguments"/>
         </elementProp>
-        <stringProp name="HTTPSampler.domain">${__P(host,localhost)}</stringProp>
-        <stringProp name="HTTPSampler.port">${__P(port,8080)}</stringProp>
-        <stringProp name="HTTPSampler.protocol">${__P(protocol,http)}</stringProp>
+        <!-- 刻意不设 domain / port / protocol：5 个服务各自寻址，
+             由每个原子 fragment 显式写 ${__P(<svc>.host)} 等（校验规则 R3 会检查）。
+             在这里设全局默认值会让"忘记写 domain 的 sampler"静默打到错误的服务上，
+             而请求本身成功 —— 这类错误在报告里完全看不出来。 -->
         <stringProp name="HTTPSampler.connect_timeout">${__P(connectTimeout,5000)}</stringProp>
         <stringProp name="HTTPSampler.response_timeout">${__P(responseTimeout,60000)}</stringProp>
         <stringProp name="HTTPSampler.contentEncoding">UTF-8</stringProp>
@@ -139,6 +135,16 @@
         <stringProp name="ThreadGroup.delay"></stringProp>
       </SetupThreadGroup>
       <hashTree>
+        <Arguments guiclass="ArgumentsPanel" testclass="Arguments" testname="runPhase=setup" enabled="true">
+          <collectionProp name="Arguments.arguments">
+            <elementProp name="runPhase" elementType="Argument">
+              <stringProp name="Argument.name">runPhase</stringProp>
+              <stringProp name="Argument.value">setup</stringProp>
+              <stringProp name="Argument.metadata">=</stringProp>
+            </elementProp>
+          </collectionProp>
+        </Arguments>
+        <hashTree/>
         <IncludeController guiclass="IncludeControllerGui" testclass="IncludeController" testname="inc: refdata-preflight" enabled="true">
           <stringProp name="IncludeController.includepath">jmx/fragments/setup/refdata-preflight.jmx</stringProp>
         </IncludeController>
@@ -158,9 +164,19 @@
         <stringProp name="ThreadGroup.delay">0</stringProp>
       </ThreadGroup>
       <hashTree>
+        <Arguments guiclass="ArgumentsPanel" testclass="Arguments" testname="runPhase=main" enabled="true">
+          <collectionProp name="Arguments.arguments">
+            <elementProp name="runPhase" elementType="Argument">
+              <stringProp name="Argument.name">runPhase</stringProp>
+              <stringProp name="Argument.value">main</stringProp>
+              <stringProp name="Argument.metadata">=</stringProp>
+            </elementProp>
+          </collectionProp>
+        </Arguments>
+        <hashTree/>
         <!-- 直接 Include 原子步骤，不经过 journey：单接口测试要的就是纯净 -->
         <IncludeController guiclass="IncludeControllerGui" testclass="IncludeController" testname="inc: create-trade" enabled="true">
-          <stringProp name="IncludeController.includepath">jmx/fragments/steps/create-trade.jmx</stringProp>
+          <stringProp name="IncludeController.includepath">jmx/fragments/steps/workers/trade-management/create-trade.jmx</stringProp>
         </IncludeController>
         <hashTree/>
       </hashTree>

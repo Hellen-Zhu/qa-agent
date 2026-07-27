@@ -1,0 +1,33 @@
+# CODEOWNERS —— 压测脚本按被测服务归属到对应团队
+#
+# 目的不是限制修改，而是让**接口变更的 PR 自动叫上压测脚本的维护方**。
+# 5 个 svc 各自演进时，最容易腐化的就是"接口改了但没人想起改压测脚本"——
+# 脚本随后静默失败（400/业务拒绝），而报告依然出得来。
+#
+# 目录结构与归属的对应关系登记在 trade-performance/api-registry.csv 的 owner 列，
+# 两者需保持一致。
+#
+# ⚠ 下列团队名为占位值，需替换成真实的 GitHub team handle。
+
+# ── 原子 fragment：按 svc / module 归属 ─────────────────────────
+/qa/trade-performance/jmx/fragments/steps/workers/trade-management/    @trade-team
+/qa/trade-performance/jmx/fragments/steps/workers/product-management/  @product-team
+/qa/trade-performance/jmx/fragments/steps/workers/checker-flow/        @checker-team
+/qa/trade-performance/jmx/fragments/steps/uc/                          @uc-team
+/qa/trade-performance/jmx/fragments/steps/refdata/                     @refdata-team
+/qa/trade-performance/jmx/fragments/steps/notifications/               @notifications-team
+/qa/trade-performance/jmx/fragments/steps/ops/                         @ops-team
+
+# ── 组合 / 链路 / 场景：按业务流程组织，归 QA ────────────────────
+# 它们天然横跨多个 svc，无法归属单一服务团队。
+/qa/trade-performance/jmx/fragments/steps/_composites/                 @qa-team
+/qa/trade-performance/jmx/fragments/setup/                             @qa-team
+/qa/trade-performance/jmx/journeys/                                    @qa-team
+/qa/trade-performance/jmx/scenarios/                                   @qa-team
+/qa/trade-performance/jmx/api/                                         @qa-team
+
+# ── 工程骨架与规则 ──────────────────────────────────────────────
+/qa/trade-performance/scripts/                                         @qa-team
+/qa/trade-performance/groovy/                                          @qa-team
+/qa/trade-performance/api-registry.csv                                 @qa-team
+/qa/docs/performance/                                                  @qa-team

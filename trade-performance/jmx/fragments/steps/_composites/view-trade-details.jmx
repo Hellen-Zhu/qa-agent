@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  fragments/steps/_composites/view-trade-details.jmx
+
+  【层级】组合 fragment —— 只 Include 原子 fragment，自己不定义任何 sampler（校验规则 R1/R2）
+  【职责】创建成功后查看这笔 trade —— 前端 E2E 的最后一段。
+  【被谁引用】journeys/j01-create-trade.jmx
+
+  ── 为什么这一步值得单独测 ──
+  两个原子接口踩中的是**风险最高的两条下游**：
+    workers.trade-management.detail        → UC gRPC（依赖影响面第一：9 个接口共用）
+    workers.trade-management.risk-metrics  → risk-engine gRPC（且是 High 频接口）
+  create 本身反而不依赖它们。把这一步放进 journey，才让 E2E 覆盖到真正的爆炸半径。
+
+  ══ Fragment 契约 ══════════════════════════════════════════════
+  【输入变量】tradeId 必填（NOT_FOUND 时整段跳过）；userId 必填
+  【输出变量】riskOk = true|false|skipped
+  【产出事务】TX_flow_view_trade_details
+             （内含 TX_workers_trademgmt_detail、TX_workers_trademgmt_riskmetrics）
+  ═══════════════════════════════════════════════════════════════
+
+  ── 失败策略 ──
+  risk-metrics 失败**不中止**本次迭代，只打标签（策略在原子 fragment 内，
+  因为那是该 API 的固有性质，不是本组合的特殊需求）。
+-->
+<jmeterTestPlan version="1.2" properties="5.0" jmeter="5.6.3">
+  <hashTree>
+    <TestPlan guiclass="TestPlanGui" testclass="TestPlan" testname="view-trade-details (composite fragment)" enabled="true">
+      <stringProp name="TestPlan.comments">Composite fragment. Never run directly.</stringProp>
+      <boolProp name="TestPlan.functional_mode">false</boolProp>
+      <boolProp name="TestPlan.serialize_threadgroups">false</boolProp>
+      <elementProp name="TestPlan.user_defined_variables" elementType="Arguments" guiclass="ArgumentsPanel" testclass="Arguments" testname="User Defined Variables" enabled="true">
+        <collectionProp name="Arguments.arguments"/>
+      </elementProp>
+      <stringProp name="TestPlan.user_define_classpath"></stringProp>
+    </TestPlan>
+    <hashTree>
+
+      <TestFragmentController guiclass="TestFragmentControllerGui" testclass="TestFragmentController" testname="view-trade-details" enabled="true"/>
+      <hashTree>
+
+        <!-- create 失败时 tradeId=NOT_FOUND，整段跳过。
+             不加这个守卫的话会发出 GET /trades/NOT_FOUND，
+             制造一批 404 污染错误率，把真正的 create 失败淹没掉。 -->
+        <IfController guiclass="IfControllerPanel" testclass="IfController" testname="if trade created" enabled="true">
+          <stringProp name="IfController.condition">${__jexl3("${tradeId}" != "NOT_FOUND")}</stringProp>
+          <boolProp name="IfController.evaluateAll">false</boolProp>
+          <boolProp name="IfController.useExpression">true</boolProp>
+        </IfController>
+        <hashTree>
+
+          <TransactionController guiclass="TransactionControllerGui" testclass="TransactionController" testname="TX_flow_view_trade_details" enabled="true">
+            <boolProp name="TransactionController.parent">false</boolProp>
+            <boolProp name="TransactionController.includeTimers">false</boolProp>
+          </TransactionController>
+          <hashTree>
+
+            <IncludeController guiclass="IncludeControllerGui" testclass="IncludeController" testname="include trade-detail" enabled="true">
+              <stringProp name="IncludeController.includepath">jmx/fragments/steps/workers/trade-management/trade-detail.jmx</stringProp>
+            </IncludeController>
+            <hashTree/>
+
+            <IncludeController guiclass="IncludeControllerGui" testclass="IncludeController" testname="include trade-risk-metrics" enabled="true">
+              <stringProp name="IncludeController.includepath">jmx/fragments/steps/workers/trade-management/trade-risk-metrics.jmx</stringProp>
+            </IncludeController>
+            <hashTree/>
+
+          </hashTree>
+        </hashTree>
+      </hashTree>
+    </hashTree>
+  </hashTree>
+</jmeterTestPlan>

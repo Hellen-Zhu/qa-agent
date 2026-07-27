@@ -33,8 +33,21 @@
   ── 对照实验开关（无需改脚本）──
   -JrefdataFile=data/refdata/refdata-pairs-single.csv
                            全部线程打同一个 portfolio（测 portfolio 级锁竞争）
-  -JuserMode=fixed         全部线程用同一个 maker（测 per-user 锁 / 计数器竞争）
+  -JmakerUserId=maker02@sc.com
+                           换一个 maker 跑（对比不同身份的耗时差异）
   ⚠ portfolioSelect 属性只对动态池模式生效；csv 模式下靠换 refdataFile 实现同一目的。
+
+  ══ 身份固定，不再轮换 ══════════════════════════════════════════
+  全部 event 操作用 ${__P(makerUserId,maker@sc.com)}，approve/reject 用 checkerUserId。
+  身份在**线程组级 UDV** 里声明（与 runPhase 同一个 Arguments 元件）。
+
+  代价要说清楚：原先 userMode=pool|fixed 的对照实验（分散 maker vs 集中同一 maker，
+  用来暴露 per-user 锁 / 计数器竞争）**没有了** —— 现在永远处于"集中"那一侧。
+  这是保守选择：如果服务端真有 per-user 锁，我们测到的是它最坏的一面，
+  不会给出偏乐观的容量结论。但也意味着无法把"慢"归因到 per-user 锁上。
+  真需要那个对照实验时，加一个 CSV Data Set 直接供 effectiveUserId 即可，
+  不需要恢复 groovy。
+  ═══════════════════════════════════════════════════════════════
 -->
 <jmeterTestPlan version="1.2" properties="5.0" jmeter="5.6.3">
   <hashTree>
@@ -98,7 +111,7 @@
           </elementProp>
           <elementProp name="" elementType="Header">
             <stringProp name="Header.name">X-User-ID</stringProp>
-            <stringProp name="Header.value">${__P(legacyUserId,anonymous)}</stringProp>
+            <stringProp name="Header.value">${effectiveUserId}</stringProp>
           </elementProp>
           <elementProp name="" elementType="Header">
             <stringProp name="Header.name">X-User-Id</stringProp>
@@ -110,28 +123,6 @@
           </elementProp>
         </collectionProp>
       </HeaderManager>
-      <hashTree/>
-
-      <JSR223PreProcessor guiclass="TestBeanGUI" testclass="JSR223PreProcessor" testname="resolve identity" enabled="true">
-        <stringProp name="cacheKey">true</stringProp>
-        <stringProp name="filename">${__P(baseDir,.)}/groovy/resolve-identity.groovy</stringProp>
-        <stringProp name="parameters"></stringProp>
-        <stringProp name="script"></stringProp>
-        <stringProp name="scriptLanguage">groovy</stringProp>
-      </JSR223PreProcessor>
-      <hashTree/>
-
-      <CSVDataSet guiclass="TestBeanGUI" testclass="CSVDataSet" testname="csv: accounts" enabled="true">
-        <stringProp name="filename">${__P(baseDir,.)}/data/shared/accounts.csv</stringProp>
-        <stringProp name="fileEncoding">UTF-8</stringProp>
-        <stringProp name="variableNames">userId,userRole,userNote</stringProp>
-        <boolProp name="ignoreFirstLine">true</boolProp>
-        <stringProp name="delimiter">,</stringProp>
-        <boolProp name="quotedData">false</boolProp>
-        <boolProp name="recycle">true</boolProp>
-        <boolProp name="stopThread">false</boolProp>
-        <stringProp name="shareMode">shareMode.all</stringProp>
-      </CSVDataSet>
       <hashTree/>
 
       <CSVDataSet guiclass="TestBeanGUI" testclass="CSVDataSet" testname="csv: create-trade data" enabled="true">
@@ -192,6 +183,11 @@
               <stringProp name="Argument.value">setup</stringProp>
               <stringProp name="Argument.metadata">=</stringProp>
             </elementProp>
+            <elementProp name="effectiveUserId" elementType="Argument">
+              <stringProp name="Argument.name">effectiveUserId</stringProp>
+              <stringProp name="Argument.value">${__P(makerUserId,maker@sc.com)}</stringProp>
+              <stringProp name="Argument.metadata">=</stringProp>
+            </elementProp>
           </collectionProp>
         </Arguments>
         <hashTree/>
@@ -219,6 +215,11 @@
             <elementProp name="runPhase" elementType="Argument">
               <stringProp name="Argument.name">runPhase</stringProp>
               <stringProp name="Argument.value">main</stringProp>
+              <stringProp name="Argument.metadata">=</stringProp>
+            </elementProp>
+            <elementProp name="effectiveUserId" elementType="Argument">
+              <stringProp name="Argument.name">effectiveUserId</stringProp>
+              <stringProp name="Argument.value">${__P(makerUserId,maker@sc.com)}</stringProp>
               <stringProp name="Argument.metadata">=</stringProp>
             </elementProp>
           </collectionProp>

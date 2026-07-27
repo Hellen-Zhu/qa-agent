@@ -12,7 +12,7 @@
 #   ./scripts/run.sh s01-create-trade-e2e dev  smoke
 #   ./scripts/run.sh p02-trade-create     perf load
 #   ./scripts/run.sh p02-trade-create     perf load -JportfolioSelect=fixed
-#   ./scripts/run.sh p02-trade-create     perf load -JuserMode=fixed
+#   ./scripts/run.sh p02-trade-create     perf load -JmakerUserId=maker02@sc.com
 #
 # ⚠ 本脚本必须 cd 到项目根：
 #   Include Controller 的路径不支持变量/函数，只能写死，且按**当前工作目录**解析。

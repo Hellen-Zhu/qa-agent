@@ -118,12 +118,13 @@ jmeter -t jmx/api/p02-trade-create.jmx        # 注意：在项目根执行
 p02-trade-create
 ├── UDV (datDir, refdataSource=csv)
 ├── HTTP Request Defaults      ← 刻意不设 domain（见文件头注释）
-├── HTTP Header Manager        ← X-User-Id 等
-├── JSR223 PreProcessor: resolve identity
-├── CSV Data Set: accounts / create-trade data / refdata pairs
+├── HTTP Header Manager        ← X-User-Id = ${effectiveUserId}
+├── CSV Data Set: create-trade data / refdata pairs
 ├── setUp Thread Group
+│   ├── UDV (runPhase=setup, effectiveUserId=maker)
 │   └── Include → fragments/setup/csv-refdata-preflight.jmx
 └── Thread Group: create-trade capacity
+    ├── UDV (runPhase=main, effectiveUserId=maker)
     └── Include → fragments/steps/workers/trade-management/create-trade.jmx
 ```
 
@@ -235,18 +236,27 @@ done
 
 ## 1.8 对照实验（各跑一次，与基准对比）
 
-到这里主线已完成。下面两个开关回答的是"性能问题出在哪一层"：
+到这里主线已完成。下面这个开关回答的是"性能问题出在哪一层"：
 
 ```bash
 # 全部线程打同一个 portfolio —— 若 TPS 显著下降，存在 portfolio 级锁竞争
 ./scripts/run.sh p02-trade-create dev baseline -Jthreads=8 \
     -JrefdataFile=data/refdata/refdata-pairs-single.csv
-
-# 全部线程用同一个 maker —— 若 TPS 显著下降，存在 per-user 锁或计数器竞争
-./scripts/run.sh p02-trade-create dev baseline -Jthreads=8 -JuserMode=fixed
 ```
 
 **一次只开一个开关。** 同时开两个，结果无法归因。
+
+> ### ⚠ per-user 锁竞争这个维度**测不了**
+>
+> 身份已固定成 `maker@sc.com`（不再从 CSV 轮换），所以全部线程本来就共用同一个 maker——
+> **永远处于"集中"那一侧，没有"分散"的对照组可比。**
+>
+> 这是保守选择：如果服务端真有 per-user 锁或计数器，我们测到的是它最坏的一面，
+> 不会给出偏乐观的容量结论。但**报告里不能声称"不存在 per-user 竞争"**——
+> 我们没有做那个实验，只是一直站在竞争最激烈的那一侧。
+>
+> 真要做这个对照，加一个 CSV Data Set 直接供 `effectiveUserId` 即可
+> （见 [HANDBOOK-BUILD §6.5](HANDBOOK-BUILD.zh.md)），不需要恢复 groovy。
 
 ## 1.9 交付物
 

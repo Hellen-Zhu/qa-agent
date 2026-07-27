@@ -23,14 +23,12 @@
     portfolioId       必填  由 groovy/select-refdata.groovy 从全局池写入
     counterpartyFmId  必填  同上
     counterpartyName  必填  同上（必须与 fmId 同源配对）
-    userId            必填  CSV(shared/accounts.csv) 或 fixedUserId 属性
     datFile           必填  CSV，相对 ${datDir} 的路径；preflight 时回退到属性 preflightDatFile
     caseId            可选  CSV，用于结果归因；缺省时 tradeReference 记为 PREFLIGHT
     notionalCurrency  可选  CSV 末列，通常为空串
   【输入属性】
     baseDir           项目根绝对路径，由 scripts/run.sh 注入
     portfolioSelect   roundRobin(默认) | fixed
-    userMode          pool(默认) | fixed
   【输出变量】
     tradeId           成功时 TRD-<数字>，失败为 NOT_FOUND
     taskId            成功时 CHK-<十六进制>，失败为 NOT_FOUND

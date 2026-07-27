@@ -460,29 +460,56 @@ OREO 有 5 个服务（workers / uc / refdata / notifications / ops），它们*
 | Name | Value |
 |---|---|
 | `accept` | `*/*` |
-| `X-User-ID` | `${__P(legacyUserId,anonymous)}` |
+| `X-User-ID` | `${effectiveUserId}` |
 | `X-User-Id` | `${effectiveUserId}` |
 | `X-Dyn-Run` | `${__P(dynRun,false)}` |
 
 > **⚠ 这里绝不能加 `Content-Type`** —— multipart 的 Content-Type 必须由 JMeter 生成（见 4.3）。
 >
-> `X-User-ID` 与 `X-User-Id` 只差大小写。按 RFC 7230 §3.2 header 名大小写不敏感，
-> 两者是**同一个 header**。保留原样是为了复现"已知可用"的真实 curl，
-> 但首次 smoke 必须在 View Results Tree 里确认实际发出去的是什么。
+> **⚠ 两行 `X-User-Id` 只差大小写，取同一个值,这是刻意的。**
+> 按 RFC 7230 §3.2 header 名大小写不敏感,**两者是同一个 header**——真实 curl 里
+> 两个都存在。早期版本把大写那个写死成 `anonymous`：如果服务端取第一个出现的值，
+> **全部请求都会以 anonymous 身份执行**，maker/checker 的区分静默失效，
+> 而报告完全看不出来（请求成功、断言通过、错误率 0%）。
+> 现在两行同值，服务端读哪个都对。
+>
+> 首次 smoke 在 View Results Tree 里确认服务端实际认哪个，
+> 确认只认 `X-User-Id` 后把大写那行删掉。
 
-### 6.5 身份解析 PreProcessor
+### 6.5 身份：线程组级 UDV，不需要 groovy
 
-右键 **Test Plan** → **Add → Pre Processors → JSR223 PreProcessor**
-→ `${__P(baseDir,.)}/groovy/resolve-identity.groovy`
+`X-User-Id` 的值来自变量 `effectiveUserId`。它**不是**每次迭代算出来的——
+在线程组的 UDV 里声明一次就够了（见 6.7 / 6.8）：
 
-**必须挂在 Thread Group 层或更高，不能挂在 create 上。**
-E2E journey 里 refdata 的两个查询跑在 create 之前，它们也要带 `X-User-Id`。
-挂在 create 上的话，那两个查询用 CSV 原值、create 用覆盖值——
-**同一次迭代里出现两个身份，等于测了个不存在的场景。**
+| 线程组做什么 | `effectiveUserId` |
+|---|---|
+| create / trigger-event / calculate-risk / 列表查询 | `${__P(makerUserId,maker@sc.com)}` |
+| approve / reject / pending-tasks | `${__P(checkerUserId,checker@sc.com)}` |
 
-### 6.6 三个 CSV Data Set Config
+> ### 为什么不用 PreProcessor 算
+>
+> 早期版本挂了个 `resolve-identity.groovy`，从 `accounts.csv` 轮换取用户。**它做错了两件事。**
+>
+> **一是没必要。** 全部 14 个线程组都是单一角色——没有任何一个线程组既做 maker 动作
+> 又做 checker 动作（j03 只审批，j01 只提交）。身份在整个线程组生命周期内是常量，
+> **per-iteration 计算没有任何东西可算**，只是把一个静态事实包装成了动态逻辑。
+>
+> **二是它错了。** `accounts.csv` 五行全是 `MAKER`，而 checker 场景也从这里取身份——
+> 等于**"maker 审批自己提交的单子"**。四眼原则要求 checker ≠ maker（NFR SEC-02），
+> 那个场景压根不成立。而这类错误脚本层面无法自证：
+> 请求成功、断言通过、报告全绿，只有懂业务的人看一眼身份才会发现。
+>
+> 换成两个固定身份之后，**正确性从"脚本逻辑对不对"变成了"配置对不对"**——
+> 后者一眼能看出来，前者不能。
 
-右键 Test Plan → **Add → Config Element → CSV Data Set Config** ×3。
+**代价要说清楚**：原先 `userMode=pool|fixed` 的对照实验（分散 maker vs 集中同一 maker，
+用来暴露 per-user 锁 / 计数器竞争）没有了，现在永远处于"集中"那一侧。
+这是保守选择——测到的是最坏情况，不会给出偏乐观的结论，但也无法把"慢"归因到 per-user 锁上。
+真需要时加一个 CSV Data Set 直接供 `effectiveUserId` 即可，不用恢复 groovy。
+
+### 6.6 两个 CSV Data Set Config
+
+右键 Test Plan → **Add → Config Element → CSV Data Set Config** ×2。
 
 通用字段：
 
@@ -500,13 +527,14 @@ E2E journey 里 refdata 的两个查询跑在 create 之前，它们也要带 `X
 
 | Name | Filename | Variable Names |
 |---|---|---|
-| `csv: accounts` | `${__P(baseDir,.)}/data/shared/accounts.csv` | `userId,userRole,userNote` |
 | `csv: create-trade data` | `${__P(baseDir,.)}/data/create-trade/create-trade-data.csv` | `caseId,datFile,productType,costTier,fixings,datSize,notionalCurrency` |
 | `csv: refdata pairs` | `${__P(baseDir,.)}/${__P(refdataFile,data/refdata/refdata-pairs.csv)}` | `pairId,portfolioId,counterpartyFmId,counterpartyName,refdataNote` |
 
+> **没有身份 CSV。** maker / checker 是两个固定值，走属性不走 CSV（见 6.5）。
+>
 > **Variable Names 与 CSV 表头是两套东西。** `Ignore first line` 勾上后表头被忽略，
-> 运行时用的是这里填的名字。所以 `accounts.csv` 表头是 `role`、这里是 `userRole`——
-> 故意错开，避免与其它 CSV 的 `role` 撞名。
+> 运行时用的是这里填的名字。所以 `refdata-pairs.csv` 表头末列是 `note`、这里是 `refdataNote`——
+> 表头那个名字让 `validate.py` 认出这是自由文本列，JMX 那个名字避免与别的 CSV 撞名。
 >
 > **Sharing mode 三选一的区别：**
 > - `All threads` —— 全局一个游标，每个线程每次迭代取走一行，**不重复**
@@ -538,7 +566,18 @@ E2E journey 里 refdata 的两个查询跑在 create 之前，它们也要带 `X
 
 然后在它下面加两个东西：
 
-1. **Add → Config Element → User Defined Variables**，一行：`runPhase` = `setup`
+1. **Add → Config Element → User Defined Variables**，两行：
+
+   | Name | Value |
+   |---|---|
+   | `runPhase` | `setup` |
+   | `effectiveUserId` | `${__P(makerUserId,maker@sc.com)}` |
+
+   > setUp 的角色**必须与它 Include 的动作一致**：
+   > `csv-refdata-preflight` 真建一笔 trade → maker；
+   > `checker-task-pool` 查待审批队列 → 这里要写 `${__P(checkerUserId,checker@sc.com)}`。
+   > 写错不会报错，只会让 preflight 以错误身份执行——而 preflight 恰恰是
+   > 用来证明"数据业务上可用"的那一步，身份不对时它证明的是另一件事。
 2. **Add → Logic Controller → Include Controller**
    → `jmx/fragments/setup/csv-refdata-preflight.jmx`
 
@@ -579,7 +618,14 @@ E2E journey 里 refdata 的两个查询跑在 create 之前，它们也要带 `X
 
 下面同样加两个：
 
-1. **User Defined Variables**：`runPhase` = `main`
+1. **User Defined Variables**，两行：
+
+   | Name | Value |
+   |---|---|
+   | `runPhase` | `main` |
+   | `effectiveUserId` | `${__P(makerUserId,maker@sc.com)}` |
+
+   checker 类计划（`s03` / `p03` / `p04`）这里换成 `${__P(checkerUserId,checker@sc.com)}`。
 2. **Include Controller** → `jmx/fragments/steps/workers/trade-management/create-trade.jmx`
 
 > **单接口测试直接 Include 原子 fragment，不经过 journey。** journey 里有

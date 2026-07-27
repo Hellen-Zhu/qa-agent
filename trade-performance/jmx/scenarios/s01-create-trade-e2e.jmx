@@ -82,7 +82,7 @@
           </elementProp>
           <elementProp name="" elementType="Header">
             <stringProp name="Header.name">X-User-ID</stringProp>
-            <stringProp name="Header.value">${__P(legacyUserId,anonymous)}</stringProp>
+            <stringProp name="Header.value">${effectiveUserId}</stringProp>
           </elementProp>
           <elementProp name="" elementType="Header">
             <stringProp name="Header.name">X-User-Id</stringProp>
@@ -98,27 +98,6 @@
 
       <!-- 身份解析放在 Test Plan 层：作用域覆盖 setUp 与主线程组的**全部** sampler。
            挂在 create 上会导致同一次迭代里 refdata 查询和 create 用不同身份。 -->
-      <JSR223PreProcessor guiclass="TestBeanGUI" testclass="JSR223PreProcessor" testname="resolve identity" enabled="true">
-        <stringProp name="cacheKey">true</stringProp>
-        <stringProp name="filename">${__P(baseDir,.)}/groovy/resolve-identity.groovy</stringProp>
-        <stringProp name="parameters"></stringProp>
-        <stringProp name="script"></stringProp>
-        <stringProp name="scriptLanguage">groovy</stringProp>
-      </JSR223PreProcessor>
-      <hashTree/>
-
-      <CSVDataSet guiclass="TestBeanGUI" testclass="CSVDataSet" testname="csv: accounts" enabled="true">
-        <stringProp name="filename">${__P(baseDir,.)}/data/shared/accounts.csv</stringProp>
-        <stringProp name="fileEncoding">UTF-8</stringProp>
-        <stringProp name="variableNames">userId,userRole,userNote</stringProp>
-        <boolProp name="ignoreFirstLine">true</boolProp>
-        <stringProp name="delimiter">,</stringProp>
-        <boolProp name="quotedData">false</boolProp>
-        <boolProp name="recycle">true</boolProp>
-        <boolProp name="stopThread">false</boolProp>
-        <stringProp name="shareMode">shareMode.all</stringProp>
-      </CSVDataSet>
-      <hashTree/>
 
       <!-- notionalCurrency 是末列且为空。
            保留结尾逗号，JMeter 才会把它解析成空串而不是缺列。 -->
@@ -157,6 +136,11 @@
               <stringProp name="Argument.value">setup</stringProp>
               <stringProp name="Argument.metadata">=</stringProp>
             </elementProp>
+            <elementProp name="effectiveUserId" elementType="Argument">
+              <stringProp name="Argument.name">effectiveUserId</stringProp>
+              <stringProp name="Argument.value">${__P(makerUserId,maker@sc.com)}</stringProp>
+              <stringProp name="Argument.metadata">=</stringProp>
+            </elementProp>
           </collectionProp>
         </Arguments>
         <hashTree/>
@@ -188,6 +172,11 @@
             <elementProp name="runPhase" elementType="Argument">
               <stringProp name="Argument.name">runPhase</stringProp>
               <stringProp name="Argument.value">main</stringProp>
+              <stringProp name="Argument.metadata">=</stringProp>
+            </elementProp>
+            <elementProp name="effectiveUserId" elementType="Argument">
+              <stringProp name="Argument.name">effectiveUserId</stringProp>
+              <stringProp name="Argument.value">${__P(makerUserId,maker@sc.com)}</stringProp>
               <stringProp name="Argument.metadata">=</stringProp>
             </elementProp>
           </collectionProp>

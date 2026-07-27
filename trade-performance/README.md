@@ -149,16 +149,34 @@ TX_flow_<name>             组合事务，横跨多个原子
 所有 API 的权限由 **`X-User-Id`** 请求头决定。没有登录接口，没有 token 生命周期，
 没有 401 重试——`fragments/setup/` 里因此**没有** `auth-login.jmx` 或 `token-refresh.jmx`。
 
-但"用哪个用户"仍然是一个负载变量。若服务端按 maker 做过滤、计数或加锁，
-20 个线程共用一个身份和分散到 20 个身份，压出来的数会显著不同。
+**两个固定身份，按角色分，不轮换：**
 
-| 属性 | 取值 | 用途 |
+| 属性 | 默认值 | 谁在用 |
 |---|---|---|
-| `userMode` | `pool`（默认） | 从 `data/shared/accounts.csv` 轮换 |
-| | `fixed` | 全部线程用 `fixedUserId`，测 per-user 竞争 |
+| `makerUserId` | `maker@sc.com` | 全部 event 操作：create / trigger-event / calculate-risk / 列表查询 |
+| `checkerUserId` | `checker@sc.com` | approve / reject / pending-tasks |
 
-身份解析在 `groovy/resolve-identity.groovy`，挂在 **Test Plan 层**。
-挂在 create 上会导致同一次迭代里 refdata 查询和 create 用了不同身份——测了个不存在的场景。
+身份是**线程组级 UDV `effectiveUserId`**，与 `runPhase` 在同一个 Arguments 元件里声明。
+Header Manager 的 `X-User-Id` 和 `X-User-ID` 两行都取它——按 RFC 7230 §3.2
+两者是同一个 header，同值才不会因为服务端读哪个而产生歧义。
+
+> ### 为什么不用 groovy 每次迭代算
+>
+> 全部 14 个线程组都是**单一角色**——没有哪个线程组既做 maker 动作又做 checker 动作
+> （`j03` 只审批，`j01` 只提交）。身份在整个线程组生命周期内是常量，
+> per-iteration 计算没有东西可算。
+>
+> 早期版本有个 `resolve-identity.groovy` 从 `accounts.csv` 轮换取用户，而那份 CSV
+> **五行全是 MAKER**，checker 场景也从这里取身份——等于"maker 审批自己提交的单子"。
+> 四眼原则要求 checker ≠ maker（NFR SEC-02），那个场景压根不成立，
+> 而脚本层面完全自证不了：请求成功、断言通过、报告全绿。
+>
+> 换成两个固定值之后，**正确性从"脚本逻辑对不对"变成了"配置对不对"**——后者一眼能看出来。
+
+⚠ 代价：per-user 锁 / 计数器竞争的对照实验（分散 vs 集中）**做不了了**，
+现在永远处于"集中"那一侧。这是保守选择（测的是最坏情况），
+但报告里**不能声称"不存在 per-user 竞争"**——我们没做那个实验。
+真要做，加一个 CSV Data Set 直接供 `effectiveUserId` 即可，不必恢复 groovy。
 
 ---
 

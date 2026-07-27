@@ -41,8 +41,12 @@
       <hashTree/>
 
       <!-- ⚠ checker 身份必须与 maker 不同 —— 四眼原则要求同一人不得审批自己提交的事件
-           （NFR SEC-02）。accounts.csv 的 userRole 列区分 maker / checker；
-           跑 checker 场景时用 -JuserMode=fixed -JfixedUserId=<checker> 更可控。 -->
+           （NFR SEC-02）。身份由**线程组级 UDV** effectiveUserId 声明
+           （见下方 Thread Group 内，与 runPhase 同一个 Arguments 元件），
+           本计划全部线程组都取 ${__P(checkerUserId,checker@sc.com)}。
+           ⚠ 早期版本两个角色都从 accounts.csv 取，而那份 CSV 五行全是 MAKER ——
+             等于"maker 审批自己提交的单子"，checker 场景压根不成立。
+             这是脚本层面无法自证的那类错误：请求成功、断言通过、报告全绿。 -->
       <HeaderManager guiclass="HeaderPanel" testclass="HeaderManager" testname="HTTP Header Manager" enabled="true">
         <collectionProp name="HeaderManager.headers">
           <elementProp name="" elementType="Header">
@@ -51,7 +55,7 @@
           </elementProp>
           <elementProp name="" elementType="Header">
             <stringProp name="Header.name">X-User-ID</stringProp>
-            <stringProp name="Header.value">${__P(legacyUserId,anonymous)}</stringProp>
+            <stringProp name="Header.value">${effectiveUserId}</stringProp>
           </elementProp>
           <elementProp name="" elementType="Header">
             <stringProp name="Header.name">X-User-Id</stringProp>
@@ -63,28 +67,6 @@
           </elementProp>
         </collectionProp>
       </HeaderManager>
-      <hashTree/>
-
-      <JSR223PreProcessor guiclass="TestBeanGUI" testclass="JSR223PreProcessor" testname="resolve identity" enabled="true">
-        <stringProp name="cacheKey">true</stringProp>
-        <stringProp name="filename">${__P(baseDir,.)}/groovy/resolve-identity.groovy</stringProp>
-        <stringProp name="parameters"></stringProp>
-        <stringProp name="script"></stringProp>
-        <stringProp name="scriptLanguage">groovy</stringProp>
-      </JSR223PreProcessor>
-      <hashTree/>
-
-      <CSVDataSet guiclass="TestBeanGUI" testclass="CSVDataSet" testname="csv: accounts" enabled="true">
-        <stringProp name="filename">${__P(baseDir,.)}/data/shared/accounts.csv</stringProp>
-        <stringProp name="fileEncoding">UTF-8</stringProp>
-        <stringProp name="variableNames">userId,userRole,userNote</stringProp>
-        <boolProp name="ignoreFirstLine">true</boolProp>
-        <stringProp name="delimiter">,</stringProp>
-        <boolProp name="quotedData">false</boolProp>
-        <boolProp name="recycle">true</boolProp>
-        <boolProp name="stopThread">false</boolProp>
-        <stringProp name="shareMode">shareMode.all</stringProp>
-      </CSVDataSet>
       <hashTree/>
 
       <!-- ══ setUp：把环境里的待办任务灌进 claim-once 池 ═══════════════ -->
@@ -106,6 +88,11 @@
             <elementProp name="runPhase" elementType="Argument">
               <stringProp name="Argument.name">runPhase</stringProp>
               <stringProp name="Argument.value">setup</stringProp>
+              <stringProp name="Argument.metadata">=</stringProp>
+            </elementProp>
+            <elementProp name="effectiveUserId" elementType="Argument">
+              <stringProp name="Argument.name">effectiveUserId</stringProp>
+              <stringProp name="Argument.value">${__P(checkerUserId,checker@sc.com)}</stringProp>
               <stringProp name="Argument.metadata">=</stringProp>
             </elementProp>
           </collectionProp>
@@ -136,6 +123,11 @@
             <elementProp name="runPhase" elementType="Argument">
               <stringProp name="Argument.name">runPhase</stringProp>
               <stringProp name="Argument.value">main</stringProp>
+              <stringProp name="Argument.metadata">=</stringProp>
+            </elementProp>
+            <elementProp name="effectiveUserId" elementType="Argument">
+              <stringProp name="Argument.name">effectiveUserId</stringProp>
+              <stringProp name="Argument.value">${__P(checkerUserId,checker@sc.com)}</stringProp>
               <stringProp name="Argument.metadata">=</stringProp>
             </elementProp>
           </collectionProp>

@@ -348,19 +348,29 @@ JMeter 里有三种"变量"，作用域完全不同。混用是新手最大的�
 
 在 p01 的 Test Plan 下加（[§6.2 / §6.6](HANDBOOK-BUILD.zh.md)）：
 
-- **User Defined Variables**：`datDir` = `${__P(baseDir,.)}/data/dat`
+- **User Defined Variables**（计划级）：`datDir` = `${__P(baseDir,.)}/data/dat`
+- **User Defined Variables**（放在 **Thread Group 下**）：
+  `effectiveUserId` = `${__P(makerUserId,maker@sc.com)}`
 - **CSV Data Set Config**：
-  - Filename `${__P(baseDir,.)}/data/shared/accounts.csv`
-  - Variable Names `userId,userRole,userNote`
+  - Filename `${__P(baseDir,.)}/data/create-trade/create-trade-data.csv`
+  - Variable Names `caseId,datFile,productType,costTier,fixings,datSize,notionalCurrency`
   - Sharing mode `All threads`
 
-`data/shared/accounts.csv`：
+`config/dev.properties` 补两行：
 
-```csv
-userId,role,note
-maker@sc.com,MAKER,来自真实 curl
-maker02@sc.com,MAKER,待创建
+```properties
+makerUserId=maker@sc.com
+checkerUserId=checker@sc.com
 ```
+
+Header Manager 里 `X-User-Id` 填 `${effectiveUserId}`。
+
+> **注意两个 UDV 放的层级不同**，这是本练习的一半重点：
+> `datDir` 是全计划共用的常量,放计划级；
+> `effectiveUserId` 是**这个线程组的角色**,放线程组级——
+> 因为另一个线程组（checker 场景）要用不同的值。
+> 身份不用 CSV、也不用 groovy：全部线程组都是单一角色,
+> 一个静态值不需要每次迭代重算一遍。
 
 ### ② 写第一个真 groovy
 
@@ -416,13 +426,13 @@ if (!list) {
 `run.sh` 的 jmeter 命令里加一行：
 
 ```bash
-    -Jsample_variables=portfolioId,userId \
+    -Jsample_variables=portfolioId,effectiveUserId,caseId \
 ```
 
 ## 【验收】
 
 ```bash
-head -1 results/*/result.jtl        # 表头末尾应出现 portfolioId,userId
+head -1 results/*/result.jtl        # 表头末尾应出现 portfolioId,effectiveUserId,caseId
 grep -c 'NOT_FOUND' results/*/result.jtl   # 应为 0
 ```
 
@@ -430,11 +440,22 @@ grep -c 'NOT_FOUND' results/*/result.jtl   # 应为 0
 
 ### 3-A：CSV 列名写错
 
-把 Variable Names 改成 `user_id,userRole,userNote`（下划线），重跑。
+把 Variable Names 改成 `case_id,datFile,...`（第一列加下划线），重跑。
 
-**观察**：jtl 里 `userId` 那列是空的，**但没有任何错误**。
-如果这个变量被用在 header 或 payload 里，发出去的会是字面量 `${userId}`——
+**观察**：jtl 里 `caseId` 那列是空的，**但没有任何错误**。
+如果这个变量被用在 header 或 payload 里，发出去的会是字面量 `${caseId}`——
 服务端返回业务拒绝，报告里是"错误率升高"。
+
+### 3-B：把身份 UDV 挂到计划级
+
+把 `effectiveUserId` 那个 UDV 从 Thread Group 拖到 Test Plan 下，重跑。
+
+**观察**：现在只有一个线程组，看不出区别——**这正是这个错的危险之处**。
+等练习 4 加了第二个线程组（角色不同）时它才会暴露：两个线程组共用同一个身份，
+checker 场景变成"maker 审批自己提交的单子"，四眼原则压根没被测到。
+而请求成功、断言通过、报告全绿。
+
+先记下来，练习 4 回来验证。
 
 真 `run.sh` 里那段扫 `${` 的检查就是为这个加的:
 
@@ -464,12 +485,17 @@ fi
 ```
 setUp Thread Group  "setUp: refdata pool"
 ├── User Defined Variables   runPhase = setup
+│                            effectiveUserId = ${__P(checkerUserId,checker@sc.com)}
 └── Include Controller → jmx/fragments/steps/_composites/refdata-load.jmx
 ```
 
-主 Thread Group 下也加一个 UDV：`runPhase` = `main`。
+主 Thread Group 下的 UDV：`runPhase` = `main`，`effectiveUserId` = `${__P(makerUserId,maker@sc.com)}`。
 
 `run.sh` 的 `sample_variables` 加上 `runPhase`。
+
+> **setUp 这里故意用 checker，只是为了看清作用域** —— 真工程里 setUp 的角色
+> 必须与它 Include 的动作一致（`refdata-load` 是查询,用 maker）。
+> 验收完记得改回 maker。
 
 ### ② 建池：写 props
 
@@ -502,6 +528,16 @@ log.info("main thread sees pool: ${raw == null ? 'NULL' : new JsonSlurper().pars
 grep 'pool resolved\|main thread sees' results/*/jmeter.log
 awk -F, 'NR>1 {print $NF}' results/*/result.jtl | sort | uniq -c   # setup / main 两种
 ```
+
+**并且验证练习 3-B 埋下的那一条**：jtl 里 `runPhase=setup` 的行和 `runPhase=main`
+的行，`effectiveUserId` 应该是**两个不同的值**。
+
+现在把 `effectiveUserId` 那个 UDV 从两个线程组里拿掉、改放到 Test Plan 下，重跑——
+两组行的身份变成同一个了。**这就是 3-B 的后果**：在真工程里，
+它会让 checker 场景退化成"maker 审批自己提交的单子"，
+四眼原则压根没被测到，而请求成功、断言通过、报告全绿。
+
+看完改回线程组级，setUp 的值改回 maker。
 
 ## 【故意犯错】
 
@@ -636,6 +672,7 @@ python3 scripts/validate.py
 3. PostProcessor 挂在 Transaction Controller 下会怎样？（练习 2-A）
 4. setUp 里 `vars.put` 的东西，主线程读得到吗？（练习 4-A）
 5. `props.getProperty()` 什么时候返回 `null`？（练习 4-B）
+5b. 身份 UDV 为什么必须放线程组级而不是计划级？（练习 3-B / 4）
 6. 报告显示"错误率 0%"，能说明系统是好的吗？（练习 5-B）
 7. 一个接口加了必填字段，你要改几个文件？为什么？（练习 6）
 

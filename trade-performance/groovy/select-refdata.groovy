@@ -16,8 +16,6 @@
  * 选取策略全部走 property，不写死 —— 这样同一份脚本能服务两类相反的用例：
  *   portfolioSelect=roundRobin  分散（默认，常规容量测试）
  *   portfolioSelect=fixed       集中（PT-CREATE-014 同 portfolio 竞争）
- *   userMode=pool               分散 maker（默认）
- *   userMode=fixed              集中同一 maker（测 per-user 锁 / 计数器竞争）
  */
 
 import groovy.json.JsonSlurper
@@ -86,5 +84,7 @@ vars.put('portfolioId',      portfolios[pIdx] as String)
 vars.put('counterpartyFmId', cp.fmId as String)
 vars.put('counterpartyName', cp.name as String)
 
-// 身份（X-User-Id）不在这里处理 —— 见 groovy/resolve-identity.groovy。
-// 它必须挂在 Thread Group 层，否则 E2E 里 refdata 查询和 create 会用不同身份。
+// 身份（X-User-Id）不在这里处理 —— 它是线程组级 UDV effectiveUserId，
+// 与 runPhase 在同一个 Arguments 元件里声明。
+// 必须在 Thread Group 层而不是 sampler 层：E2E 里 refdata 查询跑在 create 之前，
+// 挂在 create 上会让同一次迭代出现两个身份，等于测了个不存在的场景。

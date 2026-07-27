@@ -80,8 +80,7 @@ A 台开户。服务端返回业务拒绝，报告里看到的是"错误率 12%"
 
 **表头列名与 JMX 里的 `variableNames` 是两套东西**（`ignoreFirstLine=true`，运行时表头被忽略）。
 末列表头叫 `note`、JMX 里叫 `refdataNote`：前者让 `scripts/validate.py` 认出这是自由文本列
-（否则里面写个 "TBC 待确认" 会被当成占位值报错），后者避免与 `accounts.csv` 的 `userNote` 撞名。
-`accounts.csv` 是同样的模式（表头 `role` / JMX `userRole`）。
+（否则里面写个 "TBC 待确认" 会被当成占位值报错），后者避免与其它 CSV 的 note 列撞名。
 
 `quotedData=false`。`counterpartyName` 已知含 `*`（如 `PRINTINGINT10LTD*HKG`），无妨；
 但**若真实名称含逗号**，必须把 `p02` 里该 CSV Data Set 的 `quotedData` 改为 `true`

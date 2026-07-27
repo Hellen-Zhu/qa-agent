@@ -19,6 +19,11 @@
 ./scripts/run.sh s03-checker-approve-e2e  dev  smoke              # checker 链路
 ./scripts/run.sh p03-checker-bulk-approve perf load -JcheckerBatchSize=20
 ./scripts/run.sh p04-checker-bulk-reject  perf load -JcheckerBatchSize=20
+
+./scripts/run.sh s02-blotter-browse-e2e   dev  smoke              # blotter 浏览
+./scripts/run.sh s04-lifecycle-event-e2e  dev  smoke              # 生命周期事件
+./scripts/run.sh p05-trades-list  perf load -JblotterPageSize=200 # S-09/S-10 被测对象
+./scripts/run.sh p06-trigger-event perf load
 ```
 
 ⚠ checker 场景需要环境里**已有待审批任务**。先跑一轮 `s01-create-trade-e2e` 造数
@@ -41,6 +46,8 @@ trade-performance/
 │   │       │   ├── refdata/                    portfolios-list · counterparties-list
 │   │       │   └── workers/
 │   │       │       ├── trade-management/       create-trade · trade-detail · trade-risk-metrics
+│   │       │       │                           trades-list · trigger-event · calculate-risk
+│   │       │       │                           calc-partial-novation-risk · calc-risk-for-new
 │   │       │       └── checker-flow/           pending-tasks · approve-task · reject-task
 │   │       │                                   bulk-approve · bulk-reject
 │   │       └── _composites/      ← 组合 fragment：只 Include 原子，自己不定义 sampler
@@ -222,7 +229,7 @@ python3 scripts/validate.py
 ```
 
 不需要 Java/JMeter。除结构性检查（XML 合法性、Thread Group 归属、Include 路径、
-Groovy/CSV 存在性与列数、TBC 占位值）外，还强制**五条"每个 API 只维护一份"的规则**：
+Groovy/CSV 存在性与列数、TBC 占位值——自由文本列如 `notes` 除外）外，还强制**五条"每个 API 只维护一份"的规则**：
 
 | 规则 | 内容 | 拦住什么 |
 |---|---|---|
@@ -277,7 +284,9 @@ create 会混进容量统计——量小的时候尤其致命：0.1 TPS 的场�
 | `stress` 用普通 Thread Group | 已知偏差 | 阶梯加压需要 bzm Concurrency Thread Group；当前 `steps`/`holdPerStep` 两个属性是预留的，尚未生效 |
 | WebSocket | 不在 scope | create 会触发 WebSocket 推送，当前完全未覆盖 |
 | `suites/`、`ops/` | 空目录 | 混合负载与降级场景、灌数与清理脚本尚未建 |
-| 其余 23 个 API | 未建 | 见 `api-registry.csv` 的 `status=todo` 行 |
+| 其余 18 个 API | 未建 | 见 `api-registry.csv` 的 `status=todo` 行 |
+| blotter **自动刷新**负载 | 未建 | `s02` 只模拟用户主动打开页面（0.14 TPS）。真正的大头是自动刷新（4.13 TPS 恒定），需要独立常驻线程组，见 `suites/` |
+| `trigger-event` / risk 接口的 payload | **推断值** | 集中在 `build-trigger-event-payload.groovy` 与 `build-risk-payload.groovy` 两处 |
 | checker 接口的 payload 形状 | **推断值** | 只有 create 有真实 curl。approve/reject/bulk-* 的 body 是推断的，集中在 `groovy/checker-claim-{task,batch}.groovy` 两处，确认后只改那里 |
 | 批量接口的部分失败 | 依赖服务端返回逐项结果 | 若不返回 `successCount`，`bulkOutcome` 会标 `unverifiable` —— 批量接口的有效 TPS 在原理上就无法准确统计 |
 | 5 个 svc 的真实 host | 占位值 | `config/*.properties` 里 5 组 `<svc>.host` 全指向同一个占位地址，待运维提供 |

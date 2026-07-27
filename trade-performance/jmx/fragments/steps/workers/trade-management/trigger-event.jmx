@@ -1,0 +1,158 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  fragments/steps/workers/trade-management/trigger-event.jmx
+
+  【层级】原子 fragment —— 一个 API 一个文件，不可独立运行
+  【API】  workers.trade-management.trigger-event  ·  POST /trades/trigger-event
+  【服务】 workers  →  必须使用 ${__P(workers.*)} 寻址（校验规则 R3）
+  【优先级】P0
+
+  ══ 它不是"一个接口"，是 10 种生命周期事件的共用载体 ═══════════════
+  Trade Portal 右键菜单包含 10 项，除 View Details（只读）外都经由本端点：
+
+    PartialNovation · PartialNovationRemaining · NovationRemaining ·
+    StepOutFull · StepOutPartial · PortfolioReassignment ·
+    EarlyTermination · Cancellation · Allocation · (StepIn，入口待确认)
+
+  它们的**成本画像互不相同**，不能用一条 SLA 覆盖。所以本 fragment 是
+  数据驱动型：eventType 由 CSV 提供，结果按 eventType 切分（见 v2 §2.5.1）。
+
+  （注：XML 注释里不能出现连续两个连字符，所以这里不用 markdown 表格）
+
+    Allocation                        一笔拆多组合 → 写放大，倍数上限未知
+                                      单位工作量耗时按拆分数算
+    PartialNovation / StepOutPartial  需重算剩余名义本金，可能触发 risk 计算
+                                      可能落入 risk-engine 依赖链
+    Cancellation                      需 checker 审批 → 两阶段路径，与其余 8 种不同
+    EarlyTermination                  市场波动时到达量激增，峰值形态独立（S-06）
+  ═══════════════════════════════════════════════════════════════
+
+  ══ 同一个端点有两种下游行为 ═══════════════════════════════════
+    needsApproval=true   提交 → trade 锁 pending approve → 写 checker_tasks
+                         → 发通知 → 存 snapshot            【两阶段】
+    needsApproval=false  提交 → 直接执行                     【单阶段】
+
+  两者的耗时与资源占用完全不同，报告必须按 needsApproval 分开看。
+  ⚠ 背景用词是"**暂不**"需要审批（as of 2026-07），这个范围预期会变。
+    CSV 的 needsApproval 列因此是数据而非硬编码 —— 迁移时只改 CSV。
+    见 NFR MAINT-01。
+  ═══════════════════════════════════════════════════════════════
+
+  ⚠⚠ 请求体形状为**推断值，未经真实 curl 验证** ⚠⚠
+     假设 {"tradeId": "...", "eventType": "...", "params": {...}}。
+     构造集中在 groovy/build-trigger-event-payload.groovy 一处。
+     真实契约确认后只改那里，10 种事件同时生效。
+
+  ══ Fragment 契约 ══════════════════════════════════════════════
+  【输入变量】targetTradeId  必填 —— 调用方提供（从 blotter 列表挑或从 create 得到）
+             eventType      必填 —— CSV 提供
+             needsApproval  必填 —— CSV 提供，进 jtl 用于切分
+             partialPct     可选 —— 部分类事件的比例
+  【输出变量】eventTaskId —— 需审批时的 checker task id，否则 NOT_FOUND
+             errClass
+  【产出事务】TX_workers_trademgmt_triggerevent
+  ═══════════════════════════════════════════════════════════════
+-->
+<jmeterTestPlan version="1.2" properties="5.0" jmeter="5.6.3">
+  <hashTree>
+    <TestPlan guiclass="TestPlanGui" testclass="TestPlan" testname="workers.trade-management.trigger-event (fragment)" enabled="true">
+      <stringProp name="TestPlan.comments">Atomic fragment. Never run directly.</stringProp>
+      <boolProp name="TestPlan.functional_mode">false</boolProp>
+      <boolProp name="TestPlan.serialize_threadgroups">false</boolProp>
+      <elementProp name="TestPlan.user_defined_variables" elementType="Arguments" guiclass="ArgumentsPanel" testclass="Arguments" testname="User Defined Variables" enabled="true">
+        <collectionProp name="Arguments.arguments"/>
+      </elementProp>
+      <stringProp name="TestPlan.user_define_classpath"></stringProp>
+    </TestPlan>
+    <hashTree>
+
+      <TestFragmentController guiclass="TestFragmentControllerGui" testclass="TestFragmentController" testname="workers.trade-management.trigger-event" enabled="true"/>
+      <hashTree>
+
+        <TransactionController guiclass="TransactionControllerGui" testclass="TransactionController" testname="TX_workers_trademgmt_triggerevent" enabled="true">
+          <boolProp name="TransactionController.parent">false</boolProp>
+          <boolProp name="TransactionController.includeTimers">false</boolProp>
+        </TransactionController>
+        <hashTree>
+
+          <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="workers_trademgmt_triggerevent" enabled="true">
+            <elementProp name="HTTPsampler.Arguments" elementType="Arguments" guiclass="HTTPArgumentsPanel" testclass="Arguments" testname="User Defined Variables" enabled="true">
+              <collectionProp name="Arguments.arguments">
+                <elementProp name="" elementType="HTTPArgument">
+                  <boolProp name="HTTPArgument.always_encode">false</boolProp>
+                  <stringProp name="Argument.value">${eventPayload}</stringProp>
+                  <stringProp name="Argument.metadata">=</stringProp>
+                </elementProp>
+              </collectionProp>
+            </elementProp>
+            <stringProp name="HTTPSampler.domain">${__P(workers.host,localhost)}</stringProp>
+            <stringProp name="HTTPSampler.port">${__P(workers.port,8080)}</stringProp>
+            <stringProp name="HTTPSampler.protocol">${__P(workers.protocol,http)}</stringProp>
+            <stringProp name="HTTPSampler.path">${__P(workers.basePath,/api/v1)}/trades/trigger-event</stringProp>
+            <stringProp name="HTTPSampler.method">POST</stringProp>
+            <boolProp name="HTTPSampler.postBodyRaw">true</boolProp>
+            <boolProp name="HTTPSampler.follow_redirects">true</boolProp>
+            <boolProp name="HTTPSampler.auto_redirects">false</boolProp>
+            <boolProp name="HTTPSampler.use_keepalive">true</boolProp>
+            <boolProp name="HTTPSampler.DO_MULTIPART_POST">false</boolProp>
+            <stringProp name="HTTPSampler.embedded_url_re"></stringProp>
+          </HTTPSamplerProxy>
+          <hashTree>
+
+            <JSR223PreProcessor guiclass="TestBeanGUI" testclass="JSR223PreProcessor" testname="build event payload" enabled="true">
+              <stringProp name="cacheKey">true</stringProp>
+              <stringProp name="filename">${__P(baseDir,.)}/groovy/build-trigger-event-payload.groovy</stringProp>
+              <stringProp name="parameters"></stringProp>
+              <stringProp name="script"></stringProp>
+              <stringProp name="scriptLanguage">groovy</stringProp>
+            </JSR223PreProcessor>
+            <hashTree/>
+
+            <HeaderManager guiclass="HeaderPanel" testclass="HeaderManager" testname="json content-type" enabled="true">
+              <collectionProp name="HeaderManager.headers">
+                <elementProp name="" elementType="Header">
+                  <stringProp name="Header.name">Content-Type</stringProp>
+                  <stringProp name="Header.value">application/json</stringProp>
+                </elementProp>
+              </collectionProp>
+            </HeaderManager>
+            <hashTree/>
+
+            <ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion" testname="http 200" enabled="true">
+              <collectionProp name="Asserion.test_strings">
+                <stringProp name="49586">200</stringProp>
+              </collectionProp>
+              <stringProp name="Assertion.custom_message"></stringProp>
+              <stringProp name="Assertion.test_field">Assertion.response_code</stringProp>
+              <boolProp name="Assertion.assume_success">false</boolProp>
+              <intProp name="Assertion.test_type">8</intProp>
+            </ResponseAssertion>
+            <hashTree/>
+
+            <JSR223Assertion guiclass="TestBeanGUI" testclass="JSR223Assertion" testname="business status + error class" enabled="true">
+              <stringProp name="cacheKey">true</stringProp>
+              <stringProp name="filename">${__P(baseDir,.)}/groovy/assert-trigger-event-response.groovy</stringProp>
+              <stringProp name="parameters"></stringProp>
+              <stringProp name="script"></stringProp>
+              <stringProp name="scriptLanguage">groovy</stringProp>
+            </JSR223Assertion>
+            <hashTree/>
+
+            <!-- 需审批的事件会产生一个 checker task。提取出来，
+                 让"事件提交 → 审批"的两阶段链路可以在 S-15 里串起来。 -->
+            <RegexExtractor guiclass="RegexExtractorGui" testclass="RegexExtractor" testname="ext eventTaskId" enabled="true">
+              <stringProp name="RegexExtractor.useHeaders">false</stringProp>
+              <stringProp name="RegexExtractor.refname">eventTaskId</stringProp>
+              <stringProp name="RegexExtractor.regex">TaskId:\s*(CHK-[A-Za-z0-9]+)</stringProp>
+              <stringProp name="RegexExtractor.template">$1$</stringProp>
+              <stringProp name="RegexExtractor.default">NOT_FOUND</stringProp>
+              <stringProp name="RegexExtractor.match_number">1</stringProp>
+            </RegexExtractor>
+            <hashTree/>
+
+          </hashTree>
+        </hashTree>
+      </hashTree>
+    </hashTree>
+  </hashTree>
+</jmeterTestPlan>

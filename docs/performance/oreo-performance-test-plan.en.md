@@ -61,10 +61,10 @@ OREO's test targets are organised by **user entry point** rather than as a flat 
 | ID | Scenario | Type | Priority | NFRs verified | Impl |
 |---|---|---|:---:|---|:---:|
 | **S-01** | **`.dat` per-request cost profile** | Cost Profile | **1** | PERF-07–10, RES-01 | 🟨 |
-| **S-09** | **Fan-out Audit** | Fan-out | **1** | PERF-02, OBS-01, SCALE-01 | ⬜ |
+| **S-09** | **Fan-out Audit** | Fan-out | **1** | PERF-02, OBS-01, SCALE-01 | 🟨 |
 | **S-18** | **Audit completeness reconciliation** | Integrity | **1** | AUDIT-02 | ⬜ |
 | **S-05** | **Same-trade concurrent contention** | Contention | **2** | INTEG-03, INTEG-07, AVAIL-02 | ⬜ |
-| **S-10** | **Data-volume scaling** | Volume Scaling | **2** | SCALE-01, PERF-02 | ⬜ |
+| **S-10** | **Data-volume scaling** | Volume Scaling | **2** | SCALE-01, PERF-02 | 🟨 |
 | **S-14** | **Concurrent parse cap and backpressure** | Resource | **2** | RES-01, RES-02 | ⬜ |
 | **S-15** | **Two-phase approval path (maker → checker)** | Load | **2** | PERF-12–14, PERF-17, SCALE-02 | 🟨 |
 | S-03 | Create Trade E2E (frontend journey) | Load | 3 | PERF-07, PERF-11, PERF-19 | ✅ |
@@ -117,7 +117,7 @@ most expensive. **Without its results, neither of the other two can be designed.
 | **Load shape** | **Single request**, sweeping returned rows: 50 / 200 / 500 |
 | **Key metrics** | UC gRPC call count · risk-engine call count · DB query count (each vs returned rows) |
 | **Pass criteria** | **Fan-out = O(1)** — call count does not grow with returned rows |
-| **Impl** | ⬜ |
+| **Impl** | 🟨 The target script exists (`p05-trades-list`, row count lands in the jtl `tradesRowCount` column); **fan-out counting still has no collection mechanism** |
 | **Blocked by** | **OBS-01** (fan-out counts not observable) |
 
 **This is the highest information density per unit of cost in the whole plan** — three requests, and a decisive conclusion:

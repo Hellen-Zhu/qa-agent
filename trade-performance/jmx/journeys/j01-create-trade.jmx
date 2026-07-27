@@ -64,6 +64,29 @@
         </hashTree>
 
         <!-- 2. 提交 -->
+        <!-- 建议性风控（软依赖，v2 §2.3）。
+             前端在用户填完表单后调用它预览风险，**失败不阻断继续创建**。
+             它与 create 共用 .dat 上传与 payload 构造，位置必须在 create 之前 ——
+             这一步的耗时不计入 create 的事务，但它对 DAT 解析 CPU 的占用是真实的，
+             把它省掉会让 create 的资源画像偏乐观。 -->
+        <IncludeController guiclass="IncludeControllerGui" testclass="IncludeController" testname="inc: calc-risk-for-new" enabled="true">
+          <stringProp name="IncludeController.includepath">jmx/fragments/steps/workers/trade-management/calc-risk-for-new.jmx</stringProp>
+        </IncludeController>
+        <hashTree/>
+
+        <TestAction guiclass="TestActionGui" testclass="TestAction" testname="think: review risk preview" enabled="true">
+          <intProp name="ActionProcessor.action">1</intProp>
+          <intProp name="ActionProcessor.target">0</intProp>
+          <stringProp name="ActionProcessor.duration">0</stringProp>
+        </TestAction>
+        <hashTree>
+          <UniformRandomTimer guiclass="UniformRandomTimerGui" testclass="UniformRandomTimer" testname="0.5~2s" enabled="true">
+            <stringProp name="ConstantTimer.delay">500</stringProp>
+            <stringProp name="RandomTimer.range">1500</stringProp>
+          </UniformRandomTimer>
+          <hashTree/>
+        </hashTree>
+
         <IncludeController guiclass="IncludeControllerGui" testclass="IncludeController" testname="inc: create-trade" enabled="true">
           <stringProp name="IncludeController.includepath">jmx/fragments/steps/workers/trade-management/create-trade.jmx</stringProp>
         </IncludeController>

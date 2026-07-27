@@ -1,0 +1,10 @@
+eventCaseId,eventType,needsApproval,partialPct,notes
+E001,Cancellation,true,,requires checker approval
+E002,EarlyTermination,false,,rises with market volatility
+E003,NovationRemaining,false,,
+E004,PartialNovation,false,50,partial - recomputes remaining notional
+E005,PartialNovationRemaining,false,,
+E006,StepOutFull,false,,
+E007,StepOutPartial,false,30,partial
+E008,PortfolioReassignment,false,,
+E009,Allocation,false,,write amplification - split factor TBC

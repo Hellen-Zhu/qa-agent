@@ -4,11 +4,11 @@ workers.trade-management.detail,workers,trade-management,GET,/trades/{id},fragme
 workers.trade-management.risk-metrics,workers,trade-management,GET,/trades/{tradeId}/risk-metrics,fragment,jmx/fragments/steps/workers/trade-management/trade-risk-metrics.jmx,trade-team,P0,done
 refdata.portfolios.list,refdata,portfolios,GET,/refdata/portfolios,fragment,jmx/fragments/steps/refdata/portfolios-list.jmx,refdata-team,P1,done
 refdata.counterparties.list,refdata,counterparties,GET,/refdata/counterparties,fragment,jmx/fragments/steps/refdata/counterparties-list.jmx,refdata-team,P1,done
-workers.trade-management.list,workers,trade-management,GET,/trades,fragment,,trade-team,P0,todo
-workers.trade-management.trigger-event,workers,trade-management,POST,/trades/trigger-event,fragment,,trade-team,P0,todo
-workers.trade-management.calculate-risk,workers,trade-management,POST,/trades/{id}/calculate-risk,fragment,,trade-team,P0,todo
-workers.trade-management.calc-partial-novation-risk,workers,trade-management,POST,/trades/{id}/calculate-partial-novation-risk,fragment,,trade-team,P0,todo
-workers.trade-management.calc-risk-for-new,workers,trade-management,POST,/trades/calculate-risk-for-new,fragment,,trade-team,P0,todo
+workers.trade-management.list,workers,trade-management,GET,/trades,fragment,jmx/fragments/steps/workers/trade-management/trades-list.jmx,trade-team,P0,done
+workers.trade-management.trigger-event,workers,trade-management,POST,/trades/trigger-event,fragment,jmx/fragments/steps/workers/trade-management/trigger-event.jmx,trade-team,P0,done
+workers.trade-management.calculate-risk,workers,trade-management,POST,/trades/{id}/calculate-risk,fragment,jmx/fragments/steps/workers/trade-management/calculate-risk.jmx,trade-team,P0,done
+workers.trade-management.calc-partial-novation-risk,workers,trade-management,POST,/trades/{id}/calculate-partial-novation-risk,fragment,jmx/fragments/steps/workers/trade-management/calc-partial-novation-risk.jmx,trade-team,P0,done
+workers.trade-management.calc-risk-for-new,workers,trade-management,POST,/trades/calculate-risk-for-new,fragment,jmx/fragments/steps/workers/trade-management/calc-risk-for-new.jmx,trade-team,P0,done
 workers.trade-management.update,workers,trade-management,POST,/trades/{id}/update,fragment,,trade-team,P1,todo
 workers.trade-management.single-risk-metric,workers,trade-management,GET,/trades/{tradeId}/risk-metrics/{metricType},datadriven,,trade-team,P1,todo
 workers.trade-management.dat-to-json,workers,trade-management,POST,/trades/dat-to-json,fragment,,trade-team,P1,todo

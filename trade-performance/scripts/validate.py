@@ -248,7 +248,15 @@ def check(path: Path, endpoint_index: dict) -> None:
         # TBC 占位值。这类字段（costTier / fixings）只进 jtl 的结果列，不影响请求能否发出——
         # 所以带着 TBC 跑不会报错，只会让"P95 对定盘次数"这条成本曲线整列变成 TBC，
         # 事后才发现整轮数据白跑。宁可在这里红。
-        tbc_rows = [i for i, line in enumerate(lines[1:], start=2) if "TBC" in line]
+        #
+        # 但**自由文本列除外**：notes 里写"split factor TBC"是合法的文档，不是占位符。
+        # 不排除它就会产生误报，而误报是让一条好检查被人忽略的最快方式。
+        FREE_TEXT = {"notes", "note", "comment", "comments", "description", "desc"}
+        data_cols = [i for i, n in enumerate(names) if n.strip().lower() not in FREE_TEXT]
+        tbc_rows = [
+            i for i, line in enumerate(lines[1:], start=2)
+            if any("TBC" in c for j, c in enumerate(line.split(",")) if j in data_cols)
+        ]
         if tbc_rows:
             shown = ", ".join(map(str, tbc_rows[:5])) + ("..." if len(tbc_rows) > 5 else "")
             errors.append(

@@ -1,0 +1,132 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  fragments/steps/workers/trade-management/calc-risk-for-new.jmx
+
+  【层级】原子 fragment —— 一个 API 一个文件，不可独立运行
+  【API】  workers.trade-management.calc-risk-for-new  ·  POST /trades/calculate-risk-for-new
+  【服务】 workers  →  必须使用 ${__P(workers.*)} 寻址（校验规则 R3）
+  【优先级】P0
+
+  ══ 它同时踩中两条最贵的依赖 ═══════════════════════════════════
+    DAT parsing（进程内 CPU/内存） + risk-engine gRPC
+
+  create 只踩前者。所以这个接口是 S-12（DAT 解析挤占无关接口）里
+  **既是施压者又是受害者**的那一个，值得单独看。
+
+  它与 create 共用 .dat 上传形态，因此复用同一组请求构造脚本：
+  resolve-dat-file → select-refdata → build-trade-payload。
+  这是"同一份构造逻辑服务多个接口"的例子 —— 三个脚本各自只有一份。
+  ═══════════════════════════════════════════════════════════════
+
+  ── 软依赖（v2 §2.3）──
+  前端把它当**建议性风控**：失败不阻断用户继续创建。
+  所以它在 j01 里位于 create 之前，失败只打标签不中止。
+  风控失败后实际有多少比例用户继续创建，是一条待确认的业务假设
+  （v2 §2.4，当前假设 50%，riskFailProceedPct 可配）。
+
+  ── multipart 要点（与 create 相同，勿改）──
+  DO_MULTIPART_POST=true            让 JMeter 自己生成 Content-Type 及 boundary
+  BROWSER_COMPATIBLE_MULTIPART=true 只给带 filename 的 part 写 Content-Type
+
+  【输入变量】datFile（CSV）· portfolioId / counterpartyFmId / counterpartyName
+  【输出变量】riskOk · riskFailCode
+  【产出事务】TX_workers_trademgmt_calcriskfornew
+-->
+<jmeterTestPlan version="1.2" properties="5.0" jmeter="5.6.3">
+  <hashTree>
+    <TestPlan guiclass="TestPlanGui" testclass="TestPlan" testname="workers.trade-management.calc-risk-for-new (fragment)" enabled="true">
+      <stringProp name="TestPlan.comments">Atomic fragment. Never run directly.</stringProp>
+      <boolProp name="TestPlan.functional_mode">false</boolProp>
+      <boolProp name="TestPlan.serialize_threadgroups">false</boolProp>
+      <elementProp name="TestPlan.user_defined_variables" elementType="Arguments" guiclass="ArgumentsPanel" testclass="Arguments" testname="User Defined Variables" enabled="true">
+        <collectionProp name="Arguments.arguments"/>
+      </elementProp>
+      <stringProp name="TestPlan.user_define_classpath"></stringProp>
+    </TestPlan>
+    <hashTree>
+
+      <TestFragmentController guiclass="TestFragmentControllerGui" testclass="TestFragmentController" testname="workers.trade-management.calc-risk-for-new" enabled="true"/>
+      <hashTree>
+
+        <TransactionController guiclass="TransactionControllerGui" testclass="TransactionController" testname="TX_workers_trademgmt_calcriskfornew" enabled="true">
+          <boolProp name="TransactionController.parent">false</boolProp>
+          <boolProp name="TransactionController.includeTimers">false</boolProp>
+        </TransactionController>
+        <hashTree>
+
+          <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="workers_trademgmt_calcriskfornew" enabled="true">
+            <elementProp name="HTTPsampler.Arguments" elementType="Arguments" guiclass="HTTPArgumentsPanel" testclass="Arguments" testname="User Defined Variables" enabled="true">
+              <collectionProp name="Arguments.arguments">
+                <elementProp name="trade" elementType="HTTPArgument">
+                  <boolProp name="HTTPArgument.always_encode">false</boolProp>
+                  <stringProp name="Argument.value">${tradePayload}</stringProp>
+                  <stringProp name="Argument.metadata">=</stringProp>
+                  <boolProp name="HTTPArgument.use_equals">true</boolProp>
+                  <stringProp name="Argument.name">trade</stringProp>
+                </elementProp>
+              </collectionProp>
+            </elementProp>
+            <elementProp name="HTTPsampler.Files" elementType="HTTPFileArgs">
+              <collectionProp name="HTTPFileArgs.files">
+                <elementProp name="datFile" elementType="HTTPFileArg">
+                  <stringProp name="File.path">${datDir}/${effectiveDatFile}</stringProp>
+                  <stringProp name="File.paramname">datFile</stringProp>
+                  <stringProp name="File.mimetype">application/octet-stream</stringProp>
+                </elementProp>
+              </collectionProp>
+            </elementProp>
+            <stringProp name="HTTPSampler.domain">${__P(workers.host,localhost)}</stringProp>
+            <stringProp name="HTTPSampler.port">${__P(workers.port,8080)}</stringProp>
+            <stringProp name="HTTPSampler.protocol">${__P(workers.protocol,http)}</stringProp>
+            <stringProp name="HTTPSampler.path">${__P(workers.basePath,/api/v1)}/trades/calculate-risk-for-new</stringProp>
+            <stringProp name="HTTPSampler.method">POST</stringProp>
+            <boolProp name="HTTPSampler.DO_MULTIPART_POST">true</boolProp>
+            <boolProp name="HTTPSampler.BROWSER_COMPATIBLE_MULTIPART">true</boolProp>
+            <boolProp name="HTTPSampler.follow_redirects">true</boolProp>
+            <boolProp name="HTTPSampler.auto_redirects">false</boolProp>
+            <boolProp name="HTTPSampler.use_keepalive">true</boolProp>
+            <stringProp name="HTTPSampler.embedded_url_re"></stringProp>
+          </HTTPSamplerProxy>
+          <hashTree>
+            <JSR223PreProcessor guiclass="TestBeanGUI" testclass="JSR223PreProcessor" testname="resolve dat file" enabled="true">
+              <stringProp name="cacheKey">true</stringProp>
+              <stringProp name="filename">${__P(baseDir,.)}/groovy/resolve-dat-file.groovy</stringProp>
+              <stringProp name="parameters"></stringProp>
+              <stringProp name="script"></stringProp>
+              <stringProp name="scriptLanguage">groovy</stringProp>
+            </JSR223PreProcessor>
+            <hashTree/>
+            <JSR223PreProcessor guiclass="TestBeanGUI" testclass="JSR223PreProcessor" testname="select refdata" enabled="true">
+              <stringProp name="cacheKey">true</stringProp>
+              <stringProp name="filename">${__P(baseDir,.)}/groovy/select-refdata.groovy</stringProp>
+              <stringProp name="parameters"></stringProp>
+              <stringProp name="script"></stringProp>
+              <stringProp name="scriptLanguage">groovy</stringProp>
+            </JSR223PreProcessor>
+            <hashTree/>
+            <JSR223PreProcessor guiclass="TestBeanGUI" testclass="JSR223PreProcessor" testname="build trade payload" enabled="true">
+              <stringProp name="cacheKey">true</stringProp>
+              <stringProp name="filename">${__P(baseDir,.)}/groovy/build-trade-payload.groovy</stringProp>
+              <stringProp name="parameters"></stringProp>
+              <stringProp name="script"></stringProp>
+              <stringProp name="scriptLanguage">groovy</stringProp>
+            </JSR223PreProcessor>
+            <hashTree/>
+
+            <!-- 软依赖：风控失败不中止调用方的迭代，只打标签。
+                 把它当硬失败会让"risk-engine 降级"场景（S-11）的错误率虚高。 -->
+            <JSR223PostProcessor guiclass="TestBeanGUI" testclass="JSR223PostProcessor" testname="tag risk outcome" enabled="true">
+              <stringProp name="cacheKey">true</stringProp>
+              <stringProp name="filename">${__P(baseDir,.)}/groovy/tag-risk-outcome.groovy</stringProp>
+              <stringProp name="parameters"></stringProp>
+              <stringProp name="script"></stringProp>
+              <stringProp name="scriptLanguage">groovy</stringProp>
+            </JSR223PostProcessor>
+            <hashTree/>
+
+          </hashTree>
+        </hashTree>
+      </hashTree>
+    </hashTree>
+  </hashTree>
+</jmeterTestPlan>

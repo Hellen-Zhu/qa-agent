@@ -1,0 +1,102 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  fragments/steps/workers/trade-management/calculate-risk.jmx
+
+  【层级】原子 fragment —— 一个 API 一个文件，不可独立运行
+  【API】  workers.trade-management.calculate-risk  ·  POST /trades/{id}/calculate-risk
+  【服务】 workers  →  必须使用 ${__P(workers.*)} 寻址（校验规则 R3）
+  【优先级】P0
+
+  ── 依赖 risk-engine gRPC ──
+  它是 risk-engine 爆炸半径内的 6 个接口之一。S-11 降级场景要验证的是
+  **risk-engine 挂掉时 create 不受影响**（v2 §2.2 结论 2 的架构假设），
+  本接口则是"确实受影响"的那一侧，用作对照。
+
+  ⚠⚠ 请求体形状为推断值，未经真实 curl 验证。
+     构造在 groovy/build-risk-payload.groovy，三个 risk 接口共用一处。
+
+  【输入变量】targetTradeId 必填
+  【输出变量】riskOk = true|false · riskFailCode
+  【产出事务】TX_workers_trademgmt_calcrisk
+-->
+<jmeterTestPlan version="1.2" properties="5.0" jmeter="5.6.3">
+  <hashTree>
+    <TestPlan guiclass="TestPlanGui" testclass="TestPlan" testname="workers.trade-management.calculate-risk (fragment)" enabled="true">
+      <stringProp name="TestPlan.comments">Atomic fragment. Never run directly.</stringProp>
+      <boolProp name="TestPlan.functional_mode">false</boolProp>
+      <boolProp name="TestPlan.serialize_threadgroups">false</boolProp>
+      <elementProp name="TestPlan.user_defined_variables" elementType="Arguments" guiclass="ArgumentsPanel" testclass="Arguments" testname="User Defined Variables" enabled="true">
+        <collectionProp name="Arguments.arguments"/>
+      </elementProp>
+      <stringProp name="TestPlan.user_define_classpath"></stringProp>
+    </TestPlan>
+    <hashTree>
+
+      <TestFragmentController guiclass="TestFragmentControllerGui" testclass="TestFragmentController" testname="workers.trade-management.calculate-risk" enabled="true"/>
+      <hashTree>
+
+        <TransactionController guiclass="TransactionControllerGui" testclass="TransactionController" testname="TX_workers_trademgmt_calcrisk" enabled="true">
+          <boolProp name="TransactionController.parent">false</boolProp>
+          <boolProp name="TransactionController.includeTimers">false</boolProp>
+        </TransactionController>
+        <hashTree>
+
+          <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="workers_trademgmt_calcrisk" enabled="true">
+            <elementProp name="HTTPsampler.Arguments" elementType="Arguments" guiclass="HTTPArgumentsPanel" testclass="Arguments" testname="User Defined Variables" enabled="true">
+              <collectionProp name="Arguments.arguments">
+                <elementProp name="" elementType="HTTPArgument">
+                  <boolProp name="HTTPArgument.always_encode">false</boolProp>
+                  <stringProp name="Argument.value">${riskPayload}</stringProp>
+                  <stringProp name="Argument.metadata">=</stringProp>
+                </elementProp>
+              </collectionProp>
+            </elementProp>
+            <stringProp name="HTTPSampler.domain">${__P(workers.host,localhost)}</stringProp>
+            <stringProp name="HTTPSampler.port">${__P(workers.port,8080)}</stringProp>
+            <stringProp name="HTTPSampler.protocol">${__P(workers.protocol,http)}</stringProp>
+            <stringProp name="HTTPSampler.path">${__P(workers.basePath,/api/v1)}/trades/${targetTradeId}/calculate-risk</stringProp>
+            <stringProp name="HTTPSampler.method">POST</stringProp>
+            <boolProp name="HTTPSampler.postBodyRaw">true</boolProp>
+            <boolProp name="HTTPSampler.DO_MULTIPART_POST">false</boolProp>
+            <boolProp name="HTTPSampler.follow_redirects">true</boolProp>
+            <boolProp name="HTTPSampler.auto_redirects">false</boolProp>
+            <boolProp name="HTTPSampler.use_keepalive">true</boolProp>
+            <stringProp name="HTTPSampler.embedded_url_re"></stringProp>
+          </HTTPSamplerProxy>
+          <hashTree>
+            <JSR223PreProcessor guiclass="TestBeanGUI" testclass="JSR223PreProcessor" testname="build risk payload" enabled="true">
+              <stringProp name="cacheKey">true</stringProp>
+              <stringProp name="filename">${__P(baseDir,.)}/groovy/build-risk-payload.groovy</stringProp>
+              <stringProp name="parameters"></stringProp>
+              <stringProp name="script"></stringProp>
+              <stringProp name="scriptLanguage">groovy</stringProp>
+            </JSR223PreProcessor>
+            <hashTree/>
+
+            <HeaderManager guiclass="HeaderPanel" testclass="HeaderManager" testname="json content-type" enabled="true">
+              <collectionProp name="HeaderManager.headers">
+                <elementProp name="" elementType="Header">
+                  <stringProp name="Header.name">Content-Type</stringProp>
+                  <stringProp name="Header.value">application/json</stringProp>
+                </elementProp>
+              </collectionProp>
+            </HeaderManager>
+            <hashTree/>
+
+            <!-- 软依赖：风控失败不中止调用方的迭代，只打标签。
+                 把它当硬失败会让"risk-engine 降级"场景（S-11）的错误率虚高。 -->
+            <JSR223PostProcessor guiclass="TestBeanGUI" testclass="JSR223PostProcessor" testname="tag risk outcome" enabled="true">
+              <stringProp name="cacheKey">true</stringProp>
+              <stringProp name="filename">${__P(baseDir,.)}/groovy/tag-risk-outcome.groovy</stringProp>
+              <stringProp name="parameters"></stringProp>
+              <stringProp name="script"></stringProp>
+              <stringProp name="scriptLanguage">groovy</stringProp>
+            </JSR223PostProcessor>
+            <hashTree/>
+
+          </hashTree>
+        </hashTree>
+      </hashTree>
+    </hashTree>
+  </hashTree>
+</jmeterTestPlan>

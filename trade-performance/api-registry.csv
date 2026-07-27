@@ -15,11 +15,11 @@ workers.trade-management.dat-to-json,workers,trade-management,POST,/trades/dat-t
 workers.trade-management.target-gain,workers,trade-management,GET,/trades/{id}/target-gain,datadriven,,trade-team,P1,todo
 workers.trade-management.generate-schedule,workers,trade-management,POST,/trades/generate-schedule,fragment,,trade-team,P1,todo
 workers.trade-management.sync-cashflows-batch,workers,trade-management,POST,/trades/sync-cashflows-batch,fragment,,trade-team,P1,todo
-workers.checker-flow.bulk-approve,workers,checker-flow,POST,/checker/tasks/bulk-approve,fragment,,checker-team,P0,todo
-workers.checker-flow.bulk-reject,workers,checker-flow,POST,/checker/tasks/bulk-reject,fragment,,checker-team,P0,todo
-workers.checker-flow.pending,workers,checker-flow,GET,/checker/tasks/pending,datadriven,,checker-team,P1,todo
-workers.checker-flow.approve,workers,checker-flow,POST,/checker/tasks/{taskId}/approve,fragment,,checker-team,P1,todo
-workers.checker-flow.reject,workers,checker-flow,POST,/checker/tasks/{taskId}/reject,fragment,,checker-team,P1,todo
+workers.checker-flow.bulk-approve,workers,checker-flow,POST,/checker/tasks/bulk-approve,fragment,jmx/fragments/steps/workers/checker-flow/bulk-approve.jmx,checker-team,P0,done
+workers.checker-flow.bulk-reject,workers,checker-flow,POST,/checker/tasks/bulk-reject,fragment,jmx/fragments/steps/workers/checker-flow/bulk-reject.jmx,checker-team,P0,done
+workers.checker-flow.pending,workers,checker-flow,GET,/checker/tasks/pending,fragment,jmx/fragments/steps/workers/checker-flow/pending-tasks.jmx,checker-team,P1,done
+workers.checker-flow.approve,workers,checker-flow,POST,/checker/tasks/{taskId}/approve,fragment,jmx/fragments/steps/workers/checker-flow/approve-task.jmx,checker-team,P1,done
+workers.checker-flow.reject,workers,checker-flow,POST,/checker/tasks/{taskId}/reject,fragment,jmx/fragments/steps/workers/checker-flow/reject-task.jmx,checker-team,P1,done
 workers.product-management.list,workers,product-management,GET,/products,datadriven,,product-team,P1,todo
 workers.product-management.schema-parse,workers,product-management,POST,/products/schema/parse,fragment,,product-team,P1,todo
 workers.product-management.live-fields,workers,product-management,GET,/product-field-configs/{productId}/live-fields,datadriven,,product-team,P1,todo

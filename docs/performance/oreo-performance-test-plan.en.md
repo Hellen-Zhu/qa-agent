@@ -66,7 +66,7 @@ OREO's test targets are organised by **user entry point** rather than as a flat 
 | **S-05** | **Same-trade concurrent contention** | Contention | **2** | INTEG-03, INTEG-07, AVAIL-02 | ⬜ |
 | **S-10** | **Data-volume scaling** | Volume Scaling | **2** | SCALE-01, PERF-02 | ⬜ |
 | **S-14** | **Concurrent parse cap and backpressure** | Resource | **2** | RES-01, RES-02 | ⬜ |
-| **S-15** | **Two-phase approval path (maker → checker)** | Load | **2** | PERF-12–14, PERF-17, SCALE-02 | ⬜ |
+| **S-15** | **Two-phase approval path (maker → checker)** | Load | **2** | PERF-12–14, PERF-17, SCALE-02 | 🟨 |
 | S-03 | Create Trade E2E (frontend journey) | Load | 3 | PERF-07, PERF-11, PERF-19 | ✅ |
 | S-11 | Downstream degradation isolation (UC / risk / notification) | Interference | 3 | RESIL-01, 02, 05, 06 | ⬜ |
 | S-12 | DAT parsing CPU / memory competition | Interference | 3 | RESIL-03 | ⬜ |
@@ -249,7 +249,7 @@ If interleaving genuinely needs verification (e.g. suspicion that submit and app
 | **S-12** | DAT parsing crowding out unrelated endpoints | Background concurrent large-tier parses + foreground refdata reads | RESIL-03, degradation ≤ 20% | Verifies the "in-process CPU competition" assumption |
 | **S-02** | Booking cutoff peak | 4× mean sustained for one hour | PERF-07, PERF-19 | Close out with S-18 |
 | **S-13** | Batch jobs in parallel with online traffic | trade-aging / sync-cashflows / refdata sync alongside online load | RESIL-04, degradation ≤ 20% | Requires confirming the refdata sync write mode (upsert vs truncate-reload) — the two have entirely different failure models |
-| **S-04** | Checker batch queue-clearing | `bulk-approve` at batch 1/5/20/50, 3 concurrent batches | PERF-15/16; **per-unit latency must not rise with batch size** | A burst shape; do not use constant arrival rate |
+| **S-04** | Checker batch queue-clearing | `bulk-approve` at batch 1/5/20/50, 3 concurrent batches | PERF-15/16; **per-unit latency must not rise with batch size** | A burst shape; do not use constant arrival rate. **Scripts built**: `p03-checker-bulk-approve` / `p04-checker-bulk-reject` |
 | **S-16** | Full-capacity mixed load | All design capacities from [Workload Modeling](workload-modeling.en.md) §6 applied together | **PERF-19** (all thresholds met simultaneously) | The only scenario that can expose cross-path resource competition. **Has two productType mix sub-scenarios, see below** |
 | **S-07** | Month / quarter-end roll | 3× a normal day, all day | PERF-20, degradation ≤ 20% | Event mix weighted toward rolls / reassignment |
 | **S-17** | Soak — long trading day | Design capacity for 4–8 hours | AVAIL-01, MAINT-04; no memory or connection leak | **Ranks above Spike**: blotter auto-refresh runs constantly all day |

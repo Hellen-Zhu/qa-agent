@@ -15,7 +15,14 @@
 ./scripts/run.sh s01-create-trade-e2e dev smoke     # E2E 链路，1 线程 1 轮
 ./scripts/run.sh p02-trade-create     dev smoke     # 单接口，1 线程 1 轮
 ./scripts/run.sh p02-trade-create     perf load     # 单接口，峰值负载 30 分钟
+
+./scripts/run.sh s03-checker-approve-e2e  dev  smoke              # checker 链路
+./scripts/run.sh p03-checker-bulk-approve perf load -JcheckerBatchSize=20
+./scripts/run.sh p04-checker-bulk-reject  perf load -JcheckerBatchSize=20
 ```
+
+⚠ checker 场景需要环境里**已有待审批任务**。先跑一轮 `s01-create-trade-e2e` 造数
+（每笔 create 产生一个 checker task），否则 setUp 会报 `CHECKER TASK POOL TOO SMALL`。
 
 `run.sh` 不带参数会列出所有可用的 plan / env / profile。
 
@@ -32,7 +39,10 @@ trade-performance/
 │   │   └── steps/
 │   │       ├── <svc>/<module>/   ← 原子 fragment：一个 API 一个文件
 │   │       │   ├── refdata/                    portfolios-list · counterparties-list
-│   │       │   └── workers/trade-management/   create-trade · trade-detail · trade-risk-metrics
+│   │       │   └── workers/
+│   │       │       ├── trade-management/       create-trade · trade-detail · trade-risk-metrics
+│   │       │       └── checker-flow/           pending-tasks · approve-task · reject-task
+│   │       │                                   bulk-approve · bulk-reject
 │   │       └── _composites/      ← 组合 fragment：只 Include 原子，自己不定义 sampler
 │   ├── journeys/        ← 不可运行（按**业务流程**组织，天然横跨多个 svc）
 │   ├── scenarios/       ← 可运行（薄壳：Thread Group + Include）
@@ -267,7 +277,9 @@ create 会混进容量统计——量小的时候尤其致命：0.1 TPS 的场�
 | `stress` 用普通 Thread Group | 已知偏差 | 阶梯加压需要 bzm Concurrency Thread Group；当前 `steps`/`holdPerStep` 两个属性是预留的，尚未生效 |
 | WebSocket | 不在 scope | create 会触发 WebSocket 推送，当前完全未覆盖 |
 | `suites/`、`ops/` | 空目录 | 混合负载与降级场景、灌数与清理脚本尚未建 |
-| 其余 28 个 API | 未建 | 见 `api-registry.csv` 的 `status=todo` 行 |
+| 其余 23 个 API | 未建 | 见 `api-registry.csv` 的 `status=todo` 行 |
+| checker 接口的 payload 形状 | **推断值** | 只有 create 有真实 curl。approve/reject/bulk-* 的 body 是推断的，集中在 `groovy/checker-claim-{task,batch}.groovy` 两处，确认后只改那里 |
+| 批量接口的部分失败 | 依赖服务端返回逐项结果 | 若不返回 `successCount`，`bulkOutcome` 会标 `unverifiable` —— 批量接口的有效 TPS 在原理上就无法准确统计 |
 | 5 个 svc 的真实 host | 占位值 | `config/*.properties` 里 5 组 `<svc>.host` 全指向同一个占位地址，待运维提供 |
 
 ---

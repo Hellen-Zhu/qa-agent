@@ -1,0 +1,152 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  api/p04-checker-bulk-reject.jmx
+
+  【层级】api —— **可运行**单接口容量测试。薄壳。
+  【测什么】POST /checker/tasks/bulk-reject —— 本组里成本最高的接口
+  【怎么跑】./scripts/run.sh p04-checker-bulk-reject perf load -JcheckerBatchSize=20
+
+  ══ 为什么它必须与 bulk-approve 分开测 ═════════════════════════
+  reject 把两个放大因子叠在一起：批量 × (snapshot 恢复 + 审计写入)。
+  N 笔 bulk-reject 的耗时 ≠ N 笔 bulk-approve。只测 approve 会低估
+  审批链路在最坏情况下的成本。
+
+  单位工作量耗时的走向在这里尤其值得看：若 snapshot 恢复是逐笔串行的，
+  单位耗时会随批次上升 —— 意味着"一次拒绝一批"会长时间持有事务。
+  ═══════════════════════════════════════════════════════════════
+-->
+<jmeterTestPlan version="1.2" properties="5.0" jmeter="5.6.3">
+  <hashTree>
+    <TestPlan guiclass="TestPlanGui" testclass="TestPlan" testname="p04-checker-bulk-reject" enabled="true">
+      <stringProp name="TestPlan.comments">Runnable. Thin shell — logic lives in journeys/ and fragments/.</stringProp>
+      <boolProp name="TestPlan.functional_mode">false</boolProp>
+      <boolProp name="TestPlan.serialize_threadgroups">false</boolProp>
+      <elementProp name="TestPlan.user_defined_variables" elementType="Arguments" guiclass="ArgumentsPanel" testclass="Arguments" testname="User Defined Variables" enabled="true">
+        <collectionProp name="Arguments.arguments"/>
+      </elementProp>
+      <stringProp name="TestPlan.user_define_classpath"></stringProp>
+    </TestPlan>
+    <hashTree>
+
+      <ConfigTestElement guiclass="HttpDefaultsGui" testclass="ConfigTestElement" testname="HTTP Request Defaults" enabled="true">
+        <elementProp name="HTTPsampler.Arguments" elementType="Arguments" guiclass="HTTPArgumentsPanel" testclass="Arguments" testname="User Defined Variables" enabled="true">
+          <collectionProp name="Arguments.arguments"/>
+        </elementProp>
+        <!-- 刻意不设 domain / port / protocol：5 个服务各自寻址，
+             由每个原子 fragment 显式写 ${__P(<svc>.host)} 等（校验规则 R3 会检查）。 -->
+        <stringProp name="HTTPSampler.connect_timeout">${__P(connectTimeout,5000)}</stringProp>
+        <stringProp name="HTTPSampler.response_timeout">${__P(responseTimeout,60000)}</stringProp>
+        <stringProp name="HTTPSampler.contentEncoding">UTF-8</stringProp>
+      </ConfigTestElement>
+      <hashTree/>
+
+      <!-- ⚠ checker 身份必须与 maker 不同 —— 四眼原则要求同一人不得审批自己提交的事件
+           （NFR SEC-02）。accounts.csv 的 userRole 列区分 maker / checker；
+           跑 checker 场景时用 -JuserMode=fixed -JfixedUserId=<checker> 更可控。 -->
+      <HeaderManager guiclass="HeaderPanel" testclass="HeaderManager" testname="HTTP Header Manager" enabled="true">
+        <collectionProp name="HeaderManager.headers">
+          <elementProp name="" elementType="Header">
+            <stringProp name="Header.name">accept</stringProp>
+            <stringProp name="Header.value">*/*</stringProp>
+          </elementProp>
+          <elementProp name="" elementType="Header">
+            <stringProp name="Header.name">X-User-ID</stringProp>
+            <stringProp name="Header.value">${__P(legacyUserId,anonymous)}</stringProp>
+          </elementProp>
+          <elementProp name="" elementType="Header">
+            <stringProp name="Header.name">X-User-Id</stringProp>
+            <stringProp name="Header.value">${effectiveUserId}</stringProp>
+          </elementProp>
+          <elementProp name="" elementType="Header">
+            <stringProp name="Header.name">X-Dyn-Run</stringProp>
+            <stringProp name="Header.value">${__P(dynRun,false)}</stringProp>
+          </elementProp>
+        </collectionProp>
+      </HeaderManager>
+      <hashTree/>
+
+      <JSR223PreProcessor guiclass="TestBeanGUI" testclass="JSR223PreProcessor" testname="resolve identity" enabled="true">
+        <stringProp name="cacheKey">true</stringProp>
+        <stringProp name="filename">${__P(baseDir,.)}/groovy/resolve-identity.groovy</stringProp>
+        <stringProp name="parameters"></stringProp>
+        <stringProp name="script"></stringProp>
+        <stringProp name="scriptLanguage">groovy</stringProp>
+      </JSR223PreProcessor>
+      <hashTree/>
+
+      <CSVDataSet guiclass="TestBeanGUI" testclass="CSVDataSet" testname="csv: accounts" enabled="true">
+        <stringProp name="filename">${__P(baseDir,.)}/data/shared/accounts.csv</stringProp>
+        <stringProp name="fileEncoding">UTF-8</stringProp>
+        <stringProp name="variableNames">userId,userRole,userNote</stringProp>
+        <boolProp name="ignoreFirstLine">true</boolProp>
+        <stringProp name="delimiter">,</stringProp>
+        <boolProp name="quotedData">false</boolProp>
+        <boolProp name="recycle">true</boolProp>
+        <boolProp name="stopThread">false</boolProp>
+        <stringProp name="shareMode">shareMode.all</stringProp>
+      </CSVDataSet>
+      <hashTree/>
+
+      <!-- ══ setUp：把环境里的待办任务灌进 claim-once 池 ═══════════════ -->
+      <SetupThreadGroup guiclass="SetupThreadGroupGui" testclass="SetupThreadGroup" testname="setUp: checker task pool" enabled="true">
+        <stringProp name="ThreadGroup.on_sample_error">continue</stringProp>
+        <elementProp name="ThreadGroup.main_controller" elementType="LoopController" guiclass="LoopControlPanel" testclass="LoopController" testname="Loop Controller" enabled="true">
+          <boolProp name="LoopController.continue_forever">false</boolProp>
+          <stringProp name="LoopController.loops">1</stringProp>
+        </elementProp>
+        <stringProp name="ThreadGroup.num_threads">1</stringProp>
+        <stringProp name="ThreadGroup.ramp_time">1</stringProp>
+        <boolProp name="ThreadGroup.scheduler">false</boolProp>
+        <stringProp name="ThreadGroup.duration"></stringProp>
+        <stringProp name="ThreadGroup.delay"></stringProp>
+      </SetupThreadGroup>
+      <hashTree>
+        <Arguments guiclass="ArgumentsPanel" testclass="Arguments" testname="runPhase=setup" enabled="true">
+          <collectionProp name="Arguments.arguments">
+            <elementProp name="runPhase" elementType="Argument">
+              <stringProp name="Argument.name">runPhase</stringProp>
+              <stringProp name="Argument.value">setup</stringProp>
+              <stringProp name="Argument.metadata">=</stringProp>
+            </elementProp>
+          </collectionProp>
+        </Arguments>
+        <hashTree/>
+        <IncludeController guiclass="IncludeControllerGui" testclass="IncludeController" testname="inc: checker-task-pool" enabled="true">
+          <stringProp name="IncludeController.includepath">jmx/fragments/setup/checker-task-pool.jmx</stringProp>
+        </IncludeController>
+        <hashTree/>
+      </hashTree>
+
+      <!-- ══ 主负载 ═══════════════════════════════════════════════════ -->
+      <ThreadGroup guiclass="ThreadGroupGui" testclass="ThreadGroup" testname="TG: bulk-reject capacity" enabled="true">
+        <stringProp name="ThreadGroup.on_sample_error">continue</stringProp>
+        <elementProp name="ThreadGroup.main_controller" elementType="LoopController" guiclass="LoopControlPanel" testclass="LoopController" testname="Loop Controller" enabled="true">
+          <boolProp name="LoopController.continue_forever">false</boolProp>
+          <stringProp name="LoopController.loops">${__P(loops,-1)}</stringProp>
+        </elementProp>
+        <stringProp name="ThreadGroup.num_threads">${__P(threads,1)}</stringProp>
+        <stringProp name="ThreadGroup.ramp_time">${__P(rampUp,1)}</stringProp>
+        <stringProp name="ThreadGroup.scheduler">${__P(scheduler,true)}</stringProp>
+        <stringProp name="ThreadGroup.duration">${__P(duration,60)}</stringProp>
+        <stringProp name="ThreadGroup.delay">0</stringProp>
+      </ThreadGroup>
+      <hashTree>
+        <Arguments guiclass="ArgumentsPanel" testclass="Arguments" testname="runPhase=main" enabled="true">
+          <collectionProp name="Arguments.arguments">
+            <elementProp name="runPhase" elementType="Argument">
+              <stringProp name="Argument.name">runPhase</stringProp>
+              <stringProp name="Argument.value">main</stringProp>
+              <stringProp name="Argument.metadata">=</stringProp>
+            </elementProp>
+          </collectionProp>
+        </Arguments>
+        <hashTree/>
+        <IncludeController guiclass="IncludeControllerGui" testclass="IncludeController" testname="inc: bulk-reject" enabled="true">
+          <stringProp name="IncludeController.includepath">jmx/fragments/steps/workers/checker-flow/bulk-reject.jmx</stringProp>
+        </IncludeController>
+        <hashTree/>
+      </hashTree>
+
+    </hashTree>
+  </hashTree>
+</jmeterTestPlan>

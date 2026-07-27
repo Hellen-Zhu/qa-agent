@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  fragments/setup/checker-task-pool.jmx
+
+  【层级】组合 fragment —— 只 Include 原子，自己不定义 sampler（校验规则 R1/R2）
+  【被谁引用】scenarios/s03-checker-approve-e2e.jmx、api/p03-*、api/p04-* 的 setUp Thread Group
+  【职责】把环境里的待审批任务灌进一个 claim-once 队列，供主线程组领取。
+
+  ── 与 refdata-preflight 同一个模式 ──
+  都是"setUp 解析一次外部状态 → 写进全局 props → 主线程组消费"。
+  差别在消费语义：
+    refdata  可重复使用（一个 portfolio 可被很多 trade 引用）→ 随机挑
+    task     一次性消费（approve 掉就没了）              → claim-once 队列
+
+  ⚠ 本 fragment Include 的 pending-tasks 与 journey 里那个是**同一份**原子 fragment。
+    差异只在于这里挂了 checker-task-pool-init.groovy。
+    结果分析时用 runPhase=setup 过滤掉本阶段的样本。
+
+  ⚠ 池的来源是环境里**既有的**待办任务，测试无法控制其数量。
+    池不足时 checker-task-pool-init.groovy 会写 checkerPoolError 并报错，
+    而不是让主线程组带着假 taskId 跑一轮无意义的负载。
+
+  【输出属性】
+    checkerTaskPool   ConcurrentLinkedQueue<String>（注意：要用 props.get() 读，
+                      props.getProperty() 对非 String 值返回 null）
+    checkerPoolError  池过小时的错误描述（正常时不存在）
+-->
+<jmeterTestPlan version="1.2" properties="5.0" jmeter="5.6.3">
+  <hashTree>
+    <TestPlan guiclass="TestPlanGui" testclass="TestPlan" testname="checker-task-pool (composite fragment)" enabled="true">
+      <stringProp name="TestPlan.comments">Composite fragment. Never run directly.</stringProp>
+      <boolProp name="TestPlan.functional_mode">false</boolProp>
+      <boolProp name="TestPlan.serialize_threadgroups">false</boolProp>
+      <elementProp name="TestPlan.user_defined_variables" elementType="Arguments" guiclass="ArgumentsPanel" testclass="Arguments" testname="User Defined Variables" enabled="true">
+        <collectionProp name="Arguments.arguments"/>
+      </elementProp>
+      <stringProp name="TestPlan.user_define_classpath"></stringProp>
+    </TestPlan>
+    <hashTree>
+
+      <TestFragmentController guiclass="TestFragmentControllerGui" testclass="TestFragmentController" testname="checker-task-pool" enabled="true"/>
+      <hashTree>
+
+        <!-- Simple Controller 限定 PostProcessor 的作用域到本 Include 引入的 sampler -->
+        <GenericController guiclass="LogicControllerGui" testclass="GenericController" testname="pending" enabled="true"/>
+        <hashTree>
+          <IncludeController guiclass="IncludeControllerGui" testclass="IncludeController" testname="include pending-tasks" enabled="true">
+            <stringProp name="IncludeController.includepath">jmx/fragments/steps/workers/checker-flow/pending-tasks.jmx</stringProp>
+          </IncludeController>
+          <hashTree/>
+          <JSR223PostProcessor guiclass="TestBeanGUI" testclass="JSR223PostProcessor" testname="build claim-once task pool" enabled="true">
+            <stringProp name="cacheKey">true</stringProp>
+            <stringProp name="filename">${__P(baseDir,.)}/groovy/checker-task-pool-init.groovy</stringProp>
+            <stringProp name="parameters"></stringProp>
+            <stringProp name="script"></stringProp>
+            <stringProp name="scriptLanguage">groovy</stringProp>
+          </JSR223PostProcessor>
+          <hashTree/>
+        </hashTree>
+
+      </hashTree>
+    </hashTree>
+  </hashTree>
+</jmeterTestPlan>

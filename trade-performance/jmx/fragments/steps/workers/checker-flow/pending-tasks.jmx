@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  fragments/steps/workers/checker-flow/pending-tasks.jmx
+
+  【层级】原子 fragment —— 一个 API 一个文件，不可独立运行
+  【API】  workers.checker-flow.pending  ·  GET /checker/tasks/pending
+  【服务】 workers  →  必须使用 ${__P(workers.*)} 寻址（校验规则 R3）
+
+  ── 为什么它是专用 fragment 而不是数据驱动行 ──
+  registry 里最初标的是 datadriven（看起来只是个 GET）。但 checker 链路里
+  它要把 taskId 关联给后续的 approve/reject —— 按"响应要关联给后续步骤"这条
+  判定规则，它必须是专用 fragment。
+
+  ── 两种用法（与 refdata 同一个模式）──
+  setUp     挂 checker-task-pool-init.groovy  → 把全部 taskId 灌进 claim-once 队列
+  journey   不挂提取器，只做**测量读**        → 模拟 checker 打开待办列表这个动作
+
+  journey 里**不从本次响应取 taskId**，而是从 setUp 建好的池里 claim。
+  理由与 refdata 的绑定时机一致：多个 checker 线程同时读到的是同一批待办，
+  各自从响应里挑必然撞车 —— 第二个线程会拿到已被处理的 task，
+  服务端返回业务拒绝，在报告里表现为"错误率 X%，无规律"，极难定位。
+  claim-once 队列从结构上杜绝这件事，见 groovy/checker-claim-task.groovy。
+
+  【产出事务】TX_workers_checkerflow_pending
+-->
+<jmeterTestPlan version="1.2" properties="5.0" jmeter="5.6.3">
+  <hashTree>
+    <TestPlan guiclass="TestPlanGui" testclass="TestPlan" testname="workers.checker-flow.pending (fragment)" enabled="true">
+      <stringProp name="TestPlan.comments">Atomic fragment. Never run directly.</stringProp>
+      <boolProp name="TestPlan.functional_mode">false</boolProp>
+      <boolProp name="TestPlan.serialize_threadgroups">false</boolProp>
+      <elementProp name="TestPlan.user_defined_variables" elementType="Arguments" guiclass="ArgumentsPanel" testclass="Arguments" testname="User Defined Variables" enabled="true">
+        <collectionProp name="Arguments.arguments"/>
+      </elementProp>
+      <stringProp name="TestPlan.user_define_classpath"></stringProp>
+    </TestPlan>
+    <hashTree>
+
+      <TestFragmentController guiclass="TestFragmentControllerGui" testclass="TestFragmentController" testname="workers.checker-flow.pending" enabled="true"/>
+      <hashTree>
+
+        <TransactionController guiclass="TransactionControllerGui" testclass="TransactionController" testname="TX_workers_checkerflow_pending" enabled="true">
+          <boolProp name="TransactionController.parent">false</boolProp>
+          <boolProp name="TransactionController.includeTimers">false</boolProp>
+        </TransactionController>
+        <hashTree>
+
+          <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="workers_checkerflow_pending" enabled="true">
+            <elementProp name="HTTPsampler.Arguments" elementType="Arguments" guiclass="HTTPArgumentsPanel" testclass="Arguments" testname="User Defined Variables" enabled="true">
+              <collectionProp name="Arguments.arguments"/>
+            </elementProp>
+            <stringProp name="HTTPSampler.domain">${__P(workers.host,localhost)}</stringProp>
+            <stringProp name="HTTPSampler.port">${__P(workers.port,8080)}</stringProp>
+            <stringProp name="HTTPSampler.protocol">${__P(workers.protocol,http)}</stringProp>
+            <stringProp name="HTTPSampler.path">${__P(workers.basePath,/api/v1)}/checker/tasks/pending?size=${__P(checkerPageSize,200)}</stringProp>
+            <stringProp name="HTTPSampler.method">GET</stringProp>
+            <boolProp name="HTTPSampler.follow_redirects">true</boolProp>
+            <boolProp name="HTTPSampler.auto_redirects">false</boolProp>
+            <boolProp name="HTTPSampler.use_keepalive">true</boolProp>
+            <boolProp name="HTTPSampler.DO_MULTIPART_POST">false</boolProp>
+            <stringProp name="HTTPSampler.embedded_url_re"></stringProp>
+          </HTTPSamplerProxy>
+          <hashTree>
+            <ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion" testname="http 200" enabled="true">
+              <collectionProp name="Asserion.test_strings">
+                <stringProp name="49586">200</stringProp>
+              </collectionProp>
+              <stringProp name="Assertion.custom_message">checker/tasks/pending did not return 200</stringProp>
+              <stringProp name="Assertion.test_field">Assertion.response_code</stringProp>
+              <boolProp name="Assertion.assume_success">false</boolProp>
+              <intProp name="Assertion.test_type">8</intProp>
+            </ResponseAssertion>
+            <hashTree/>
+          </hashTree>
+
+        </hashTree>
+      </hashTree>
+    </hashTree>
+  </hashTree>
+</jmeterTestPlan>

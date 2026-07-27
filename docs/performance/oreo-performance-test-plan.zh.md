@@ -66,7 +66,7 @@ OREO 的测试对象按**用户入口**组织，而不是按 33 个 API 平铺�
 | **S-05** | **同笔 trade 并发争用** | Contention | **2** | INTEG-03, INTEG-07, AVAIL-02 | ⬜ |
 | **S-10** | **数据量伸缩性** | Volume Scaling | **2** | SCALE-01, PERF-02 | ⬜ |
 | **S-14** | **并发解析上限与背压** | Resource | **2** | RES-01, RES-02 | ⬜ |
-| **S-15** | **两阶段审批链路（maker → checker）** | Load | **2** | PERF-12~14, PERF-17, SCALE-02 | ⬜ |
+| **S-15** | **两阶段审批链路（maker → checker）** | Load | **2** | PERF-12~14, PERF-17, SCALE-02 | 🟨 |
 | S-03 | Create Trade E2E（前端链路） | Load | 3 | PERF-07, PERF-11, PERF-19 | ✅ |
 | S-11 | 下游降级隔离（UC / risk / notification） | Interference | 3 | RESIL-01, 02, 05, 06 | ⬜ |
 | S-12 | DAT 解析 CPU / 内存竞争 | Interference | 3 | RESIL-03 | ⬜ |
@@ -245,7 +245,7 @@ P(≥2 并发) 从 3% 跳到 12%，K 从 4 升到 5。**越慢的产品越容易
 | **S-12** | DAT 解析对无关接口的挤占 | 后台 large 档并发解析 + 前台 refdata 只读 | RESIL-03，劣化 ≤ 20% | 验证"进程内 CPU 竞争"假设 |
 | **S-02** | Booking cutoff 峰值 | 4× 均值持续 1 小时 | PERF-07, PERF-19 | 收尾接 S-18 |
 | **S-13** | 批处理与在线并行 | trade-aging / sync-cashflows / refdata sync 与在线负载并行 | RESIL-04，劣化 ≤ 20% | 需确认 refdata sync 写入模式（upsert vs truncate-reload），二者失效模型完全不同 |
-| **S-04** | Checker 批量清队列 | `bulk-approve` 批次 1/5/20/50，3 批并发 | PERF-15/16；**单位耗时不随批次上升** | 突发形态，不用恒定到达率 |
+| **S-04** | Checker 批量清队列 | `bulk-approve` 批次 1/5/20/50，3 批并发 | PERF-15/16；**单位耗时不随批次上升** | 突发形态，不用恒定到达率。**脚本已建**：`p03-checker-bulk-approve` / `p04-checker-bulk-reject` |
 | **S-16** | 全容量混合负载 | [Workload Modeling](workload-modeling.zh.md) §6 全部设计容量同时施加 | **PERF-19**（所有阈值同时达标） | 唯一能暴露跨路径资源竞争的场景。**含两个 productType 配比子场景，见下** |
 | **S-07** | 月末 / 季末 roll | 3× 普通日，全天 | PERF-20，劣化 ≤ 20% | 事件配比偏向 roll / reassignment |
 | **S-17** | Soak — 长交易日 | 设计容量持续 4~8 小时 | AVAIL-01, MAINT-04；无内存/连接泄漏 | **优先级高于 Spike**：blotter 自动刷新恒定跑整天 |

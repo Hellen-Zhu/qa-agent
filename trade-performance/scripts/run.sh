@@ -115,7 +115,7 @@ jmeter -n \
     -q "$PROFILE_FILE" \
     -JbaseDir="$PROJECT_ROOT" \
     -JrunResultDir="$PROJECT_ROOT/$RUN_DIR" \
-    -Jsample_variables=runPhase,caseId,tradeId,taskId,datFile,productType,costTier,fixings,datSize,errClass,riskOk,riskFailCode,portfolioId,effectiveUserId \
+    -Jsample_variables=runPhase,caseId,tradeId,taskId,datFile,productType,costTier,fixings,datSize,errClass,riskOk,riskFailCode,portfolioId,effectiveUserId,claimedTaskId,claimedCount,checkerAction,bulkOutcome,bulkSuccessCount,checkerFailMsg \
     -Jjmeter.save.saveservice.output_format=csv \
     -Jjmeter.save.saveservice.response_data.on_error=true \
     "${EXTRA[@]}" \

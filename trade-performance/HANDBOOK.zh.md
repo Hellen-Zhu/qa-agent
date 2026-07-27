@@ -1,8 +1,10 @@
 # OREO 性能测试 · JMeter 实操手册
 
 本手册是**执行指南**，回答"现在坐在电脑前该敲什么"。
-方案层面的取舍（为什么这么测、指标口径、NFR）在 [`../docs/performance/`](../docs/performance/)，
-架构层面的约束（四层结构、五条强制规则）在 [`README.md`](README.md)。
+
+- 工程还没搭 / 要加新 API → 先看 [`HANDBOOK-BUILD.zh.md`](HANDBOOK-BUILD.zh.md)（GUI 逐元件实操）
+- 方案层面的取舍（为什么这么测、指标口径、NFR）→ [`../docs/performance/`](../docs/performance/)
+- 架构约束（四层结构、五条强制规则）→ [`README.md`](README.md)
 
 ---
 

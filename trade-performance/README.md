@@ -3,6 +3,9 @@
 以 **create-trade** 为样板搭起来的性能测试工程。一条业务链路（前端 E2E）+ 一个单接口容量测试，
 其余 32 个 API 按同样的模式往里加。
 
+**第一次上手请先看 [`HANDBOOK.zh.md`](HANDBOOK.zh.md)** —— 分阶段的实操手册，
+从"采集一份真实 curl"到"跑出容量拐点"，本 README 只讲结构与约束。
+
 设计依据：
 - [`../docs/trade-api-perf-test-plan-v2-jmeter.md`](../docs/trade-api-perf-test-plan-v2-jmeter.md) —— 33 个 API 的总体方案
 - [`../docs/trade-create-perf-testcases-jmeter.md`](../docs/trade-create-perf-testcases-jmeter.md) —— create 的 15 个用例与实操细节

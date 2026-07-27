@@ -1,0 +1,2 @@
+pairId,portfolioId,counterpartyFmId,counterpartyName,note
+R001,TBC,TBC,TBC,单行池：全部线程打同一个 portfolio，用于 portfolio 级锁竞争对照实验

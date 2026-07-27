@@ -7,19 +7,34 @@
   【怎么跑】./scripts/run.sh p02-trade-create dev smoke
 
   ── 与 scenarios/s01-create-trade-e2e.jmx 的关键差别 ──
-  1. **不含 refdata 查询**。参考数据在 setUp 里一次性解析好，主循环直接从池里取。
+  1. **完全不查 refdata**。portfolio / counterparty 由 data/refdata/refdata-pairs.csv 直接供数。
      E2E 场景里 refdata 是被测链路的一部分（真实前端确实要查）；
      单接口测试里它是噪音，会把别人的耗时算到 create 头上。
   2. **不加 think time**。要测的是"服务端一秒能处理多少"，不是"用户体验如何"。
      加了 think time 的单接口测试，压不出真实上限。
   3. **不含 view-trade-details**。同理。
 
-  这两个文件引用的是**同一个** fragments/steps/create-trade.jmx。
+  这两个文件引用的是**同一个** fragments/steps/workers/trade-management/create-trade.jmx。
   接口变更时只改那一个文件，两边同时生效 —— 这就是四层架构的全部收益。
 
+  ══ 静态 refdata（refdataSource=csv）══════════════════════════════
+  Counterparty / Portfolio 由 sync batch job 从第三方同步，变更频率以周/月计，
+  而一轮压测以小时计 —— 在这个尺度上它们是常量，没必要每轮现查。
+
+  代价是**失效方式变了**：动态模式下失效数据在 setUp 查询时当场暴露；
+  静态模式下它会一路发到服务端，表现为"错误率升高"而非"启动失败"。
+  所以 setUp 换成 csv-refdata-preflight —— 它仍然真建一笔 trade，
+  那是静态模式下唯一能证明 CSV 今天还能用的东西。
+
+  改回动态：把下面的 setUp include 换成 fragments/setup/refdata-preflight.jmx，
+  并把 UDV refdataSource 改成 pool。两条路径的脚本都留着，没有删。
+  ═══════════════════════════════════════════════════════════════
+
   ── 对照实验开关（无需改脚本）──
-  -JportfolioSelect=fixed  全部线程打同一个 portfolio（测 portfolio 级锁竞争）
+  -JrefdataFile=data/refdata/refdata-pairs-single.csv
+                           全部线程打同一个 portfolio（测 portfolio 级锁竞争）
   -JuserMode=fixed         全部线程用同一个 maker（测 per-user 锁 / 计数器竞争）
+  ⚠ portfolioSelect 属性只对动态池模式生效；csv 模式下靠换 refdataFile 实现同一目的。
 -->
 <jmeterTestPlan version="1.2" properties="5.0" jmeter="5.6.3">
   <hashTree>
@@ -41,9 +56,19 @@
             <stringProp name="Argument.value">${__P(baseDir,.)}/data/dat</stringProp>
             <stringProp name="Argument.metadata">=</stringProp>
           </elementProp>
-          <elementProp name="refdataPageSize" elementType="Argument">
-            <stringProp name="Argument.name">refdataPageSize</stringProp>
-            <stringProp name="Argument.value">${__P(refdataPageSize,200)}</stringProp>
+          <!-- 计划级声明本计划的取数模式，被 groovy/select-refdata.groovy 读取。
+               用 UDV 而非全局属性：同一次跑批里 E2E 计划（pool）与本计划（csv）
+               可能并存，全局属性会互相污染。
+               refdataPageSize 已移除 —— 本计划不再包含任何 refdata sampler。
+
+               ⚠ 刻意写死 csv，**不做成 ${__P(refdataSource,csv)}**。
+                 它与 setUp 的 include 是绑定的一对：只翻这个开关而不换 setUp，
+                 全局池就是空的，每个线程会在第一次迭代直接 stop —— 得到一份
+                 0 sample 的报告和一条语焉不详的日志。
+                 一个只有一半生效的开关，比没有开关更危险。切换方式见文件头注释。 -->
+          <elementProp name="refdataSource" elementType="Argument">
+            <stringProp name="Argument.name">refdataSource</stringProp>
+            <stringProp name="Argument.value">csv</stringProp>
             <stringProp name="Argument.metadata">=</stringProp>
           </elementProp>
         </collectionProp>
@@ -122,7 +147,32 @@
       </CSVDataSet>
       <hashTree/>
 
-      <SetupThreadGroup guiclass="SetupThreadGroupGui" testclass="SetupThreadGroup" testname="setUp: refdata + preflight" enabled="true">
+      <!-- ── 静态参考数据 ─────────────────────────────────────────────
+           一行一对（portfolio + counterparty 同源配对）。两个独立列表做笛卡尔积
+           会造出现实中不存在的组合，服务端业务拒绝，在报告里表现为"错误率 12%"——
+           看起来像性能问题，实际是数据问题。见 data/refdata/README.md。
+
+           文件路径走属性：换成 refdata-pairs-single.csv 即得到"全部线程打同一个
+           portfolio"的对照实验，脚本一行不改。
+
+           ⚠ 已知耦合：本 CSV 与 create-trade-data.csv 都是 shareMode.all，
+             每次迭代各推进一行。两者行数相同（都是 5）时 C00N 会永远配 R00N，
+             25 种组合只跑到 5 种。若需要打散，把两个文件的行数取成互质
+             （例如 5 与 7），或改用 shareMode.thread。 -->
+      <CSVDataSet guiclass="TestBeanGUI" testclass="CSVDataSet" testname="csv: refdata pairs" enabled="true">
+        <stringProp name="filename">${__P(baseDir,.)}/${__P(refdataFile,data/refdata/refdata-pairs.csv)}</stringProp>
+        <stringProp name="fileEncoding">UTF-8</stringProp>
+        <stringProp name="variableNames">pairId,portfolioId,counterpartyFmId,counterpartyName,refdataNote</stringProp>
+        <boolProp name="ignoreFirstLine">true</boolProp>
+        <stringProp name="delimiter">,</stringProp>
+        <boolProp name="quotedData">false</boolProp>
+        <boolProp name="recycle">true</boolProp>
+        <boolProp name="stopThread">false</boolProp>
+        <stringProp name="shareMode">shareMode.all</stringProp>
+      </CSVDataSet>
+      <hashTree/>
+
+      <SetupThreadGroup guiclass="SetupThreadGroupGui" testclass="SetupThreadGroup" testname="setUp: csv refdata preflight" enabled="true">
         <stringProp name="ThreadGroup.on_sample_error">continue</stringProp>
         <elementProp name="ThreadGroup.main_controller" elementType="LoopController" guiclass="LoopControlPanel" testclass="LoopController" testname="Loop Controller" enabled="true">
           <boolProp name="LoopController.continue_forever">false</boolProp>
@@ -145,8 +195,8 @@
           </collectionProp>
         </Arguments>
         <hashTree/>
-        <IncludeController guiclass="IncludeControllerGui" testclass="IncludeController" testname="inc: refdata-preflight" enabled="true">
-          <stringProp name="IncludeController.includepath">jmx/fragments/setup/refdata-preflight.jmx</stringProp>
+        <IncludeController guiclass="IncludeControllerGui" testclass="IncludeController" testname="inc: csv-refdata-preflight" enabled="true">
+          <stringProp name="IncludeController.includepath">jmx/fragments/setup/csv-refdata-preflight.jmx</stringProp>
         </IncludeController>
         <hashTree/>
       </hashTree>

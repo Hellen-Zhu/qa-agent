@@ -47,12 +47,21 @@ def rel(p: Path) -> str:
 
 
 def resolve(raw: str) -> Path | None:
-    """把 jmx 里的路径还原成磁盘路径。${__P(baseDir,.)} → 项目根。"""
+    """把 jmx 里的路径还原成磁盘路径。
+
+    ${__P(name,default)} 一律取 default —— 那是不加 -J 覆盖时实际会跑的值，
+    所以它是最该被检查的那一个。早期版本只特判了 baseDir，
+    结果 ${__P(refdataFile,...)} 这类"可切换的数据文件"整个绕过了 TBC 检查：
+    校验器打一条 WARN 就放过了，而放过的恰好是唯一带占位值的文件。
+    静态检查跳过的东西，等于没检查。
+
+    ${__P(name)}（无 default）仍然无法解析 —— 返回 None，由调用方降级成 WARN。
+    """
     s = (raw or "").strip()
     if not s:
         return None
-    s = re.sub(r"\$\{__P\(baseDir,[^)]*\)\}", str(ROOT), s)
-    if "${" in s:          # 仍含未知变量，无法静态解析
+    s = re.sub(r"\$\{__P\([A-Za-z0-9_.]+,([^)]*)\)\}", lambda m: m.group(1), s)
+    if "${" in s:          # 仍含未知变量或无默认值的属性，无法静态解析
         return None
     p = Path(s)
     return p if p.is_absolute() else ROOT / p

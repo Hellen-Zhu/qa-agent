@@ -1,0 +1,13 @@
+{
+  "name": "soak",
+  "description": "长稳 4 小时 —— 找内存泄漏与资源耗尽。看的不是 P95 的绝对值，而是它**随时间的漂移**，以及 Grafana 上 heap 锯齿的谷底有没有持续抬升。",
+  "_data_volume": "⚠ 4 小时会产生大量真实 PENDING APPROVAL 交易。开跑前必须与 DBA/开发谈妥建单与清理。",
+  "scenario": {
+    "executor": "constant-vus",
+    "vus": 4,
+    "duration": "4h"
+  },
+  "thresholds": {
+    "oreo_err_script": ["count==0"]
+  }
+}

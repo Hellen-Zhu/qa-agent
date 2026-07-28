@@ -3,13 +3,17 @@
 以 **create-trade** 为样板搭起来的性能测试工程。一条业务链路（前端 E2E）+ 一个单接口容量测试，
 其余 32 个 API 按同样的模式往里加。
 
-**两本实操手册**（本 README 只讲结构与约束）：
+**四份配套文档**（本 README 只讲结构与约束）：
 
-| 手册 | 回答 | 什么时候看 |
+| 文档 | 回答 | 什么时候看 |
 |---|---|---|
 | [`PRACTICE.zh.md`](PRACTICE.zh.md) | **练手** —— 6 个练习在新目录重建一遍,含 12 个"故意犯错" | 第一次接手这套框架 |
+| [`ARCHITECTURE.zh.md`](ARCHITECTURE.zh.md) | **为什么这样跑** —— JMeter 执行机制、四种作用域、失败模式地图 | 看不懂脚本行为 / 报告读不对 |
 | [`HANDBOOK-BUILD.zh.md`](HANDBOOK-BUILD.zh.md) | **怎么建** —— JMeter GUI 逐元件实操 | 从零搭工程 / 加新 API |
 | [`HANDBOOK.zh.md`](HANDBOOK.zh.md) | **怎么跑** —— 分阶段执行,从采集真实 curl 到跑出容量拐点 | 工程已就绪,要出数据 |
+
+> `ARCHITECTURE.zh.md` 同时是**注释的备份**：各 `.jmx` 里的 `<!-- -->` 说明
+> 在 GUI 保存一次后会全部丢失（JMeter 重新序列化整棵树），原理必须另有存处。
 
 设计依据：
 - [`../docs/trade-api-perf-test-plan-v2-jmeter.md`](../docs/trade-api-perf-test-plan-v2-jmeter.md) —— 33 个 API 的总体方案

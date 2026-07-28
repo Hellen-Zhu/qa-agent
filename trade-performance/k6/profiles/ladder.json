@@ -1,0 +1,28 @@
+{
+  "name": "ladder",
+  "description": "闭合模型阶梯加压 —— 找容量拐点。判据：TPS 不再随 VU 上升，而 P95 开始陡增。",
+  "_closed_model": "⚠ 闭合模型：VU 发请求→等响应→再发下一个。服务端变慢时压力也跟着变慢，会**系统性低估过载后果**。找拐点够用，但要看'过了拐点会怎样'必须用 arrival profile。",
+  "_ramp": "每级 300s，级间不留空档；要在 Grafana 上分辨各级边界，改用逐级单跑：-e PROFILE=baseline -e VUS=N",
+  "scenario": {
+    "executor": "ramping-vus",
+    "startVUs": 1,
+    "gracefulRampDown": "30s",
+    "stages": [
+      { "duration": "60s",  "target": 2  },
+      { "duration": "300s", "target": 2  },
+      { "duration": "60s",  "target": 4  },
+      { "duration": "300s", "target": 4  },
+      { "duration": "60s",  "target": 8  },
+      { "duration": "300s", "target": 8  },
+      { "duration": "60s",  "target": 12 },
+      { "duration": "300s", "target": 12 },
+      { "duration": "60s",  "target": 16 },
+      { "duration": "300s", "target": 16 },
+      { "duration": "60s",  "target": 20 },
+      { "duration": "300s", "target": 20 }
+    ]
+  },
+  "thresholds": {
+    "oreo_err_script": ["count==0"]
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "name": "arrival",
+  "description": "开放模型 —— 按**到达率**施压，不管前一笔有没有回来。这是 JMeter 默认 Thread Group 做不到的（需 jpgc Arrivals Thread Group 插件）。",
+
+  "_why": "OREO 的负载天然是一个到达率：120 笔/天由交易员各自提交，**没有人会等上一笔完成才提交下一笔**。闭合模型在服务端劣化时会自己踩刹车，掩盖过载后果；开放模型会让队列真实堆积。",
+
+  "_derivation": "生产 ~120 笔/天。要在可接受的时长内拿到足够样本必须压缩时间：rate=1/s 相当于生产峰值的数百倍，用来找'到达率到多少开始排队'。实际扫描用 -e RATE=1 / 2 / 4 / 8 各跑一轮。",
+
+  "_preAllocatedVUs": "需要的 VU ≈ rate × 单笔耗时。rate=1、单笔 3s → 3 个。预留到 20 是给劣化留余量；不够时 k6 会加到 maxVUs 并在摘要里告警（那本身就是一个信号：系统跟不上到达率了）。",
+
+  "scenario": {
+    "executor": "constant-arrival-rate",
+    "rate": 1,
+    "timeUnit": "1s",
+    "duration": "600s",
+    "preAllocatedVUs": 20,
+    "maxVUs": 60
+  },
+  "thresholds": {
+    "oreo_err_script": ["count==0"],
+    "_dropped": "dropped_iterations > 0 说明 maxVUs 不够，到达率没打满 —— 结果不可用",
+    "dropped_iterations": ["count==0"]
+  }
+}

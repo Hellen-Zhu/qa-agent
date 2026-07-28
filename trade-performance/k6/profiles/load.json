@@ -1,0 +1,14 @@
+{
+  "name": "load",
+  "description": "峰值负载 30 分钟 —— 验收用，不是找上限。VU 数应取自 ladder 找到的拐点以内，不要拍脑袋。",
+  "scenario": {
+    "executor": "constant-vus",
+    "vus": 8,
+    "duration": "1800s"
+  },
+  "thresholds": {
+    "oreo_err_script": ["count==0"],
+    "oreo_err_technical": ["count==0"],
+    "oreo_business_success": ["rate>0.99"]
+  }
+}

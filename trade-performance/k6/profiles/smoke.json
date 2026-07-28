@@ -1,0 +1,16 @@
+{
+  "name": "smoke",
+  "description": "脚本自检，不是性能测试。1 VU 跑 1 次，只验证：路径通、判定对、数据取到了、提取器拿到值。",
+  "scenario": {
+    "executor": "per-vu-iterations",
+    "vus": 1,
+    "iterations": 1,
+    "maxDuration": "2m"
+  },
+  "thresholds": {
+    "_comment": "smoke 阶段任何一类错误都不该出现",
+    "oreo_err_technical": ["count==0"],
+    "oreo_err_business":  ["count==0"],
+    "oreo_ok":            ["count>0"]
+  }
+}

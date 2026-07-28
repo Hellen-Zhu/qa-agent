@@ -1,0 +1,40 @@
+# ─────────────────────────────────────────────────────────────
+# 行尾与二进制处理 —— Windows 上不加这个文件会出三类静默错误
+# ─────────────────────────────────────────────────────────────
+
+# ⚠⚠ 最要命的一条：.dat 是二进制。
+#    Windows 上 git 若把它当文本（core.autocrlf=true），checkout 时会把
+#    文件里所有 0x0A 字节改成 0x0D 0x0A —— **文件内容被改坏，大小也变了**。
+#    表现：上传后服务端解析失败，或者更糟 —— 解析"成功"但内容不对。
+#    index-dat.py 的字节数对账会抓到大小变化，但那时你已经在查半天了。
+*.dat  binary
+*.zip  binary
+*.png  binary
+*.jpg  binary
+*.pdf  binary
+
+# ⚠ shell 脚本必须是 LF。
+#   CRLF 会让 shebang 变成 `#!/usr/bin/env bash\r`，
+#   Git Bash / WSL 直接报 `bad interpreter: ...^M`，而错误信息里那个 ^M
+#   肉眼几乎看不出来。
+*.sh   text eol=lf
+
+# PowerShell：LF 也能跑，但 Windows 原生工具（记事本、部分编辑器）看着更顺
+*.ps1  text eol=crlf
+*.bat  text eol=crlf
+*.cmd  text eol=crlf
+
+# 其余文本文件交给 git 自动处理（工作区随平台，仓库里统一 LF）
+*.js         text
+*.mjs        text
+*.groovy     text
+*.py         text
+*.md         text
+*.json       text
+*.jmx        text
+*.properties text
+
+# CSV：不强制行尾。
+# k6 侧 lib/csv.js 用 /\r?\n/ 切行，JMeter 的 CSV Data Set 也处理 CRLF，
+# 两边都不受影响。强制 LF 反而会让 Windows 记事本打开时挤成一行。
+*.csv  text

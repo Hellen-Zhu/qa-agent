@@ -1,0 +1,5 @@
+caseId,datFile,productType,costTier,fixings,datSizeBytes,notionalCurrency
+X001,invalid/corrupt.dat,INVALID,n/a,0,AUTO,
+X002,invalid/truncated.dat,INVALID,n/a,0,AUTO,
+X003,invalid/empty.dat,INVALID,n/a,0,AUTO,
+X004,invalid/wrong-format.dat,INVALID,n/a,0,AUTO,

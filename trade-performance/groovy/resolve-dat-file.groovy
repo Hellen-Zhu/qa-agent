@@ -20,7 +20,7 @@
  */
 
 def fromCsv = vars.get('datFile')
-def fromProp = props.getProperty('preflightDatFile') ?: 'small/fx_trf_01.dat'
+def fromProp = props.getProperty('preflightDatFile') ?: 'products/FX_TRF/fx_trf_01.dat'
 
 if (fromCsv && fromCsv.trim() && !fromCsv.startsWith('${')) {
     vars.put('effectiveDatFile', fromCsv.trim())

@@ -54,7 +54,7 @@ mkdir -p jmx/fragments/steps/refdata \
          jmx/fragments/setup \
          jmx/api jmx/scenarios jmx/journeys \
          groovy config profiles scripts \
-         data/refdata data/create-trade data/shared data/dat/small \
+         data/refdata data/create-trade data/dat/products/FX_TRF data/dat/invalid \
          results
 ```
 
@@ -353,7 +353,7 @@ JMeter 里有三种"变量"，作用域完全不同。混用是新手最大的�
   `effectiveUserId` = `${__P(makerUserId,maker@sc.com)}`
 - **CSV Data Set Config**：
   - Filename `${__P(baseDir,.)}/data/create-trade/create-trade-data.csv`
-  - Variable Names `caseId,datFile,productType,costTier,fixings,datSize,notionalCurrency`
+  - Variable Names `caseId,datFile,productType,costTier,fixings,datSizeBytes,notionalCurrency`
   - Sharing mode `All threads`
 
 `config/dev.properties` 补两行：

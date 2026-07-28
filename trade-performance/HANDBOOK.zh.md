@@ -36,7 +36,7 @@
 | 从 curl 里拿 | 用来填 |
 |---|---|
 | `portfolioId` / `counterpartyFmId` / `counterpartyName` | `data/refdata/refdata-pairs.csv`（且天然配对） |
-| 上传的 `.dat` 文件 | `data/dat/small/`（在页面上重新下载一份原始文件） |
+| 上传的 `.dat` 文件 | `data/dat/products/<productType>/`（在页面上重新下载一份原始文件） |
 | `trade` 表单字段的 JSON 结构 | 校准 `groovy/build-trade-payload.groovy` |
 | 全部 header | 校准 `X-User-Id` 大小写、确认 `X-Dyn-Run` 语义 |
 | 响应体 | 校准 `groovy/assert-create-response.groovy` 与两个提取器 |
@@ -87,9 +87,20 @@ R001,PF-00123,FM-88991,PRINTINGINT10LTD*HKG,2026-07-27 从 UI curl 采集
 
 ### ② .dat 文件
 
-至少放一个到 `data/dat/small/`，文件名与 `create-trade-data.csv` 的 `datFile` 列对上。
-阶段 1 的最小集是 **1 个文件**；完整的 small/medium/large 三档是阶段 5 成本画像的输入，
-现在不必凑齐。
+至少放一个到 `data/dat/products/<productType>/`，路径与 `create-trade-data.csv`
+的 `datFile` 列对上，然后跑一次对账（它会把实测字节数填进 `datSizeBytes`）：
+
+```bash
+./scripts/index-dat.py --write
+```
+
+阶段 1 的最小集是 **1 个 productType 1 个文件**。
+成本画像需要的三个代表（最便宜 / 最贵 / 最常见）是阶段 5 的输入，现在不必凑齐——
+`index-dat.py` 会 WARN 提醒你还差几个，那不是阻断。
+
+> **不要把一个文件复制几份改名充数。** 内容相同的副本在服务端可能走缓存，
+> 测到的是命中率不是解析成本，而 CSV 里 5 行看起来像 5 个用例。
+> 详见 [`data/dat/README.md`](data/dat/README.md)。
 
 ### ③ 成本标签
 

@@ -102,9 +102,9 @@
       <!-- notionalCurrency 是末列且为空。
            保留结尾逗号，JMeter 才会把它解析成空串而不是缺列。 -->
       <CSVDataSet guiclass="TestBeanGUI" testclass="CSVDataSet" testname="csv: create-trade data" enabled="true">
-        <stringProp name="filename">${__P(baseDir,.)}/data/create-trade/create-trade-data.csv</stringProp>
+        <stringProp name="filename">${__P(baseDir,.)}/${__P(createDataFile,data/create-trade/create-trade-data.csv)}</stringProp>
         <stringProp name="fileEncoding">UTF-8</stringProp>
-        <stringProp name="variableNames">caseId,datFile,productType,costTier,fixings,datSize,notionalCurrency</stringProp>
+        <stringProp name="variableNames">caseId,datFile,productType,costTier,fixings,datSizeBytes,notionalCurrency</stringProp>
         <boolProp name="ignoreFirstLine">true</boolProp>
         <stringProp name="delimiter">,</stringProp>
         <boolProp name="quotedData">false</boolProp>

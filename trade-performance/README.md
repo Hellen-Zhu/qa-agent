@@ -68,7 +68,10 @@ trade-performance/
 ├── config/              ← 维度二：环境（5 个 svc 各自寻址）
 ├── profiles/            ← 维度三：负载模型
 ├── data/
-├── scripts/run.sh       ← 唯一执行入口
+├── scripts/
+│   ├── run.sh           ← 唯一执行入口
+│   ├── validate.py      ← 五条架构规则 + CSV 占位值
+│   └── index-dat.py     ← .dat 与 CSV 对账，实测填 datSizeBytes
 └── results/  reports/
 ```
 
@@ -244,7 +247,10 @@ JMeter 底层用 HttpClient，可能把它们合并或后者覆盖前者——**
 ### 3. 放入真实 .dat 文件
 
 `data/dat/` 目前是空的（只有 README）。没有文件时 create 会因文件不存在直接失败。
-至少放一个 `small/fx_trf_01.dat`，与 `data/create-trade/create-trade-data.csv` 的路径对应。
+至少放一个 `products/FX_TRF/fx_trf_01.dat`，然后 `./scripts/index-dat.py --write` 对账。
+
+目录按 **productType** 分而非按体积分：体积是产品结构的**结果**，不是自变量
+（现实中不存在"TARF × small"）。`datSizeBytes` 由脚本实测填入，不手写。
 
 ---
 
@@ -277,7 +283,7 @@ Groovy/CSV 存在性与列数、TBC 占位值——自由文本列如 `notes` �
 `run.sh` 通过 `sample_variables` 把这些字段写进 jtl 的额外列：
 
 ```
-runPhase, caseId, tradeId, taskId, datFile, productType, costTier, fixings, datSize,
+runPhase, caseId, tradeId, taskId, datFile, productType, costTier, fixings, datSizeBytes,
 errClass, riskOk, riskFailCode, portfolioId, effectiveUserId
 ```
 
@@ -286,7 +292,7 @@ fragment，所以它产生的样本事务名完全相同。不按 `runPhase=main
 create 会混进容量统计——量小的时候尤其致命：0.1 TPS 的场景里多一笔就是百分之几的偏差。
 
 `costTier` 与 `fixings` 是**成本维度**标签：`.dat` 体积与解析成本由 productType 的结构
-（定盘次数、schedule 长度）决定，所以成本画像要按这两列切分，而不是按 `datSize`。
+（定盘次数、schedule 长度）决定，所以成本画像要按这两列切分，而不是按 `datSizeBytes`。
 见 [Workload Modeling §4.7](../docs/performance/workload-modeling.zh.md)。
 
 **`errClass` 是最重要的一列**，它把错误分成三类（`groovy/assert-create-response.groovy`）：
@@ -325,7 +331,8 @@ create 会混进容量统计——量小的时候尤其致命：0.1 TPS 的场�
 |---|---|---|---|
 | 1 | `GET /refdata/{portfolios,counterparties}` 的真实响应结构、是否支持 `status` 过滤与分页 | setUp 的 JSONPath 与查询参数 | 开发 |
 | 2 | 服务端如何处理重复的 `X-User-ID` / `X-User-Id` | Header Manager 是否要删一行 | 开发 |
-| 3 | 支持哪些产品类型、各类型典型 .dat 大小、生产分布占比 | `data/dat/` 分档与混合场景权重 | 业务/开发 |
+| 3 | 支持哪些产品类型、生产分布占比 | `data/dat/products/` 要几个代表、混合场景权重 | 业务/开发 |
+| 3b | .dat 内容是否有唯一字段 / 日期 / 服务端是否按内容去重 | 决定样本能否复用（模式 A vs C），见 `data/dat/README.md` | 开发 |
 | 4 | `X-Dyn-Run` 的语义 | 是否影响执行路径与耗时 | 开发 |
 | 5 | payload 是否接受额外字段（如 `externalReference`） | 能否给压测数据打标记，决定清理策略 | 开发 |
 | 6 | TaskId 能否作为结构化字段返回，而非埋在 `msg` 文案里 | 当前只能正则捞，文案一改就断 | 开发（improvement） |

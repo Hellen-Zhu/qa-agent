@@ -79,8 +79,8 @@ mkdir -p \
   jmx/fragments/setup \
   jmx/journeys jmx/scenarios jmx/api jmx/suites jmx/ops \
   groovy config profiles scripts \
-  data/refdata data/create-trade data/lifecycle-events data/shared \
-  data/dat/{small,medium,large,invalid} \
+  data/refdata data/create-trade data/lifecycle-events \
+  data/dat/products/FX_TRF data/dat/synthetic data/dat/invalid \
   results reports
 ```
 
@@ -527,7 +527,7 @@ OREO 有 5 个服务（workers / uc / refdata / notifications / ops），它们*
 
 | Name | Filename | Variable Names |
 |---|---|---|
-| `csv: create-trade data` | `${__P(baseDir,.)}/data/create-trade/create-trade-data.csv` | `caseId,datFile,productType,costTier,fixings,datSize,notionalCurrency` |
+| `csv: create-trade data` | `${__P(baseDir,.)}/${__P(createDataFile,data/create-trade/create-trade-data.csv)}` | `caseId,datFile,productType,costTier,fixings,datSizeBytes,notionalCurrency` |
 | `csv: refdata pairs` | `${__P(baseDir,.)}/${__P(refdataFile,data/refdata/refdata-pairs.csv)}` | `pairId,portfolioId,counterpartyFmId,counterpartyName,refdataNote` |
 
 > **没有身份 CSV。** maker / checker 是两个固定值，走属性不走 CSV（见 6.5）。

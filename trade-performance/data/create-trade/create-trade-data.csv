@@ -1,6 +1,2 @@
-caseId,datFile,productType,costTier,fixings,datSize,notionalCurrency
-C001,small/fx_trf_01.dat,FX_TRF,cheap,TBC,small,
-C002,small/fx_trf_02.dat,FX_TRF,cheap,TBC,small,
-C003,medium/fx_trf_01.dat,FX_TRF,typical,TBC,medium,
-C004,medium/fx_trf_02.dat,FX_TRF,typical,TBC,medium,
-C005,large/fx_trf_01.dat,FX_TRF,expensive,TBC,large,
+caseId,datFile,productType,costTier,fixings,datSizeBytes,notionalCurrency
+C001,products/FX_TRF/fx_trf_01.dat,FX_TRF,TBC,TBC,AUTO,

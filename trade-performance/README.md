@@ -3,14 +3,15 @@
 以 **create-trade** 为样板搭起来的性能测试工程。一条业务链路（前端 E2E）+ 一个单接口容量测试，
 其余 32 个 API 按同样的模式往里加。
 
-**四份配套文档**（本 README 只讲结构与约束）：
+**五份配套文档**（本 README 只讲结构与约束）：
 
 | 文档 | 回答 | 什么时候看 |
 |---|---|---|
+| [`RUNBOOK-p02-create-trade.zh.md`](RUNBOOK-p02-create-trade.zh.md) | **这一次具体敲什么** —— p02 单接口从装 JMeter 到出验收结论,带判据,Mac/Windows 双平台 | **← 现在就要跑出第一份数字** |
 | [`PRACTICE.zh.md`](PRACTICE.zh.md) | **练手** —— 6 个练习在新目录重建一遍,含 12 个"故意犯错" | 第一次接手这套框架 |
 | [`ARCHITECTURE.zh.md`](ARCHITECTURE.zh.md) | **为什么这样跑** —— JMeter 执行机制、四种作用域、失败模式地图 | 看不懂脚本行为 / 报告读不对 |
 | [`HANDBOOK-BUILD.zh.md`](HANDBOOK-BUILD.zh.md) | **怎么建** —— JMeter GUI 逐元件实操 | 从零搭工程 / 加新 API |
-| [`HANDBOOK.zh.md`](HANDBOOK.zh.md) | **怎么跑** —— 分阶段执行,从采集真实 curl 到跑出容量拐点 | 工程已就绪,要出数据 |
+| [`HANDBOOK.zh.md`](HANDBOOK.zh.md) | **怎么跑** —— 阶段 0–5 全景,从采集真实 curl 到混合场景 | 要看全局路线,不只是 p02 |
 
 > `ARCHITECTURE.zh.md` 同时是**注释的备份**：各 `.jmx` 里的 `<!-- -->` 说明
 > 在 GUI 保存一次后会全部丢失（JMeter 重新序列化整棵树），原理必须另有存处。
@@ -43,6 +44,20 @@
 
 `run.sh` 不带参数会列出所有可用的 plan / env / profile。
 
+**Windows** 用 `.\scripts\run.ps1`，参数位置相同，覆盖项写裸 `key=value`（不加 `-J`）：
+
+```powershell
+.\scripts\run.ps1 p02-trade-create dev smoke
+.\scripts\run.ps1 p02-trade-create dev baseline threads=4 rampUp=4 duration=304
+```
+
+跑完读数字用 `summarize.py`，**不要直接读 HTML 报告的 `Total` 行**
+（它把 setUp 的冷启动样本、失败样本、TX 行和 sampler 行混在一起，三处都让结论偏乐观）：
+
+```bash
+python3 scripts/summarize.py          # 最近一次
+```
+
 ---
 
 ## 目录结构
@@ -73,7 +88,9 @@ trade-performance/
 ├── profiles/            ← 维度三：负载模型
 ├── data/
 ├── scripts/
-│   ├── run.sh           ← 唯一执行入口
+│   ├── run.sh           ← 唯一执行入口（Mac / Linux）
+│   ├── run.ps1          ← 同上，Windows 原生版（同一套逻辑的两份实现，改一个必须同步另一个）
+│   ├── summarize.py     ← jtl → 可比口径的数字（剔除 preflight、分离三类错误、不合并 label）
 │   ├── validate.py      ← 五条架构规则 + CSV 占位值
 │   └── index-dat.py     ← .dat 与 CSV 对账，实测填 datSizeBytes
 └── results/  reports/

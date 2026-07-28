@@ -19,11 +19,19 @@
 
 .NOTES
     ⚠ 为什么覆盖项不用 `-e KEY=value`：
-      PowerShell 会把 `-e` 当成**参数名前缀**去匹配本脚本的参数，
-      `-e` 同时是 -EnvName 和 -Extra 的前缀 → 报 "ambiguous parameter"，
-      而且错误信息完全不提你只是想传给 k6。
+      PowerShell 会把 `-e` 当成**参数名前缀**去匹配本脚本的参数。
+      `-e` 唯一匹配到 -EnvName，于是 `-e VUS=8` 被绑成 **EnvName='VUS=8'**，
+      报出来的是 `ERROR: env 'VUS=8' not found (k6\config\VUS=8.json)` ——
+      一条完全指向错误方向的信息（2026-07-28 用 pwsh 7.6 实测确认）。
       所以这里收裸的 KEY=value，由脚本自己补上 -e 交给 k6。
       run.sh 已同步成同一种写法 —— 两边命令行长得一样，笔记才通用。
+
+    ⚠ 两处刻意的写法，都是为了让 `-e` 这个手滑能被兜住：
+      ① **不写 [CmdletBinding()]** —— 写了就是"高级函数"，未声明的 `-xxx`
+         会被参数绑定器拦下；不写，它们才会原样落进 $args。
+      ② 环境参数命名为 **$TargetEnv 而不是 $EnvName** —— 只要有个参数以 e 开头，
+         `-e` 就会唯一前缀匹配上它，先于 $args 被吃掉，①就白做了。
+      两条缺一不可（2026-07-28 用 pwsh 7.6 逐条实测过）。
 
     ⚠ $Profile 是 PowerShell 的**自动变量**（指向用户 profile 脚本路径），
       所以参数名用 ProfileName，不要图省事改回去。
@@ -33,13 +41,13 @@
       不可比，而这种不一致在报告里看不出来。
 #>
 
-[CmdletBinding()]
 param(
-    [Parameter(Position = 0)][string]$Plan,
-    [Parameter(Position = 1)][string]$EnvName,
-    [Parameter(Position = 2)][string]$ProfileName,
-    [Parameter(ValueFromRemainingArguments = $true)][string[]]$Overrides
+    [string]$Plan,
+    [string]$TargetEnv,
+    [string]$ProfileName
 )
+# 其余参数由 $args 接收 —— 见上方 NOTES，这正是不写 [CmdletBinding()] 的原因
+$Overrides = $args
 
 $ErrorActionPreference = 'Stop'
 
@@ -63,14 +71,14 @@ function Show-Usage {
     exit 1
 }
 
-if (-not $Plan -or -not $EnvName -or -not $ProfileName) { Show-Usage }
+if (-not $Plan -or -not $TargetEnv -or -not $ProfileName) { Show-Usage }
 
 $PlanFile    = "k6\scenarios\$Plan.js"
-$EnvFile     = "k6\config\$EnvName.json"
+$EnvFile     = "k6\config\$TargetEnv.json"
 $ProfileFile = "k6\profiles\$ProfileName.json"
 
 if (-not (Test-Path $PlanFile))    { Write-Host "ERROR: plan '$Plan' not found ($PlanFile)" -ForegroundColor Red; Show-Usage }
-if (-not (Test-Path $EnvFile))     { Write-Host "ERROR: env '$EnvName' not found ($EnvFile)" -ForegroundColor Red; Show-Usage }
+if (-not (Test-Path $EnvFile))     { Write-Host "ERROR: env '$TargetEnv' not found ($EnvFile)" -ForegroundColor Red; Show-Usage }
 if (-not (Test-Path $ProfileFile)) { Write-Host "ERROR: profile '$ProfileName' not found ($ProfileFile)" -ForegroundColor Red; Show-Usage }
 
 # ── 覆盖项校验：早失败，别等 k6 起来了才发现打错 ──────────────
@@ -99,7 +107,7 @@ if (-not (Get-Command k6 -ErrorAction SilentlyContinue)) {
 
 # ── 运行标识 ─────────────────────────────────────────────────
 $Stamp  = Get-Date -Format 'yyyyMMdd-HHmmss'
-$RunId  = "${Plan}_${EnvName}_${ProfileName}_$Stamp"
+$RunId  = "${Plan}_${TargetEnv}_${ProfileName}_$Stamp"
 $RunDir = "k6\results\$RunId"
 New-Item -ItemType Directory -Path $RunDir -Force | Out-Null
 
@@ -121,8 +129,11 @@ $null = $lines.Add("plan:         $PlanFile")
 $null = $lines.Add("env:          $EnvFile")
 $null = $lines.Add("profile:      $ProfileFile")
 $null = $lines.Add("overrides:    $OverrideS")
-$null = $lines.Add("host:         $env:COMPUTERNAME")
-$null = $lines.Add("user:         $env:USERNAME")
+# 用 [Environment] 而不是 $env:COMPUTERNAME / $env:USERNAME：
+# 后者只在 Windows 上有值，跨平台跑（或在 CI 容器里）会留下两个空字段，
+# 而 manifest 的全部意义就是"事后能回答这次是在哪台机器上跑的"。
+$null = $lines.Add("host:         $([Environment]::MachineName)")
+$null = $lines.Add("user:         $([Environment]::UserName)")
 $null = $lines.Add("k6:           $(k6 version 2>&1 | Select-Object -First 1)")
 $null = $lines.Add("os:           $([System.Environment]::OSVersion.VersionString)")
 $null = $lines.Add("powershell:   $($PSVersionTable.PSVersion)")
@@ -167,7 +178,7 @@ if ($env:K6_PROMETHEUS_RW_SERVER_URL) {
 # ── 执行 ─────────────────────────────────────────────────────
 $env:RESULT_DIR = $RunDirFwd
 
-$k6Args = @('run', '-e', "ENV=$EnvName", '-e', "PROFILE=$ProfileName", '-e', "RESULT_DIR=$RunDirFwd")
+$k6Args = @('run', '-e', "ENV=$TargetEnv", '-e', "PROFILE=$ProfileName", '-e', "RESULT_DIR=$RunDirFwd")
 $k6Args += $OverrideArgs
 $k6Args += $OutArgs
 $k6Args += @('--summary-trend-stats', 'avg,min,med,p(90),p(95),p(99),max,count')

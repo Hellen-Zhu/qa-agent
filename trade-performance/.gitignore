@@ -8,6 +8,13 @@ reports/*
 jmeter.log
 *.jtl
 
+# 采集来的真实 curl / 响应样本（校准依据，不是可执行脚本）
+# ⚠ 必须排除：DevTools 导出的 curl 带着会话 cookie、真实 counterparty 名称，
+#   以及有时是内网地址。它的价值是"三个月后能回答当初凭什么这么断言"，
+#   放本地即可，不该进版本库。
+data/refdata/_samples/
+data/**/_samples/
+
 # .dat 样本可能很大（large/ 下单个文件可达几十 MB）。
 # 目前先全部允许提交，等拿到真实文件、确认体积后再决定是否排除 large/。
 # 届时取消下面两行的注释：

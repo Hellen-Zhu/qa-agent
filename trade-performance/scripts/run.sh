@@ -108,6 +108,13 @@ echo ""
 # -q 可重复，后者覆盖前者：config → profile → 命令行 -J
 # sample_variables 把业务字段写进 jtl 的额外列，用来按维度切分结果
 #   （比自己在 Groovy 里写文件靠谱：不会漏、不会串行阻塞、不会和 JMeter 的写入打架）
+#
+# ⚠ EXTRA 的展开必须写成 "${EXTRA[@]+"${EXTRA[@]}"}"，不能写 "${EXTRA[@]}"。
+#   macOS 自带的是 **bash 3.2**，在 `set -u` 下展开一个空数组会直接报
+#   `EXTRA[@]: unbound variable` 并退出 —— 也就是说**不带任何 -J 覆盖项的调用
+#   （`run.sh p02-trade-create dev smoke`，正是最常用的那条）会跑不起来**。
+#   bash 4.4+ 修了这个行为，所以在 Linux 上试不出来。
+#   `${x[@]+...}` 是"数组已设置才展开"，空数组时整个参数消失。
 set +e
 jmeter -n \
     -t "$PLAN_FILE" \
@@ -118,7 +125,7 @@ jmeter -n \
     -Jsample_variables=runPhase,caseId,tradeId,taskId,datFile,productType,costTier,fixings,datSizeBytes,errClass,riskOk,riskFailCode,pairId,portfolioId,effectiveUserId,claimedTaskId,claimedCount,checkerAction,bulkOutcome,bulkSuccessCount,checkerFailMsg,eventCaseId,eventType,needsApproval,eventTaskId,eventFailMsg,tradesRowCount,tradesQuery,targetTradeId \
     -Jjmeter.save.saveservice.output_format=csv \
     -Jjmeter.save.saveservice.response_data.on_error=true \
-    "${EXTRA[@]}" \
+    "${EXTRA[@]+"${EXTRA[@]}"}" \
     -l "$JTL" \
     -j "$LOG" \
     -e -o "$REPORT_DIR"

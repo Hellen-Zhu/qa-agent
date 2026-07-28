@@ -44,9 +44,12 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 RESULTS = ROOT / "results"
 
-# 低于这个样本量，百分位不可信；低于 MIN_USABLE 时连 P50 都别信
-MIN_SOLID = 300
-MIN_USABLE = 100
+# 一个分位数 p 要可信，至少要有 ~10 个样本落在它之外 → n ≥ 10/(1-p)
+#   P95 → 200 个     P99 → 1000 个
+# ⚠ 这两个数必须与 k6/lib/summary.js 保持一致 —— 否则同一次跑，
+#   两套工具会对"样本够不够"给出相反的结论，而没人知道该信哪个。
+MIN_P95 = 200
+MIN_P99 = 1000
 
 
 def pct(sorted_vals, p):
@@ -154,15 +157,18 @@ def print_label(s):
     print(f"  TPS       {s['tps']:.2f}  /s   （只数成功样本）")
 
     # ── 样本量纪律 ──
-    if 0 < ok < MIN_USABLE:
-        need = s["span_s"] * MIN_SOLID / ok if ok else 0
-        print(
-            f"  ⚠ 成功样本只有 {ok} 个，**百分位不可信**（P50 也只是参考）。\n"
-            f"    要拿到 {MIN_SOLID} 个样本，这个并发下需要跑约 {need/60:.0f} 分钟；\n"
-            f"    或者提高并发（样本数 = 线程数 × 时长 ÷ 单笔耗时）。"
-        )
-    elif MIN_USABLE <= ok < MIN_SOLID:
-        print(f"  ⚠ 成功样本 {ok} 个：P50 可用，P95 仍然偏抖，结论里要标注。")
+    notes = []
+    if 0 < ok < MIN_P95:
+        need = s["span_s"] * MIN_P95 / ok
+        notes.append(f"✗ P95 不可信 —— 需 ≥{MIN_P95} 个样本，当前 {ok}。这个并发下需跑约 {need:.0f} 秒")
+    if 0 < ok < MIN_P99:
+        need = s["span_s"] * MIN_P99 / ok
+        notes.append(f"⚠ P99 不可信 —— 需 ≥{MIN_P99} 个样本，当前 {ok}。这个并发下需跑约 {need:.0f} 秒")
+    if notes:
+        for n in notes:
+            print(f"  {n}")
+        print("  精度要求应与余量挂钩：实测值与阈值相差一个数量级时，")
+        print("  分位数不精确不影响判定 —— 但报告里必须写明样本量。")
 
 
 def main() -> int:

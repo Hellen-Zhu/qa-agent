@@ -19,14 +19,54 @@ function num(v, digits) {
   return v.toFixed(digits === undefined ? 0 : digits);
 }
 
-function pad(s, w) {
-  s = String(s);
-  return s.length >= w ? s : s + ' '.repeat(w - s.length);
-}
-
 function padL(s, w) {
   s = String(s);
   return s.length >= w ? s : ' '.repeat(w - s.length) + s;
+}
+
+/**
+ * 与 scripts/summarize.py 的 fmt_ms 保持一致：超过 10 秒改用秒，
+ * 否则一个 60000 会把整行挤歪，而超时样本恰恰是最该看清的那一行。
+ */
+function fmtMs(v) {
+  if (v === undefined || v === null || isNaN(v)) return padL('-', 8);
+  return v < 10000 ? padL(v.toFixed(0), 8) : padL((v / 1000).toFixed(1) + 's', 8);
+}
+
+/*
+ * ⚠ 中文字符的 String.length 是 1，但终端里占 2 列。
+ *   用 pad() 对齐含中文的表格，表头和数据行必然错位 —— 而且只在有中文的那几行错，
+ *   看上去像"某几行数据不对"。这里按**显示宽度**补齐。
+ */
+function dispWidth(s) {
+  let w = 0;
+  for (const ch of String(s)) {
+    w += /[ᄀ-ᅟ⺀-꓏가-힣豈-﫿︰-﹯＀-｠￠-￦]/.test(ch)
+      ? 2 : 1;
+  }
+  return w;
+}
+
+function padD(s, w) {
+  const d = dispWidth(s);
+  return d >= w ? String(s) : String(s) + ' '.repeat(w - d);
+}
+
+// 列定义只写一次，表头由它生成 —— 改列时不可能忘了同步表头
+const PCT_COLS = ['P50', 'P90', 'P95', 'P99', 'max', 'avg'];
+const PCT_INDENT = 14;
+
+function pctHeader() {
+  return ' '.repeat(PCT_INDENT) + PCT_COLS.map((c) => padL(c, 8)).join('');
+}
+
+/** 一行分位数，列顺序与 scripts/summarize.py 逐列对齐 */
+function pctRow(label, vals) {
+  return (
+    '    ' + padD(label, PCT_INDENT - 4) +
+    fmtMs(vals.med) + fmtMs(vals['p(90)']) + fmtMs(vals['p(95)']) +
+    fmtMs(vals['p(99)']) + fmtMs(vals.max) + fmtMs(vals.avg)
+  );
 }
 
 export function buildTextSummary(data, meta) {
@@ -51,11 +91,11 @@ export function buildTextSummary(data, meta) {
 
   // ── 三类错误分离 ──────────────────────────────────────────
   L.push('── 结果分类 ────────────────────────────────────────');
-  L.push(`  ${pad('ok', 12)}${padL(ok, 8)}   业务成功`);
-  L.push(`  ${pad('technical', 12)}${padL(tech, 8)}   连接失败/超时/5xx ← 这才是性能结论`);
-  L.push(`  ${pad('business', 12)}${padL(biz, 8)}   HTTP 200 但业务拒绝 ← 多半是数据失效`);
-  L.push(`  ${pad('script', 12)}${padL(scr, 8)}   脚本 bug ← 结果作废`);
-  L.push(`  ${pad('总计', 10)}${padL(total, 8)}`);
+  L.push(`  ${padD('ok', 12)}${padL(ok, 8)}   业务成功`);
+  L.push(`  ${padD('technical', 12)}${padL(tech, 8)}   连接失败/超时/5xx ← 这才是性能结论`);
+  L.push(`  ${padD('business', 12)}${padL(biz, 8)}   HTTP 200 但业务拒绝 ← 多半是数据失效`);
+  L.push(`  ${padD('script', 12)}${padL(scr, 8)}   脚本 bug ← 结果作废`);
+  L.push(`  ${padD('总计', 12)}${padL(total, 8)}`);
   L.push('');
 
   if (tech > 0) L.push('  ⚠ 存在 technical 错误 —— 这是性能结论的一部分，不要当噪音过滤掉');
@@ -64,23 +104,27 @@ export function buildTextSummary(data, meta) {
   if (tech > 0 || scr > 0 || biz > 0) L.push('');
 
   // ── 耗时 ─────────────────────────────────────────────────
-  L.push('── 耗时（仅业务成功的请求）────────────────────────');
+  // 列顺序刻意与 scripts/summarize.py 完全一致 —— 跨框架对比时要逐行对照，
+  // 两边列不一样的话每次都得先在脑子里做一次映射，迟早看错行。
+  L.push('── 耗时 (ms) ──────────────────────────────────────');
   if (succ && succ.count > 0) {
-    L.push(`  样本数        ${padL(succ.count, 8)}`);
-    L.push(`  P50 (med)     ${padL(num(succ.med), 8)} ms`);
-    L.push(`  P90           ${padL(num(succ['p(90)']), 8)} ms`);
-    L.push(`  P95           ${padL(num(succ['p(95)']), 8)} ms`);
-    L.push(`  max           ${padL(num(succ.max), 8)} ms`);
+    L.push(pctHeader());
+    L.push(pctRow('成功样本', succ));
+    if (all && all.count > 0 && succ.count !== all.count) {
+      L.push(pctRow('全部样本', all));
+      L.push('    （失败请求通常返回更快，混在一起会让分位数偏乐观）');
+    }
+    L.push('');
+    L.push(`    样本数    ${padL(succ.count, 8)}`);
     if (succ.med > 0) {
       const ratio = succ['p(95)'] / succ.med;
-      L.push(`  P95 / P50     ${padL(ratio.toFixed(2), 8)}     ${ratio > 3 ? '← 比值大，存在慢路径（.dat 解析？定价？）' : ''}`);
+      L.push(
+        `    P95/P50   ${padL(ratio.toFixed(2) + '×', 8)}     ` +
+        (ratio > 3 ? '← 比值大，存在慢路径（.dat 解析？定价？）' : '（分布集中）')
+      );
     }
   } else {
     L.push('  （没有业务成功的请求）');
-  }
-  if (all && all.count > 0 && succ && succ.count !== all.count) {
-    L.push(`  —— 全部请求（含失败）P95 = ${num(all['p(95)'])} ms，共 ${all.count} 笔`);
-    L.push('     失败请求通常更快，混在一起会让 P95 偏乐观');
   }
   L.push('');
 
@@ -93,16 +137,28 @@ export function buildTextSummary(data, meta) {
   L.push('');
 
   // ── 样本量纪律 ────────────────────────────────────────────
-  // 低吞吐系统最容易踩的坑：样本不够时 P95 是个随机数。
+  // 经验规则：一个分位数 p 要可信，至少要有 ~10 个样本落在它之外 → n ≥ 10/(1-p)
+  //     P95 → 200 个     P99 → 1000 个
+  // 低吞吐系统最容易踩的坑：样本不够时分位数就是个随机数，而报告上完全看不出来。
+  // P99 现在参与验收判据（PERF-07 要求 P99 ≤ 8,000ms），所以必须显式提示。
   const n = succ ? succ.count : 0;
-  if (n > 0 && n < 100) {
-    L.push('  ✗ 样本数 < 100 —— **P95 不可信，不要写进报告**');
-    L.push(`     样本数 = VU 数 × 时长 ÷ 单笔耗时。当前单笔约 ${num(succ.med)}ms，`);
-    L.push(`     要凑够 300 个样本需要约 ${num((succ.med * 300) / 1000 / Math.max(1, vus ? vus.max : 1), 0)} 秒（按当前 VU 数）`);
-    L.push('');
-  } else if (n >= 100 && n < 300) {
-    L.push('  ⚠ 样本数 100~300 —— P95 勉强可用，正式基线建议跑到 300 以上');
-    L.push('');
+  if (n > 0 && succ.med > 0) {
+    const vuMax = Math.max(1, vus ? vus.max : 1);
+    const secFor = (target) => (succ.med * target) / 1000 / vuMax;
+    const notes = [];
+    if (n < 200) {
+      notes.push(`✗ P95 不可信 —— 需 ≥200 个样本，当前 ${n}。当前 VU 数下需跑约 ${num(secFor(200), 0)} 秒`);
+    }
+    if (n < 1000) {
+      notes.push(`⚠ P99 不可信 —— 需 ≥1000 个样本，当前 ${n}。当前 VU 数下需跑约 ${num(secFor(1000), 0)} 秒`);
+    }
+    if (notes.length > 0) {
+      L.push('── 样本量 ─────────────────────────────────────────');
+      notes.forEach((x) => L.push('  ' + x));
+      L.push('  精度要求应与余量挂钩：实测值与阈值相差一个数量级时，');
+      L.push('  分位数不精确不影响判定 —— 但报告里必须写明样本量。');
+      L.push('');
+    }
   }
 
   // ── 阈值 ─────────────────────────────────────────────────

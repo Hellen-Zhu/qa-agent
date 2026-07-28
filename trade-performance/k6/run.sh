@@ -147,8 +147,16 @@ echo "raw:      $RUN_DIR/summary.json"
 echo "csv:      $RUN_DIR/result.csv"
 echo "manifest: $MANIFEST"
 echo ""
-echo "Grafana 时间范围（贴进 URL）："
-grep -E 'epochMillis' "$MANIFEST" | sed 's/^/  /'
+if [[ -n "${GRAFANA_DASHBOARD_URL:-}" ]]; then
+    sep='?'; [[ "$GRAFANA_DASHBOARD_URL" == *\?* ]] && sep='&'
+    START_MS=$(grep -oE 'epochMillis: *[0-9]+' "$MANIFEST" | head -1 | grep -oE '[0-9]+')
+    END_MS=$(grep -oE 'endEpochMillis: *[0-9]+' "$MANIFEST" | grep -oE '[0-9]+')
+    echo "Grafana:  ${GRAFANA_DASHBOARD_URL}${sep}from=${START_MS}&to=${END_MS}"
+else
+    echo "Grafana 时间范围（替换 URL 里的 from=now-1h&to=now）："
+    grep -E 'epochMillis' "$MANIFEST" | sed 's/^/  /'
+    echo "  想直接打印完整链接：export GRAFANA_DASHBOARD_URL='<看板 URL，含 var-host 等参数>'"
+fi
 
 if grep -q 'PREFLIGHT FAILED' "$RUN_DIR/k6.log" 2>/dev/null; then
     echo ""

@@ -205,8 +205,14 @@ Write-Host "raw:      $RunDir\summary.json"
 Write-Host "csv:      $RunDir\result.csv"
 Write-Host "manifest: $Manifest"
 Write-Host ""
-Write-Host "Grafana 时间范围（贴进 URL）:"
-Write-Host "  &from=$StartMs&to=$EndMs"
+if ($env:GRAFANA_DASHBOARD_URL) {
+    $sep = if ($env:GRAFANA_DASHBOARD_URL -like '*?*') { '&' } else { '?' }
+    Write-Host "Grafana:  $($env:GRAFANA_DASHBOARD_URL)${sep}from=$StartMs&to=$EndMs"
+} else {
+    Write-Host "Grafana 时间范围（替换 URL 里的 from=now-1h&to=now）:"
+    Write-Host "  &from=$StartMs&to=$EndMs"
+    Write-Host "  想直接打印完整链接：`$env:GRAFANA_DASHBOARD_URL='<看板 URL，含 var-host 等参数>'"
+}
 
 if (Select-String -Path "$RunDir\k6.log" -Pattern 'PREFLIGHT FAILED' -Quiet -ErrorAction SilentlyContinue) {
     Write-Host ""

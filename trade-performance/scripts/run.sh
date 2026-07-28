@@ -77,9 +77,11 @@ LOG="$RUN_DIR/jmeter.log"
 # "每次只改一个变量"这条纪律，只有在事后能验证的前提下才成立。
 # 没有 manifest 的压测结果三个月后就是一堆无法解释的数字。
 MANIFEST="$RUN_DIR/manifest.txt"
+START_MS=$(( $(date +%s) * 1000 ))
 {
     echo "runId:        $RUN_ID"
     echo "timestamp:    $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    echo "epochMillis:  $START_MS    # ← 贴进 Grafana URL 的 &from="
     echo "plan:         $PLAN_FILE"
     echo "env:          $ENV_FILE"
     echo "profile:      $PROFILE_FILE"
@@ -132,11 +134,30 @@ jmeter -n \
 JMETER_RC=$?
 set -e
 
+END_MS=$(( $(date +%s) * 1000 ))
+echo "endEpochMillis: $END_MS" >> "$MANIFEST"
+
 echo ""
 echo "── 结果 ──────────────────────────────────────────"
 echo "jtl:      $JTL"
 echo "report:   $REPORT_DIR/index.html"
 echo "manifest: $MANIFEST"
+echo "分析:     python3 scripts/summarize.py $JTL"
+
+# ── Grafana 时间范围 ──
+# 压测端的数字（TPS / P95）单独看只能说"慢"，说不出"为什么慢"。
+# 结论要成立，必须把这段时间的服务端指标（CPU / GC / DB 连接池 / gRPC 扇出）
+# 摆在同一根时间轴上看。这里直接把可粘贴的时间范围（必要时是整条 URL）打出来，
+# 省掉"跑完再回头算那一跑是几点几分"这一步 —— 那一步一旦要靠回忆，就会被跳过。
+echo ""
+if [[ -n "${GRAFANA_DASHBOARD_URL:-}" ]]; then
+    sep='?'; [[ "$GRAFANA_DASHBOARD_URL" == *\?* ]] && sep='&'
+    echo "Grafana:  ${GRAFANA_DASHBOARD_URL}${sep}from=${START_MS}&to=${END_MS}"
+else
+    echo "Grafana 时间范围（替换 URL 里的 from=now-1h&to=now）："
+    echo "  &from=${START_MS}&to=${END_MS}"
+    echo "  想直接打印完整链接：export GRAFANA_DASHBOARD_URL='<看板 URL，含 var-host 等参数>'"
+fi
 
 # ── 开跑前守卫的结果 ──
 if grep -q 'PREFLIGHT FAILED' "$LOG" 2>/dev/null; then

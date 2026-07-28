@@ -8,6 +8,7 @@
 | 文档 | 回答 | 什么时候看 |
 |---|---|---|
 | [`RUNBOOK-p02-create-trade.zh.md`](RUNBOOK-p02-create-trade.zh.md) | **这一次具体敲什么** —— p02 单接口从装 JMeter 到出验收结论,带判据,Mac/Windows 双平台 | **← 现在就要跑出第一份数字** |
+| [`GRAFANA.zh.md`](GRAFANA.zh.md) | **为什么慢** —— 压测数字与后端指标对齐:四层归因、PromQL、三种集成方案 | 拿到数字,要写出瓶颈在哪 |
 | [`PRACTICE.zh.md`](PRACTICE.zh.md) | **练手** —— 6 个练习在新目录重建一遍,含 12 个"故意犯错" | 第一次接手这套框架 |
 | [`ARCHITECTURE.zh.md`](ARCHITECTURE.zh.md) | **为什么这样跑** —— JMeter 执行机制、四种作用域、失败模式地图 | 看不懂脚本行为 / 报告读不对 |
 | [`HANDBOOK-BUILD.zh.md`](HANDBOOK-BUILD.zh.md) | **怎么建** —— JMeter GUI 逐元件实操 | 从零搭工程 / 加新 API |

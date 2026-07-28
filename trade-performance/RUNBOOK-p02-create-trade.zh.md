@@ -469,16 +469,38 @@ HTML 报告仍然值得看的是**时间序列图**（Response Times Over Time /
 
 ### 后端指标（Grafana + Prometheus）
 
-`manifest.txt` 里的 `epochMillis` / `endEpochMillis` 直接贴进 Grafana URL 的 `&from=` `&to=`。
+**完整用法见 [`GRAFANA.zh.md`](GRAFANA.zh.md)** —— 看板的四层结构、归因决策表、
+现成 PromQL、三种集成方案。这里只放跑 p02 时最低限度要知道的：
 
-一份报告的价值不在"P95 是 3.2 秒"，而在把它和后端指标对上：
+runner 跑完会直接打印时间范围，贴进看板 URL 替换 `from=now-1h&to=now`：
+
+```
+Grafana 时间范围（替换 URL 里的 from=now-1h&to=now）：
+  &from=1785222714298&to=1785223019331
+```
+
+按 **HTTP → gRPC → JVM → HikariCP** 从上往下找第一个饱和的层：
 
 | 现象 | 大概率原因 |
 |---|---|
-| TPS 平了、CPU 也不高、`hikaricp_connections_pending` 上去了 | DB 连接池是瓶颈 |
+| TPS 平了、CPU 也不高、`hikaricp_connections_pending` 离开 0 | DB 连接池是瓶颈（截图里 `max=10`） |
 | TPS 平了、CPU 打满 | 真的算不过来（`.dat` 解析 / risk） |
-| TPS 平了、**所有资源都闲** | 串行段 / 锁竞争 ← 只有一对 refdata 时最可能是这个 |
+| TPS 平了、gRPC Client 出站 p99 陡增 | 下游拖的（risk-engine / user-center） |
+| TPS 平了、**所有面板都闲** | 串行段 / 锁竞争 ← 只有一对 refdata 时最可能是这个 |
 | heap 锯齿谷底持续抬升 | 泄漏，留到 soak 验证 |
+
+> ### ⚠ 看板看不见 OREO 的业务失败
+>
+> create 业务失败**照样返回 HTTP 200**，所以 **5xx 面板会稳稳显示 0%**，
+> 而 p95 面板还会因为业务拒绝返回得快而显得**更好看**。
+>
+> **技术层结论看 Grafana，业务层结论只能看 `summarize.py` 的 `errClass`。**
+> 只贴 Grafana 截图的性能报告，在 OREO 上不成立。
+
+> ⚠ 单级时长有**两个下限，取更严的那个**：
+> 压测端 `样本数 = 线程数 × 时长 ÷ 单笔耗时 ≥ 100`，
+> 后端 `数据点数 = 时长 ÷ scrape_interval ≥ 20`。
+> 只算了前者就开跑，后端曲线会只有几个点，看着像噪声。scrape 间隔怎么查见 GRAFANA.zh.md §1.2。
 
 ---
 

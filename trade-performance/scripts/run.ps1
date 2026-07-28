@@ -135,7 +135,8 @@ $OverrideS = if ($Extra) { $Extra -join ' ' } else { '<none>' }
 $lines = New-Object System.Collections.ArrayList
 $null = $lines.Add("runId:        $RunId")
 $null = $lines.Add("timestamp:    $((Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ'))")
-$null = $lines.Add("epochMillis:  $([DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds())    # 贴进 Grafana URL 的 &from=")
+$StartMs = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
+$null = $lines.Add("epochMillis:  $StartMs    # 贴进 Grafana URL 的 &from=")
 $null = $lines.Add("plan:         $PlanFile")
 $null = $lines.Add("env:          $EnvFile")
 $null = $lines.Add("profile:      $ProfileFile")
@@ -205,6 +206,9 @@ $ErrorActionPreference = 'Continue'
 $JmRc = $LASTEXITCODE
 $ErrorActionPreference = $prevEAP
 
+$EndMs = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
+Add-Content -Path $Manifest -Value "endEpochMillis: $EndMs" -Encoding UTF8
+
 Write-Host ""
 Write-Host "-- 结果 ------------------------------------------"
 Write-Host "jtl:      $Jtl"
@@ -213,6 +217,19 @@ Write-Host "manifest: $Manifest"
 Write-Host ""
 Write-Host "可比口径的数字（推荐用它，别直接读 HTML 报告的 Total 行）："
 Write-Host "  python scripts\summarize.py $Jtl"
+
+# ── Grafana 时间范围 ──
+# 压测端的数字单独看只能说"慢"，说不出"为什么慢"。结论要成立，必须把这段时间的
+# 服务端指标摆在同一根时间轴上。这里直接打出可粘贴的范围，省掉事后回忆几点几分。
+Write-Host ""
+if ($env:GRAFANA_DASHBOARD_URL) {
+    $sep = if ($env:GRAFANA_DASHBOARD_URL -like '*?*') { '&' } else { '?' }
+    Write-Host "Grafana:  $($env:GRAFANA_DASHBOARD_URL)${sep}from=$StartMs&to=$EndMs"
+} else {
+    Write-Host "Grafana 时间范围（替换 URL 里的 from=now-1h&to=now）:"
+    Write-Host "  &from=$StartMs&to=$EndMs"
+    Write-Host "  想直接打印完整链接：`$env:GRAFANA_DASHBOARD_URL='<看板 URL，含 var-host 等参数>'"
+}
 
 # ── 开跑前守卫的结果 ──
 if (Test-Path $Log) {

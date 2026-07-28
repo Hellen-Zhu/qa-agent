@@ -15,7 +15,7 @@
 | **0** | 采集一份真实 curl | 数据 + 契约校准依据 | 手册已写，待执行 |
 | **1** | `create-trade` 单接口压测 | 单笔耗时基线 → 并发拐点 | **← 本次详写** |
 | 2 | `s01` E2E 场景 | 含 refdata 查询与 think time 的用户级链路 | 待写 |
-| 3 | Checker flow / 生命周期事件 | 四眼原则两阶段路径的成本 | 待写 |
+| 3 | Checker flow / 生命周期事件 | 四眼原则两阶段路径的成本 | 身份链路与结果口径已写，加压部分待写 |
 | 4 | Blotter 常驻自动刷新（`suites/`） | OREO 真正的负载形态（约占请求量 97%） | 脚本未建 |
 | 5 | 混合场景 + 长稳 | 上线验收结论 | 待写 |
 
@@ -287,7 +287,64 @@ done
 `s03` / `s04` / `p03`–`p06`。核心是四眼原则的**两阶段路径**：
 提交 → 锁 → 建 task → 通知 → 审批 → 执行。
 
-需要先造数：每笔 `create` 产生一个 checker task，所以阶段 1 跑完，任务池自然就有了。
+### 3.1 两个身份，顺序不能反
+
+```
+s01-create-trade-e2e     maker@sc.com     提交 → trade 锁 pending approve → 建 checker task
+        ↓ 造数
+s03-checker-approve-e2e  checker@sc.com   审批 → 事件执行 / 拒绝时从快照恢复
+```
+
+```bash
+./scripts/run.sh s01-create-trade-e2e    dev smoke    # 造数：maker
+./scripts/run.sh s03-checker-approve-e2e dev smoke    # 审批：checker
+```
+
+阶段 1 跑完任务池自然就有了。池空时 setUp 报 `CHECKER TASK POOL TOO SMALL`——
+这个报错语义是干净的，**只可能是"环境里没有待审批任务"**，因为
+`checker@sc.com` 已确认在 dev 存在（2026-07 与业务确认）。不必怀疑账号问题。
+
+### 3.2 ⚠ 首次 smoke 必须盯的一件事：四眼分支真的走到了吗
+
+> **全 `ok` 不能证明四眼原则被测到了。**
+>
+> 身份改成固定双角色之前，checker 和 maker 都从 `accounts.csv` 取值，而那份 CSV
+> 五行全是 `MAKER`——`s03` 实际在做"maker 审批自己提交的单子"。
+> 那时候报告一样是全绿：请求成功、断言通过、错误率 0%。
+> **"报告没问题"和"测到了想测的东西"是两回事。**
+
+跑完 `s03` smoke，看 `errClass` 分布和 `checkerFailMsg` 列：
+
+| 观察到 | 说明 | 处置 |
+|---|---|---|
+| 全 `ok` | 审批成功 | ✅ 但还不足以证明服务端校验了 maker≠checker，见下方"反证" |
+| `business` + msg 含 `same user` / `not authorized` / `self-approval` | **服务端的 maker≠checker 口径与我们理解的不一样**（例如按角色判而非按账号判） | 回头调 `checkerUserId`，或与开发确认判定规则 |
+| `business` + msg 含 `not found` / `already processed` | 任务被别的线程抢走或已过期 | 正常竞争，见 3.3 |
+
+**反证一次（十分钟，值得做）**：临时让 checker 用 maker 身份跑一轮——
+
+```bash
+./scripts/run.sh s03-checker-approve-e2e dev smoke -JcheckerUserId=maker@sc.com
+```
+
+**期望它失败**。如果它照样全 `ok`，说明**服务端根本没校验 maker≠checker**——
+那是一个需要立刻提给开发的安全缺陷（NFR SEC-02），
+而且意味着四眼原则在生产里也不成立。这一轮无论结果如何都要写进报告。
+
+### 3.3 结果口径
+
+- **按 `checkerAction` 切分**：`approve` 和 `reject` 成本不同——
+  reject 要恢复 pre-execution 快照并写审计日志，路径更长。默认拒绝率 5%
+  （`checkerRejectRate`），单独看 reject 的 P95 需要拉高这个比例专门跑一轮。
+- **按 `needsApproval` 切分**（`s04` / `p06`）：同一个 `trigger-event` 端点，
+  需审批走两阶段、不需审批走单阶段，耗时与资源占用完全不同，
+  **绝不能用一条 SLA 覆盖**。
+- **`lockedRejection` 不是缺陷**：目标 trade 已处于 pending approve 而被拒，
+  这是四眼原则**正确工作**的表现。它的正确读法是"可挑的 trade 太少"（数据问题），
+  不是找开发。混进业务拒绝率里会掩盖真问题。
+- **`bulkOutcome`**（`p03` / `p04`）：批量接口可能部分成功，
+  `full` / `partial` / `unverifiable` 三态必须分开统计——
+  把 partial 记成成功会高估容量。
 
 ## 阶段 4 · Blotter 常驻自动刷新 ⚠ 脚本未建
 

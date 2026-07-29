@@ -27,7 +27,7 @@
 
 import http from 'k6/http';
 import { cfg } from '../../../lib/config.js';
-import { getDat, baseName } from '../../../lib/create-trade-data.js';
+import { getDat, uploadName } from '../../../lib/create-trade-data.js';
 import { classifyCreate } from '../../../lib/errors.js';
 
 const URL = `${cfg.workersUrl}/trades/create`;
@@ -102,9 +102,11 @@ export function createTrade(opts) {
 
   const body = {
     trade: buildTradePayload(refdata, caseRow),
+    // filename 由 uploadName 决定：默认原名；DAT_NAME_MODE=unique 时加唯一
+    // 后缀绕服务端临时文件竞态（偏差开关，见 lib/create-trade-data.js）
     datFile: http.file(
       getDat(caseRow.datFile),
-      baseName(caseRow.datFile),
+      uploadName(caseRow.datFile),
       'application/octet-stream'
     ),
   };

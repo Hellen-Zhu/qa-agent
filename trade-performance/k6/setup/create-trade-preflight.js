@@ -31,7 +31,7 @@
 
 import exec from 'k6/execution';
 import { cfg } from '../lib/config.js';
-import { createCases, pickCase, DATA_FILE } from '../lib/create-trade-data.js';
+import { createCases, pickCase, DATA_FILE, DAT_NAME_MODE } from '../lib/create-trade-data.js';
 import { createTrade, validateInputs } from '../steps/workers/trade-management/create-trade.js';
 import { ERR } from '../lib/errors.js';
 
@@ -41,6 +41,13 @@ export function createTradePreflight() {
   console.log(`target=${cfg.workersUrl}/trades/create`);
   console.log(`maker=${cfg.makerUserId}`);
   console.log(`data=${DATA_FILE}  rows=${createCases.length}`);
+  if (DAT_NAME_MODE === 'unique') {
+    // 偏差必须在日志和报告里都刺眼：生产用户不会改名上传
+    console.warn(
+      '⚠ DAT_NAME_MODE=unique — 上传文件名加唯一后缀，绕服务端临时文件竞态缺陷。' +
+      '报告必须标注偏差；缺陷修复后关掉本开关做并发复测（回归验证）'
+    );
+  }
 
   // ── 数据存在性 ──────────────────────────────────────────
   if (createCases.length === 0) {

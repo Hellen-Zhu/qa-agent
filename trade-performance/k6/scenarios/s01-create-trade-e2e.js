@@ -28,6 +28,7 @@
 import exec from 'k6/execution';
 import { cfg } from '../lib/config.js';
 import { j01CreateTrade } from '../journeys/j01-create-trade.js';
+import { DAT_NAME_MODE } from '../lib/create-trade-data.js';
 import { refdataPreflight } from '../setup/refdata-preflight.js';
 import { createTradePreflight } from '../setup/create-trade-preflight.js';
 import { makeHandleSummary } from '../lib/summary.js';
@@ -69,6 +70,7 @@ export const options = {
     env: cfg.envName,
     profile: cfg.profileName,
     refdataMode: REFDATA_MODE, // 结果必须能区分是不是降级跑出来的
+    datNameMode: DAT_NAME_MODE, // 同理：unique = 绕服务端临时文件竞态的偏差跑法
   },
 };
 

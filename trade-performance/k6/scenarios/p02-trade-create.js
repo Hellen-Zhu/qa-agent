@@ -19,7 +19,7 @@
 
 import exec from 'k6/execution';
 import { cfg } from '../lib/config.js';
-import { pickCase } from '../lib/create-trade-data.js';
+import { pickCase, DAT_NAME_MODE } from '../lib/create-trade-data.js';
 import { createTrade } from '../steps/workers/trade-management/create-trade.js';
 import { createTradePreflight } from '../setup/create-trade-preflight.js';
 import { makeHandleSummary } from '../lib/summary.js';
@@ -55,6 +55,7 @@ export const options = {
     plan: PLAN,
     env: cfg.envName,
     profile: cfg.profileName,
+    datNameMode: DAT_NAME_MODE, // unique = 绕服务端临时文件竞态的偏差跑法，结果必须可区分
   },
 };
 

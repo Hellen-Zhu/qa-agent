@@ -21,7 +21,7 @@
 import http from 'k6/http';
 import { Rate } from 'k6/metrics';
 import { cfg } from '../../../lib/config.js';
-import { getDat, baseName } from '../../../lib/create-trade-data.js';
+import { getDat, uploadName } from '../../../lib/create-trade-data.js';
 import { buildTradePayload } from './create-trade.js';
 import { recordOutcome, ERR } from '../../../lib/errors.js';
 
@@ -49,9 +49,11 @@ export function calcRiskForNew(opts) {
 
   const body = {
     trade: buildTradePayload(refdata, caseRow),
+    // 与 create 同用 uploadName：本接口同样解析 .dat，多半走同一套临时文件
+    // 机制，只改 create 会剩下半个碰撞面（DAT_NAME_MODE 说明见数据模块）
     datFile: http.file(
       getDat(caseRow.datFile),
-      baseName(caseRow.datFile),
+      uploadName(caseRow.datFile),
       'application/octet-stream'
     ),
   };

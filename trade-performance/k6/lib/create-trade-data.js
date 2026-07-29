@@ -83,6 +83,44 @@ export function baseName(relPath) {
   return i < 0 ? p : p.slice(i + 1);
 }
 
+/*
+ * ── DAT_NAME_MODE：上传文件名唯一化（绕服务端缺陷的偏差开关）──
+ *
+ * 服务端收到上传后按**时间戳**生成临时文件名，处理完删除。并发同刻到达
+ * 时两笔请求落到同一个临时文件：先完成的一笔把文件删了，后一笔报
+ * "找不到 dat"。缺陷论证与验证协议见 data/dat/README.md「服务端临时文件竞态」。
+ *
+ * unique 模式给 multipart 的 filename 加唯一后缀，**字节内容不变**，
+ * 不需要复制物理文件（复制 N 份 = 内存放大 N 倍，见文件头约束 3）。
+ * 有效性取决于服务端临时名是否包含客户端文件名：
+ *   包含 → 名字唯一则临时路径唯一，碰撞消失；
+ *   只有时间戳 → 改名无效，碰撞照旧 —— 跑一轮对照就能判定是哪种。
+ *
+ * ⚠ 默认 original：生产用户不会改名上传，unique 跑出的错误率会低估
+ *   生产，报告必须标注偏差；缺陷修复后关掉本开关做并发复测，
+ *   就是该缺陷的回归验证。
+ */
+export const DAT_NAME_MODE = envOr('DAT_NAME_MODE', 'original');
+if (DAT_NAME_MODE !== 'original' && DAT_NAME_MODE !== 'unique') {
+  throw new Error(`DAT_NAME_MODE=${DAT_NAME_MODE} 无效，只接受 original | unique`);
+}
+
+// 每个 VU 有独立的 JS VM，模块级计数器天然按 VU 隔离 —— 与 __VU 组合
+// 即本次运行内全局唯一；rand4 防两个 runner 同时在跑（手动 + CI）时跨进程重名
+let uploadSeq = 0;
+
+/** 上传用的 filename：original 用原名；unique 在扩展名前插唯一段 */
+export function uploadName(relPath) {
+  const base = baseName(relPath);
+  if (DAT_NAME_MODE === 'original') return base;
+  const dot = base.lastIndexOf('.');
+  const stem = dot > 0 ? base.slice(0, dot) : base;
+  const ext = dot > 0 ? base.slice(dot) : '';   // 扩展名保留 —— 服务端可能校验 .dat
+  uploadSeq += 1;
+  const rand = Math.random().toString(36).slice(2, 6);
+  return `${stem}__u${__VU}-${uploadSeq}-${rand}${ext}`;
+}
+
 function loadRows(relPath) {
   if (!relPath.endsWith('.json')) {
     throw new Error(

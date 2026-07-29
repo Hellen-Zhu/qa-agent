@@ -16,7 +16,7 @@
  * ⚠ 标签基数（cardinality）：
  *   k6 的 tag 是 **指标的维度**，高基数标签会让内存和 Prometheus 存储爆炸。
  *
- *   → 可以打标签：runPhase / caseId / productType / errClass（各几个值）
+ *   → 可以打标签：runPhase / caseId / productType / errClass / reason（各几个有界值）
  *   → **绝对不要**打标签：tradeId / taskId / tradeReference（每次请求都不同）
  *   需要逐笔明细时用 --out csv 或结构化日志，不要塞进 tag。
  */
@@ -43,6 +43,61 @@ export const ERR = {
   SCRIPT: 'script',
 };
 
+/*
+ * ── reason：失败原因维度（低基数）────────────────────────────
+ * errClass 回答"该找谁"（开发 / 数据 / 脚本），reason 回答"具体怎么了"。
+ * 没有它，一次跑出 40 个 business 只是一个数字 —— dat 竞态、归属字段
+ * 失效、重复提交全混在一起，定位还得靠翻 CSV 猜。
+ *
+ * ⚠ reason 会成为指标维度，只允许**有界**取值：
+ *   模式表槽位 + 服务端 code 枚举 + HTTP 状态码，全部有界。
+ *   **绝不能把 msg 原文当 reason** —— 自由文本无界，等同把 tradeId 打进 tag。
+ */
+
+// 业务拒绝归因模式表：按真实观测的 msg 逐条校准、补充。
+// 现场原文靠下方 logFailure 的限流日志采集 → 回填到这里。
+const BIZ_PATTERNS = [
+  // 服务端临时文件竞态：并发同刻上传、时间戳撞名后文件被先完成方删除
+  // （缺陷论证与绕行开关见 data/dat/README.md「服务端临时文件竞态」）
+  { reason: 'dat-missing', re: /(dat|file).*(not\s*found|missing|不存在)|找不到/i },
+];
+
+export function bizReason(body) {
+  const msg = String((body && body.msg) || '');
+  for (let i = 0; i < BIZ_PATTERNS.length; i++) {
+    if (BIZ_PATTERNS[i].re.test(msg)) return BIZ_PATTERNS[i].reason;
+  }
+  // 兜底用服务端业务 code：后端枚举值，天然有界
+  const code = body && body.code;
+  return typeof code === 'number' ? 'code-' + code : 'code-unknown';
+}
+
+export function techReason(res) {
+  // status=0 是连接层失败（超时/拒绝/DNS），error_code 是 k6 的有界错误枚举
+  return res.status > 0 ? 'http-' + res.status : 'net-' + (res.error_code || 0);
+}
+
+/*
+ * ── 限流的现场日志 ──────────────────────────────────────────
+ * 之前失败只进计数器，k6.log 里一条现场都看不到，出问题只能事后翻 CSV。
+ * 但也不能全量打：高并发下大面积失败时 console I/O 本身会挤占压力机，
+ * 且几千条相同日志没有信息增量。折中：**每 VU 每种 (errClass, reason)
+ * 详打前 3 条**，之后静默 —— 计数在指标里，逐笔明细在 result.csv。
+ */
+const LOG_CAP = 3;
+const logSeen = {}; // 每个 VU 独立 VM，天然按 VU 隔离
+
+export function logFailure(errClass, reason, detail, tags) {
+  const key = errClass + '|' + reason;
+  const n = (logSeen[key] = (logSeen[key] || 0) + 1);
+  if (n > LOG_CAP) return;
+  const t = tags || {};
+  const tail = n === LOG_CAP
+    ? ` —— 本 VU 此类日志已达 ${LOG_CAP} 条，后续静默（计数看指标，逐笔看 result.csv）`
+    : '';
+  console.warn(`✗ [${errClass}/${reason}] case=${t.caseId || 'NA'} phase=${t.runPhase || 'NA'} ${detail}${tail}`);
+}
+
 /**
  * 判定一次 create 响应属于哪一类。
  * 分支顺序即判定优先级，不要调换。
@@ -58,13 +113,11 @@ export function classifyCreate(res, tags) {
   // res.status === 0 表示连接层就失败了（超时 / 拒绝 / DNS）——
   // 这种情况 res.body 是 null，必须先挡住。
   if (res.status !== 200) {
-    recordOutcome(ERR.TECHNICAL, t, res);
-    return {
-      errClass: ERR.TECHNICAL,
-      detail: `technical: HTTP ${res.status}${res.error ? ' ' + res.error : ''}`,
-      tradeId: 'NOT_FOUND',
-      taskId: 'NOT_FOUND',
-    };
+    const reason = techReason(res);
+    const detail = `technical: HTTP ${res.status}${res.error ? ' ' + res.error : ''}`;
+    recordOutcome(ERR.TECHNICAL, t, res, reason);
+    logFailure(ERR.TECHNICAL, reason, detail, t);
+    return { errClass: ERR.TECHNICAL, detail, tradeId: 'NOT_FOUND', taskId: 'NOT_FOUND' };
   }
 
   // ── 类别 3：响应不是 JSON ──
@@ -72,24 +125,20 @@ export function classifyCreate(res, tags) {
   try {
     body = res.json();
   } catch (e) {
-    recordOutcome(ERR.SCRIPT, t, res);
-    return {
-      errClass: ERR.SCRIPT,
-      detail: `script: response is not JSON — ${e.message}`,
-      tradeId: 'NOT_FOUND',
-      taskId: 'NOT_FOUND',
-    };
+    const detail = `script: response is not JSON — ${e.message}`;
+    recordOutcome(ERR.SCRIPT, t, res, 'not-json');
+    logFailure(ERR.SCRIPT, 'not-json', detail, t);
+    return { errClass: ERR.SCRIPT, detail, tradeId: 'NOT_FOUND', taskId: 'NOT_FOUND' };
   }
 
   // ── 类别 2：业务拒绝 ──
   if (body.code !== 200 || body.status !== 'PENDING APPROVAL') {
-    recordOutcome(ERR.BUSINESS, t, res);
-    return {
-      errClass: ERR.BUSINESS,
-      detail: `business: code=${body.code} status=${body.status} msg=${body.msg}`,
-      tradeId: 'NOT_FOUND',
-      taskId: 'NOT_FOUND',
-    };
+    const reason = bizReason(body);
+    // msg 截断：响应文案可能整段堆栈，日志与 detail 只要开头就够定位
+    const detail = `business: code=${body.code} status=${body.status} msg=${String(body.msg || '').slice(0, 160)}`;
+    recordOutcome(ERR.BUSINESS, t, res, reason);
+    logFailure(ERR.BUSINESS, reason, detail, t);
+    return { errClass: ERR.BUSINESS, detail, tradeId: 'NOT_FOUND', taskId: 'NOT_FOUND' };
   }
 
   // ── 成功路径：结构完整性 ──
@@ -97,13 +146,10 @@ export function classifyCreate(res, tags) {
   // 会被"非空"这种弱断言放过去。
   const tradeId = body.data && body.data.trade ? String(body.data.trade.id || '') : '';
   if (!/^TRD-\d+$/.test(tradeId)) {
-    recordOutcome(ERR.SCRIPT, t, res);
-    return {
-      errClass: ERR.SCRIPT,
-      detail: `script: unexpected tradeId format — '${tradeId}'`,
-      tradeId: 'NOT_FOUND',
-      taskId: 'NOT_FOUND',
-    };
+    const detail = `script: unexpected tradeId format — '${tradeId}'`;
+    recordOutcome(ERR.SCRIPT, t, res, 'shape');
+    logFailure(ERR.SCRIPT, 'shape', detail, t);
+    return { errClass: ERR.SCRIPT, detail, tradeId: 'NOT_FOUND', taskId: 'NOT_FOUND' };
   }
 
   // taskId 目前只存在于 msg 的自然语言里：
@@ -123,9 +169,13 @@ export function classifyCreate(res, tags) {
 /**
  * 把一次请求的判定结果记进全部指标。**所有步骤的唯一记账出口** ——
  * 新步骤不要自己 new Counter 重复三类分离，调这里。
+ *
+ * @param {string} [reason] 失败原因（有界值，见上方 reason 段）。
+ *                 只挂在错误计数器上 —— 成功没有"原因"，Rate/Trend 不需要该维度。
  */
-export function recordOutcome(errClass, tags, res) {
+export function recordOutcome(errClass, tags, res, reason) {
   const t = Object.assign({}, tags, { errClass });
+  if (reason && errClass !== ERR.OK) t.reason = reason;
   const ok = errClass === ERR.OK;
 
   if (ok) cOk.add(1, t);
@@ -153,26 +203,29 @@ export function recordOutcome(errClass, tags, res) {
  */
 export function classifyRead(res, tags, validate) {
   if (res.status !== 200) {
-    recordOutcome(ERR.TECHNICAL, tags, res);
-    return {
-      errClass: ERR.TECHNICAL,
-      detail: `technical: HTTP ${res.status}${res.error ? ' ' + res.error : ''}`,
-      body: null,
-    };
+    const reason = techReason(res);
+    const detail = `technical: HTTP ${res.status}${res.error ? ' ' + res.error : ''}`;
+    recordOutcome(ERR.TECHNICAL, tags, res, reason);
+    logFailure(ERR.TECHNICAL, reason, detail, tags);
+    return { errClass: ERR.TECHNICAL, detail, body: null };
   }
 
   let body;
   try {
     body = res.json();
   } catch (e) {
-    recordOutcome(ERR.SCRIPT, tags, res);
-    return { errClass: ERR.SCRIPT, detail: `script: response is not JSON — ${e.message}`, body: null };
+    const detail = `script: response is not JSON — ${e.message}`;
+    recordOutcome(ERR.SCRIPT, tags, res, 'not-json');
+    logFailure(ERR.SCRIPT, 'not-json', detail, tags);
+    return { errClass: ERR.SCRIPT, detail, body: null };
   }
 
   const problem = validate ? validate(body) : null;
   if (problem) {
-    recordOutcome(ERR.SCRIPT, tags, res);
-    return { errClass: ERR.SCRIPT, detail: `script: ${problem}`, body };
+    const detail = `script: ${problem}`;
+    recordOutcome(ERR.SCRIPT, tags, res, 'shape');
+    logFailure(ERR.SCRIPT, 'shape', detail, tags);
+    return { errClass: ERR.SCRIPT, detail, body };
   }
 
   recordOutcome(ERR.OK, tags, res);

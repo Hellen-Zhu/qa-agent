@@ -93,15 +93,19 @@ export function buildTextSummary(data, meta) {
   L.push('── 结果分类 ────────────────────────────────────────');
   L.push(`  ${padD('ok', 12)}${padL(ok, 8)}   业务成功`);
   L.push(`  ${padD('technical', 12)}${padL(tech, 8)}   连接失败/超时/5xx ← 这才是性能结论`);
-  L.push(`  ${padD('business', 12)}${padL(biz, 8)}   HTTP 200 但业务拒绝 ← 多半是数据失效`);
+  L.push(`  ${padD('business', 12)}${padL(biz, 8)}   HTTP 200 但业务拒绝 ← 按 reason 定位`);
   L.push(`  ${padD('script', 12)}${padL(scr, 8)}   脚本 bug ← 结果作废`);
   L.push(`  ${padD('总计', 12)}${padL(total, 8)}`);
   L.push('');
 
   if (tech > 0) L.push('  ⚠ 存在 technical 错误 —— 这是性能结论的一部分，不要当噪音过滤掉');
   if (scr > 0) L.push('  ✗ 存在 script 错误 —— 本轮结果不可用，先修脚本');
-  if (biz > 0 && tech === 0) L.push('  ⚠ 只有 business 错误 —— 先查数据是否失效，不要当成性能问题上报');
-  if (tech > 0 || scr > 0 || biz > 0) L.push('');
+  if (biz > 0 && tech === 0) L.push('  ⚠ 只有 business 错误 —— 先按 reason 定位：数据失效？已知服务端缺陷（dat 竞态）？');
+  if (tech > 0 || scr > 0 || biz > 0) {
+    L.push('  原因细分：现场样本在 k6.log（每 VU 每种 reason 限流 3 条），');
+    L.push('  逐笔明细在 result.csv 的 reason 标签列（见 lib/errors.js）');
+    L.push('');
+  }
 
   // ── 耗时 ─────────────────────────────────────────────────
   L.push('── 耗时 (ms) ──────────────────────────────────────');

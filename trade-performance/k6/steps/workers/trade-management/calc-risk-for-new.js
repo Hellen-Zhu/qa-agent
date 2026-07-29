@@ -23,7 +23,7 @@ import { Rate } from 'k6/metrics';
 import { cfg } from '../../../lib/config.js';
 import { getDat, uploadName } from '../../../lib/create-trade-data.js';
 import { buildTradePayload } from './create-trade.js';
-import { recordOutcome, ERR } from '../../../lib/errors.js';
+import { recordOutcome, logFailure, techReason, ERR } from '../../../lib/errors.js';
 
 const URL = `${cfg.workersUrl}/trades/calculate-risk-for-new`;
 
@@ -70,7 +70,14 @@ export function calcRiskForNew(opts) {
   });
 
   const ok = res.status === 200;
-  recordOutcome(ok ? ERR.OK : ERR.TECHNICAL, tags, res);
+  if (ok) {
+    recordOutcome(ERR.OK, tags, res);
+  } else {
+    const reason = techReason(res);
+    recordOutcome(ERR.TECHNICAL, tags, res, reason);
+    // 软依赖失败不阻断旅程，但必须留现场 —— 静默的 503 最难事后追
+    logFailure(ERR.TECHNICAL, reason, `technical: HTTP ${res.status}${res.error ? ' ' + res.error : ''}`, tags);
+  }
   rRiskPreview.add(ok, tags);
 
   return {

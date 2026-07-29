@@ -14,7 +14,7 @@
 #   ./k6/run.sh p02-trade-create dev baseline
 #   ./k6/run.sh p02-trade-create dev baseline VUS=8 DURATION=300s
 #   ./k6/run.sh p02-trade-create dev arrival  RATE=4
-#   ./k6/run.sh p02-trade-create dev baseline REFDATA_FILE=data/refdata/refdata-pairs-single.csv
+#   ./k6/run.sh p02-trade-create dev baseline REFDATA_FILE=data/refdata/refdata-pairs-single.json
 #
 # ⚠ 覆盖项刻意不用 `-e KEY=value`：Windows 侧的 run.ps1 里 PowerShell 会把 `-e`
 #   当参数名前缀去匹配，报 "ambiguous parameter"。两边统一成裸 KEY=value，

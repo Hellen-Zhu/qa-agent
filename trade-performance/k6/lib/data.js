@@ -3,6 +3,15 @@
  *
  * 对应 JMeter 的两个 CSV Data Set + ${datDir}/${effectiveDatFile}。
  *
+ * ── 数据格式：JSON 为主，CSV 兼容 ──
+ * k6 侧主格式是 JSON（契约见 lib/rows.js：顶层 rows 数组、_ 开头键是注释、
+ * 值一律转字符串保持 CSV 语义）。按**文件扩展名**分发解析器，
+ * `.csv` 路径依然能读 —— 两个用途：
+ *   1. 手上已有真值 CSV 的机器可先 REFDATA_FILE=xxx.csv 顶住，
+ *      再用 scripts/data-sync.py --from-csv --write 迁进 JSON；
+ *   2. 快速复用 JMeter 侧/DevTools 导出的现成文件做对照实验。
+ * JMeter 侧读的 .csv 由 scripts/data-sync.py 从 JSON 生成 —— JSON 是唯一源。
+ *
  * ══ 三个必须理解的 k6 约束 ═══════════════════════════════════
  *
  * 1. open() 只能在 **init 上下文** 调用。
@@ -29,20 +38,27 @@
 
 import { SharedArray } from 'k6/data';
 import { parseCsv } from './csv.js';
+import { rowsFromJson } from './rows.js';
 import { cfg } from './config.js';
 
 // 相对 k6/lib/ → 上两级到 trade-performance/
 const ROOT = '../../';
 
-// ── CSV：走 SharedArray，全部 VU 共用一份 ────────────────────
+/** 按扩展名分发：.json 走 rows.js（主格式），其余按 CSV 解析（兼容） */
+function loadRows(relPath) {
+  const text = open(ROOT + relPath);
+  return relPath.endsWith('.json') ? rowsFromJson(text, relPath) : parseCsv(text);
+}
+
+// ── 行数据：走 SharedArray，全部 VU 共用一份 ─────────────────
 // open() 在 SharedArray 的回调里调用是官方推荐写法：回调只在 init 执行一次，
 // 结果存在 Go 侧，JS 侧按需取 —— 这才是"共享"的意思。
 export const refdataPairs = new SharedArray('refdata-pairs', () =>
-  parseCsv(open(ROOT + cfg.data.refdataFile))
+  loadRows(cfg.data.refdataFile)
 );
 
 export const createCases = new SharedArray('create-cases', () =>
-  parseCsv(open(ROOT + cfg.data.createDataFile))
+  loadRows(cfg.data.createDataFile)
 );
 
 // ── .dat：按 VU 复制，无法避免 ───────────────────────────────

@@ -1,11 +1,10 @@
-# k6 版 create-trade —— 与 JMeter 对照的 spike
+# k6 版 create-trade —— 主线工程
 
-**这是一个用来做决策的对照实现,不是替换。** 目标是拿证据回答一个问题:
+**这个工程起初是与 JMeter 对照的决策 spike；自 2026-07-29 起[测试计划](../../docs/performance/oreo-performance-test-plan.zh.md)已采纳 k6 为主线**（选型依据见计划 §1.1），JMeter 存量降为交叉验证与迁移源、冻结只修不增。
 
-> 剩下 28 个 API 用 JMeter 还是 k6?
-
-因此它**刻意与 JMeter 版保持结构对应**——四层划分、三维正交、同样的 preflight 守卫、
-同样的三类错误分离,**并且读同一份 `data/` 数据文件**。
+它**刻意与 JMeter 版保持结构对应**——四层划分、三维正交、同样的 preflight 守卫、
+同样的三类错误分离,**并且读同一份 `data/` 数据**(k6 读 JSON 源,
+JMeter 读由它生成的 CSV —— `scripts/data-sync.py` 负责生成与对账)。
 只有这样两边跑出来的数字才可比,对比才有意义。
 
 ---
@@ -19,7 +18,7 @@ winget install k6 --source winget      # Windows
 # Linux 见 https://grafana.com/docs/k6/latest/set-up/install-k6/
 
 # 2. 先跑脚本自检（不需要 k6）
-node k6/tests/csv.test.mjs
+node k6/tests/rows.test.mjs && node k6/tests/csv.test.mjs
 
 # 3. smoke
 ./k6/run.sh p02-trade-create dev smoke
@@ -31,8 +30,17 @@ node k6/tests/csv.test.mjs
 ./k6/run.sh p02-trade-create dev ladder
 
 # 6. 按到达率施压（开放模型 —— JMeter 默认做不到）
-./k6/run.sh p02-trade-create dev arrival -e RATE=2
+./k6/run.sh p02-trade-create dev arrival RATE=2
+
+# 7. 列表接口（S-09 扇出审计 / S-10 数据量伸缩的载体）
+./k6/run.sh p05-trades-list dev smoke
+./k6/run.sh p05-trades-list dev smoke BLOTTER_PAGE_SIZE=500
+
+# 8. E2E 前端链路（refdata 地址确认前先用 csv 降级，报告须标注偏差）
+./k6/run.sh s01-create-trade-e2e dev smoke REFDATA_MODE=csv
 ```
+
+（覆盖项一律裸 `KEY=value`，不加 `-e` —— 与 run.ps1 保持同一副命令行。）
 
 送指标进你们已有的 Prometheus:
 
@@ -226,7 +234,7 @@ JMeter 要做开放模型得装 `jpgc` 的 Arrivals Thread Group 插件。
 
 ## 待办
 
-- [ ] 填 `data/refdata/refdata-pairs.csv` 的 R001(值已知,见 `HANDBOOK.zh.md` 阶段 0)
+- [ ] 填 `data/refdata/refdata-pairs.json` 的 R001(值已知,见 `HANDBOOK.zh.md` 阶段 0;旧 CSV 里已有真值的话 `python scripts/data-sync.py --from-csv --write` 直接搬)
 - [ ] 把真实 `FX_TRF.dat` 放进 `data/dat/products/FX_TRF/`,跑 `./scripts/index-dat.py --write`
 - [ ] 跑通 `smoke`,用 `--http-debug=full` **逐字节比对**两边发出的 multipart
 - [ ] 两边各跑一次 `baseline`,**对比 P50/P95** —— 对不上说明有一方脚本有问题,先查清再往下走

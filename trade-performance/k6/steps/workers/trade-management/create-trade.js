@@ -59,7 +59,7 @@ export function buildTradePayload(refdata, caseRow) {
  * 校验入参是否真的取到了值。
  * 对应 groovy/select-refdata.groovy 的 csv 分支 + resolve-dat-file.groovy 的 ${ 检查。
  *
- * 静态数据模式下这一步不能省：CSV 路径写错或列名对不上时，字段会是
+ * 静态数据模式下这一步不能省：数据文件路径写错或字段名对不上时，字段会是
  * undefined / 空串 / 占位符，请求照发，服务端返回业务拒绝 ——
  * 报告里表现为"错误率升高"而不是"脚本错了"，是最难定位的一类失败。
  */
@@ -70,12 +70,12 @@ export function validateInputs(refdata, caseRow) {
 
   ['portfolioId', 'counterpartyFmId', 'counterpartyName'].forEach((k) => {
     const v = refdata[k];
-    if (!v || !String(v).trim()) problems.push(`refdata.${k} 未取到（检查 refdataFile 路径与表头）`);
+    if (!v || !String(v).trim()) problems.push(`refdata.${k} 未取到（检查 refdataFile 路径与字段名）`);
     else if (PLACEHOLDER.test(v)) problems.push(`refdata.${k}='${v}' 仍是占位值（见 data/refdata/README.md）`);
   });
 
   if (!caseRow.datFile || !String(caseRow.datFile).trim()) {
-    problems.push('caseRow.datFile 未取到（检查 createDataFile 路径与表头）');
+    problems.push('caseRow.datFile 未取到（检查 createDataFile 路径与字段名）');
   }
 
   return problems;
@@ -85,8 +85,8 @@ export function validateInputs(refdata, caseRow) {
  * 发一笔 create。**唯一的请求出口。**
  *
  * @param {Object}  opts
- * @param {Object}  opts.refdata   一行 refdata-pairs.csv
- * @param {Object}  opts.caseRow   一行 create-trade-data.csv
+ * @param {Object}  opts.refdata   一条 refdata-pairs.json（或兼容 CSV）数据
+ * @param {Object}  opts.caseRow   一条 create-trade-data.json（或兼容 CSV）数据
  * @param {string}  opts.runPhase  'setup' | 'main'
  * @param {string}  [opts.userId]  身份，默认 maker
  * @returns {{res, errClass, detail, tradeId, taskId, tags, tradeReference}}

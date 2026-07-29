@@ -23,9 +23,9 @@
   "timeouts": { "request": "60s" },
 
   "data": {
-    "_comment": "路径相对项目根，与 config/dev.properties 里的写法逐字相同，便于两套框架对照",
-    "refdataFile":    "data/refdata/refdata-pairs.csv",
-    "createDataFile": "data/create-trade/create-trade-data.csv",
+    "_comment": "路径相对项目根。JSON 为 k6 主格式（数据在 rows 键下，_ 开头的键是注释，见 k6/lib/rows.js）；JMeter 侧同名 .csv 由 scripts/data-sync.py 生成。.csv 路径也能读（兼容真值 CSV 尚未迁移的机器），迁移用 data-sync.py --from-csv --write",
+    "refdataFile":    "data/refdata/refdata-pairs.json",
+    "createDataFile": "data/create-trade/create-trade-data.json",
     "datDir":         "data/dat"
   },
 

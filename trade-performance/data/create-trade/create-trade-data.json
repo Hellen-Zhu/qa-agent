@@ -1,0 +1,18 @@
+{
+  "_comment": [
+    "create 用例池。JSON 是 k6 主格式；同名 .csv 由 scripts/data-sync.py 生成给 JMeter 侧。",
+    "datFile 相对 data/dat/；datSizeBytes 写 AUTO，由 scripts/index-dat.py --write 实测填入（体积是产品结构的结果，手写不了）。",
+    "按 A26 补齐代表产品（最便宜 / 最贵 / 最常见）后，每个 productType 一条以上。"
+  ],
+  "rows": [
+    {
+      "caseId": "C001",
+      "datFile": "products/FX_TRF/fx_trf_01.dat",
+      "productType": "FX_TRF",
+      "costTier": "TBC",
+      "fixings": "TBC",
+      "datSizeBytes": "AUTO",
+      "notionalCurrency": ""
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "_comment": "单行池：全部 VU 打同一个 portfolio，portfolio 级锁竞争对照实验用。用法：REFDATA_FILE=data/refdata/refdata-pairs-single.json",
+  "rows": [
+    {
+      "pairId": "R001",
+      "portfolioId": "TBC",
+      "counterpartyFmId": "TBC",
+      "counterpartyName": "TBC",
+      "note": "单行池：全部线程打同一个 portfolio，用于 portfolio 级锁竞争对照实验"
+    }
+  ]
+}

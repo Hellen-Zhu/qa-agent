@@ -1,11 +1,13 @@
-# 参考数据（静态 CSV 模式）
+# 参考数据（静态数据模式）
 
 `portfolio` / `counterparty` 的取数有两种模式，**同一套下游脚本共用**：
 
 | 模式 | 来源 | 谁在用 | 何时用 |
 |---|---|---|---|
-| `pool`（动态，默认） | setUp 里查 `GET /refdata/*` 建池 | `s01` E2E 场景 | refdata 查询本身是被测链路的一部分 |
-| `csv`（静态） | 本目录的 CSV | `p02` 单接口压测 | 只想测 create，refdata 是噪音 |
+| `pool` / `live`（动态，默认） | setUp 里查 `GET /refdata/*` 建池 | `s01` E2E 场景 | refdata 查询本身是被测链路的一部分 |
+| `csv`（静态） | 本目录的数据文件（**JSON 为源**，CSV 是生成物） | `p02` 单接口压测 | 只想测 create，refdata 是噪音 |
+
+> 模式名沿用历史叫 `csv`，指"静态供数"；k6 侧实际读 `.json`（k6 场景里对应 `REFDATA_MODE=csv`）。
 
 模式由**计划级 UDV `refdataSource`** 决定，不是全局属性——因为同一次跑批里
 E2E 和单接口计划可能并存，全局属性会互相污染。
@@ -41,12 +43,16 @@ A 台开户。服务端返回业务拒绝，报告里看到的是"错误率 12%"
 
 | 文件 | 用途 |
 |---|---|
-| `refdata-pairs.csv` | 默认池。roundRobin 轮换（线程 N 取第 `N % 行数` 行） |
-| `refdata-pairs-single.csv` | 单行池。全部线程打同一个 portfolio，测 portfolio 级锁竞争 |
+| `refdata-pairs.json` | **默认池（源，手改这个）**。roundRobin 轮换（迭代 N 取第 `N % 行数` 条） |
+| `refdata-pairs-single.json` | 单行池（源）。全部 VU 打同一个 portfolio，测 portfolio 级锁竞争 |
+| `refdata-pairs.csv` / `-single.csv` | **生成物，勿手改** —— `scripts/data-sync.py --write` 从 JSON 生成，供 JMeter 侧读 |
 
-切换用属性，不改脚本：
+切换用属性/覆盖项，不改脚本：
 
 ```bash
+# k6
+./k6/run.sh p02-trade-create dev baseline REFDATA_FILE=data/refdata/refdata-pairs-single.json
+# JMeter（读生成的 CSV）
 ./scripts/run.sh p02-trade-create dev load \
     -JrefdataFile=data/refdata/refdata-pairs-single.csv
 ```
@@ -61,7 +67,9 @@ A 台开户。服务端返回业务拒绝，报告里看到的是"错误率 12%"
 - 真实的 payload 字段名与嵌套结构（校准 `groovy/build-trade-payload.groovy`）
 - 真实的 header 集合（校准 `X-User-Id` 大小写、`X-Dyn-Run` 语义）
 
-重复 5 次、每次换不同的 counterparty，就得到 5 行。
+重复 5 次、每次换不同的 counterparty，就得到 5 条。**填进 `.json` 后跑
+`python3 scripts/data-sync.py --write` 生成 JMeter 侧 CSV**；真值若已在旧 CSV 里，
+`--from-csv --write` 反向搬进 JSON 一次即可。
 
 ⚠ `scripts/validate.py` 会因为 `TBC` 报错，这是刻意的：带着 TBC 能跑，
 但每一行都会被服务端拒绝，整轮数据白跑。
@@ -76,7 +84,11 @@ A 台开户。服务端返回业务拒绝，报告里看到的是"错误率 12%"
 
 采集时间与来源记在 `note` 列，事后才能回答"这批数据是什么时候的"。
 
-## CSV 格式注意
+## CSV 格式注意（仅关系 JMeter 侧的生成物）
+
+> k6 读 JSON，下面的引号与列错位问题类别在 JSON 里**不存在**——这是换 JSON 的
+> 直接理由之一。CSV 由 `scripts/data-sync.py` 生成，**不要手改**；
+> 以下注意事项只在排查 JMeter 侧问题时有用。
 
 **表头列名与 JMX 里的 `variableNames` 是两套东西**（`ignoreFirstLine=true`，运行时表头被忽略）。
 末列表头叫 `note`、JMX 里叫 `refdataNote`：前者让 `scripts/validate.py` 认出这是自由文本列

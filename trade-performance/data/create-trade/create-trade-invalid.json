@@ -1,0 +1,12 @@
+{
+  "_comment": [
+    "非法 .dat 用例池：验证 INTEG-04（解析失败不得留下部分创建的 trade）与 SEC-05（显式拒绝）。",
+    "用法：CREATE_DATA_FILE=data/create-trade/create-trade-invalid.json（预期全部业务拒绝，errClass=business）。"
+  ],
+  "rows": [
+    { "caseId": "X001", "datFile": "invalid/corrupt.dat",      "productType": "INVALID", "costTier": "n/a", "fixings": "0", "datSizeBytes": "AUTO", "notionalCurrency": "" },
+    { "caseId": "X002", "datFile": "invalid/truncated.dat",    "productType": "INVALID", "costTier": "n/a", "fixings": "0", "datSizeBytes": "AUTO", "notionalCurrency": "" },
+    { "caseId": "X003", "datFile": "invalid/empty.dat",        "productType": "INVALID", "costTier": "n/a", "fixings": "0", "datSizeBytes": "AUTO", "notionalCurrency": "" },
+    { "caseId": "X004", "datFile": "invalid/wrong-format.dat", "productType": "INVALID", "costTier": "n/a", "fixings": "0", "datSizeBytes": "AUTO", "notionalCurrency": "" }
+  ]
+}

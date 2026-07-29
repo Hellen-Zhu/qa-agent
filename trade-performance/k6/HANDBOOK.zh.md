@@ -136,12 +136,13 @@ VS Code + 这两个扩展就够:
 ## 1.1 自检(不需要 k6,不需要网络)
 
 ```powershell
-node k6\tests\csv.test.mjs
+node k6\tests\rows.test.mjs     # JSON 数据解析(主格式)
+node k6\tests\csv.test.mjs      # CSV 兼容路径
 ```
 
-期望 `14 passed, 0 failed`。
+期望分别 `12 passed` / `14 passed, 0 failed`。
 
-这一步验证 CSV 解析器和你的数据文件表头对得上。**过不了就别往下走**——
+这一步验证数据文件解析器和你的数据文件字段名对得上。**过不了就别往下走**——
 后面所有失败都会被它污染。
 
 ## 1.2 填数据
@@ -150,12 +151,20 @@ node k6\tests\csv.test.mjs
 
 ### ① 参考数据
 
-编辑 `data\refdata\refdata-pairs.csv`,把 `TBC` 换成真值:
+编辑 `data\refdata\refdata-pairs.json`,把 `TBC` 换成真值:
 
-```csv
-pairId,portfolioId,counterpartyFmId,counterpartyName,note
-R001,ABS-HK-CFD-BDC,10052235,UNIVERSAL WEST,来自 2026-07-28 dev 实测 curl
+```json
+{
+  "pairId": "R001",
+  "portfolioId": "ABS-HK-CFD-BDC",
+  "counterpartyFmId": "10052235",
+  "counterpartyName": "UNIVERSAL WEST",
+  "note": "来自 2026-07-28 dev 实测 curl"
+}
 ```
+
+> 真值如果已经填在旧的 CSV 里(本次改版之前采的),不用手抄:
+> `python scripts\data-sync.py --from-csv --write` 一次搬进 JSON。
 
 值从哪来:在 UI 上手工建一笔 trade → F12 DevTools → Network → 找到
 `trades/create` → 右键 **Copy as cURL** → payload 里就是这三个字段。
@@ -166,10 +175,11 @@ R001,ABS-HK-CFD-BDC,10052235,UNIVERSAL WEST,来自 2026-07-28 dev 实测 curl
 ### ② .dat 文件
 
 把真实 `.dat` 放进 `data\dat\products\FX_TRF\fx_trf_01.dat`,
-然后让脚本把实测字节数填进 CSV:
+然后让脚本把实测字节数填进数据文件,并同步 JMeter 侧 CSV:
 
 ```powershell
 python scripts\index-dat.py --write
+python scripts\data-sync.py --write
 ```
 
 ### ③ 校验
@@ -516,10 +526,10 @@ foreach ($r in 1,2,4,8) {
 
 ```powershell
 # D 类：全部 VU 打同一个 portfolio → 若 TPS 显著下降，存在 portfolio 级锁竞争
-.\k6\run.ps1 p02-trade-create dev baseline VUS=8 REFDATA_FILE=data/refdata/refdata-pairs-single.csv
+.\k6\run.ps1 p02-trade-create dev baseline VUS=8 REFDATA_FILE=data/refdata/refdata-pairs-single.json
 
 # 坏 .dat：期望失败，看的是"多快拒绝"（P95），不是错误率
-.\k6\run.ps1 p02-trade-create dev baseline CREATE_DATA_FILE=data/create-trade/create-trade-invalid.csv
+.\k6\run.ps1 p02-trade-create dev baseline CREATE_DATA_FILE=data/create-trade/create-trade-invalid.json
 ```
 
 **每次只改一个变量。** manifest 会记下改了什么,三个月后还能解释。

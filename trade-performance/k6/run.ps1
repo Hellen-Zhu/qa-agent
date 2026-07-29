@@ -15,7 +15,7 @@
     .\k6\run.ps1 p02-trade-create dev smoke
     .\k6\run.ps1 p02-trade-create dev baseline VUS=8 DURATION=300s
     .\k6\run.ps1 p02-trade-create dev arrival  RATE=4
-    .\k6\run.ps1 p02-trade-create dev baseline REFDATA_FILE=data/refdata/refdata-pairs-single.csv
+    .\k6\run.ps1 p02-trade-create dev baseline REFDATA_FILE=data/refdata/refdata-pairs-single.json
 
 .NOTES
     ⚠ 为什么覆盖项不用 `-e KEY=value`：

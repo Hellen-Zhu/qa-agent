@@ -18,8 +18,8 @@
 ./k6/run.sh p02-trade-create dev baseline CREATE_DATA_FILE=data/create-trade/create-trade-invalid.json
 ```
 
-> 兼容：`CREATE_DATA_FILE` 也接受 `.csv` 路径（`lib/data.js` 按扩展名分发解析器）——
-> 供真值还躺在旧 CSV 里的机器过渡，值搬进 JSON 后就删掉 CSV。
+> 数据只支持 `.json`。改版前旧 CSV 里已采过的真值请手工填进 JSON ——
+> 旧 CSV 没有归属三字段，列结构与新 schema 不兼容，没有直读路径。
 
 ## 归属字段为什么内嵌，而且必须同源
 

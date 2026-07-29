@@ -18,7 +18,7 @@ winget install k6 --source winget      # Windows
 # Linux 见 https://grafana.com/docs/k6/latest/set-up/install-k6/
 
 # 2. 先跑脚本自检（不需要 k6）
-node k6/tests/rows.test.mjs && node k6/tests/csv.test.mjs
+node k6/tests/rows.test.mjs
 
 # 3. smoke
 ./k6/run.sh p02-trade-create dev smoke
@@ -170,12 +170,12 @@ config 里的 `data/...` 也按这个根解析。
 
 | 层 | 怎么测 | 现状 |
 |---|---|---|
-| **纯逻辑**（rows.js / csv.js） | `node k6/tests/*.test.mjs` | ✅ 12 + 11 个用例 |
+| **纯逻辑**（rows.js） | `node k6/tests/rows.test.mjs` | ✅ 12 个用例 |
 | **判定逻辑**（errors.js） | 需 k6 运行时；可写一个喂假响应的 scenario | ⬜ 待补 |
 | **请求构造**（create-trade.js） | `k6 run --http-debug=full` 看实际发出的 multipart | ⬜ 手工 |
 | **端到端** | `./k6/run.sh p02-trade-create dev smoke` | ✅ |
 
-**纯逻辑要和 k6 API 隔离**（`lib/rows.js`、`lib/csv.js` 不 import 任何 `k6/*`），
+**纯逻辑要和 k6 API 隔离**（`lib/rows.js` 不 import 任何 `k6/*`），
 隔离开才能用 node 直接测。
 
 ---
@@ -184,8 +184,8 @@ config 里的 `data/...` 也按这个根解析。
 
 - [ ] 填 `data/create-trade/create-trade-data.json` 的真值——归属字段
       （portfolioId / counterpartyFmId / counterpartyName）内嵌在用例行里，
-      采集方式见 `data/create-trade/README.md`；真值还在旧 CSV 里的机器可先
-      `CREATE_DATA_FILE=<csv 路径>` 顶住
+      采集方式见 `data/create-trade/README.md`；旧 CSV 里的真值手工填进
+      JSON（旧列结构与新 schema 不兼容，已无直读路径）
 - [ ] 把真实 `FX_TRF.dat` 放进 `data/dat/products/FX_TRF/`，跑 `./scripts/index-dat.py` 对账
 - [ ] 跑通 `smoke`，用 `--http-debug=full` 核对发出的 multipart 与真实 curl 一致
 - [ ] p05 首次 smoke 人工核对返回行数 == 请求 size（分页参数名是推断值）

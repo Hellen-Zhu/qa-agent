@@ -3,7 +3,7 @@
  *
  * 跑法：node k6/tests/rows.test.mjs
  *
- * 与 csv.test.mjs 同理：lib/rows.js 不依赖任何 k6 模块，node 直接 import。
+ * lib/rows.js 不依赖任何 k6 模块，node 直接 import。
  * 最后几条用**真实数据文件**做冒烟 —— 解析器对，不代表文件本身对。
  */
 

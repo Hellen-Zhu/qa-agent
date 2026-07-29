@@ -444,7 +444,7 @@ S-17 Soak · S-08 联动              ← 长时与真实体验
 
 | 交付物 | 内容 | 位置 |
 |---|---|---|
-| **k6 工程（主线）** | 四层结构（scenarios / steps / profiles / lib）、三类错误分离、run.sh / run.ps1、静态自检（node 直跑 `tests/csv.test.mjs`，不需装 k6） | `qa/trade-performance/k6/` |
+| **k6 工程（主线）** | 四层结构（scenarios / steps / profiles / lib）、三类错误分离、run.sh / run.ps1、静态自检（node 直跑 `tests/rows.test.mjs`，不需装 k6） | `qa/trade-performance/k6/` |
 | JMeter 存量工程（已移除） | 迁移源，git 历史保留 | git 历史（2026-07-29 移除提交之前） |
 | 每轮 run manifest | git commit、工具版本、解析后的全部参数、epoch 时间窗（对齐 Grafana） | `results/<runId>/manifest.txt`（两套 runner 均已实现） |
 | 单轮报告 | 三类错误分离 + 成功样本单列分位数 + 样本量警告；`summary.txt`（`k6/lib/summary.js`） | `results/<runId>/` · 指标口径按 [KPI Definitions](kpi-definitions.zh.md) §6 |

@@ -452,7 +452,7 @@ A full performance round may be declared "passed" only when all of the following
 
 | Deliverable | Content | Location |
 |---|---|---|
-| **k6 harness (primary)** | Four-layer structure (scenarios / steps / profiles / lib), three-class error separation, run.sh / run.ps1, static self-check (`tests/csv.test.mjs` runs under plain node, no k6 needed) | `qa/trade-performance/k6/` |
+| **k6 harness (primary)** | Four-layer structure (scenarios / steps / profiles / lib), three-class error separation, run.sh / run.ps1, static self-check (`tests/rows.test.mjs` runs under plain node, no k6 needed) | `qa/trade-performance/k6/` |
 | JMeter legacy harness (removed) | Migration source, retained in git history | git history (before the 2026-07-29 removal commit) |
 | Per-run manifest | git commit, tool versions, all resolved parameters, epoch window (aligns with Grafana) | `results/<runId>/manifest.txt` (implemented in both runners) |
 | Round report | Three-class error separation + success-only percentiles + sample-size warnings; `summary.txt` (`k6/lib/summary.js`) | `results/<runId>/` · metric definitions per [KPI Definitions](kpi-definitions.en.md) §6 |

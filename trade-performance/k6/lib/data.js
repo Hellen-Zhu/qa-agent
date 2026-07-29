@@ -1,11 +1,11 @@
 /*
  * lib/data.js —— 数据装载
  *
- * ── 数据格式：JSON 为主，CSV 兼容 ──
- * 主格式是 JSON（契约见 lib/rows.js：顶层 rows 数组、_ 开头键是注释、
- * 值一律转字符串）。按**文件扩展名**分发解析器，`.csv` 路径依然能读 ——
- * 用途：手上已有真值 CSV 的机器（如压测机上遗留的旧数据、DevTools 导出）
- * 可先 CREATE_DATA_FILE=xxx.csv 顶住，再手工把值搬进 JSON。JSON 是唯一维护的源。
+ * ── 数据格式：仅 JSON ──
+ * 契约见 lib/rows.js：顶层 rows 数组、_ 开头键是注释、值一律转字符串。
+ * 曾有 .csv 兼容路径（lib/csv.js），2026-07-29 移除：归属字段内嵌进用例行后，
+ * 旧真值 CSV 的列结构与新 schema 不再兼容，"直读旧 CSV 过渡"这个场景已不存在 ——
+ * 旧 CSV 里的真值请手工填进 JSON。
  *
  * ══ 三个必须理解的 k6 约束 ═══════════════════════════════════
  *
@@ -32,17 +32,21 @@
  */
 
 import { SharedArray } from 'k6/data';
-import { parseCsv } from './csv.js';
 import { rowsFromJson } from './rows.js';
 import { cfg } from './config.js';
 
 // 相对 lib/ → 上一级到 k6/（数据路径都以 k6/ 为根）
 const ROOT = '../';
 
-/** 按扩展名分发：.json 走 rows.js（主格式），其余按 CSV 解析（兼容） */
 function loadRows(relPath) {
-  const text = open(ROOT + relPath);
-  return relPath.endsWith('.json') ? rowsFromJson(text, relPath) : parseCsv(text);
+  if (!relPath.endsWith('.json')) {
+    throw new Error(
+      `数据文件只支持 .json：${relPath}。` +
+      `.csv 兼容路径已于 2026-07-29 移除（旧 CSV 列结构与内嵌归属字段的新 schema 不兼容），` +
+      `请把值填进 JSON（契约见 lib/rows.js，采集方式见 data/create-trade/README.md）`
+    );
+  }
+  return rowsFromJson(open(ROOT + relPath), relPath);
 }
 
 // ── 行数据：走 SharedArray，全部 VU 共用一份 ─────────────────

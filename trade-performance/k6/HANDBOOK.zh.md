@@ -139,11 +139,10 @@ VS Code + 这两个扩展就够:
 ## 1.1 自检(不需要 k6,不需要网络)
 
 ```powershell
-node k6\tests\rows.test.mjs     # JSON 数据解析(主格式)
-node k6\tests\csv.test.mjs      # CSV 兼容路径
+node k6\tests\rows.test.mjs     # JSON 数据解析
 ```
 
-期望分别 `12 passed` / `11 passed, 0 failed`。
+期望 `12 passed, 0 failed`。
 
 这一步验证数据文件解析器和你的数据文件字段名对得上。**过不了就别往下走**——
 后面所有失败都会被它污染。
@@ -170,9 +169,8 @@ node k6\tests\csv.test.mjs      # CSV 兼容路径
 }
 ```
 
-> 真值如果已经填在旧的 CSV 里(本次改版之前采的),可先用
-> `CREATE_DATA_FILE=<那个 csv 的路径>` 直接读着顶住(`.csv` 兼容可读),
-> 抽空把值搬进 JSON 后删掉 CSV。
+> 旧 CSV 里已采过的真值请手工填进 JSON —— 旧 CSV 没有归属三字段,
+> 列结构与新 schema 不兼容,没有直读路径。
 
 值从哪来:在 UI 上手工建一笔 trade → F12 DevTools → Network → 找到
 `trades/create` → 右键 **Copy as cURL** → payload 里就是那三个归属字段,
@@ -222,7 +220,7 @@ env=dev profile=smoke
 target=http://10.198.25.56:9089/api/v1/trades/create
 maker=maker@sc.com
 refdata rows=5  case rows=1
-✓ 检查 1/2：CSV 字段齐全，无占位值
+✓ 检查 1/2：数据字段齐全，无占位值
 ✓ 检查 2/2：refdata 业务可用 — pairId=R001 portfolio=ABS-HK-CFD-BDC → TRD-100234 / CHK-98C0DF19 (1843ms)
 ```
 
@@ -267,7 +265,7 @@ refdata rows=5  case rows=1
 | `scenarios\p02-*.js` | 组装:setup + 循环体 + 摘要 | 加新的可运行计划 |
 | `steps\...\create-trade.js` | **这个 API 的契约** | 后端改接口 |
 | `lib\errors.js` | 响应怎么判定、错误怎么分类 | 判定规则变了 |
-| `lib\data.js` | CSV / .dat 怎么装载、怎么取 | 取数策略变了 |
+| `lib\data.js` | 数据 / .dat 怎么装载、怎么取 | 取数策略变了 |
 | `lib\config.js` | 三维怎么合并 | 加新的可覆盖项 |
 
 **改 `steps\` 里的文件,所有引用它的计划同时生效。** 这是分层的全部收益。
@@ -442,10 +440,10 @@ k6 inspect k6\scenarios\p02-trade-create.js -e ENV=dev -e PROFILE=baseline
 ## 4.5 单测纯逻辑
 
 ```powershell
-node k6\tests\csv.test.mjs
+node k6\tests\rows.test.mjs
 ```
 
-**不依赖 k6 的逻辑要和 k6 API 隔离开**(`lib\csv.js` 不 import 任何 `k6/*`),
+**不依赖 k6 的逻辑要和 k6 API 隔离开**(`lib\rows.js` 不 import 任何 `k6/*`),
 隔离开就能这么测。这是当初选 k6 最大的工程理由——
 旧 JMeter 方案里的 groovy **唯一验证方式是跑一次真实压测**。
 
@@ -682,7 +680,6 @@ Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 
 # 自检（不需要 k6）
 node k6\tests\rows.test.mjs
-node k6\tests\csv.test.mjs
 python k6\scripts\index-dat.py
 
 # 跑

@@ -31,7 +31,6 @@
 *.md         text
 *.json       text
 
-# CSV：不强制行尾。
-# k6 侧 lib/csv.js 用 /\r?\n/ 切行，CRLF/LF 都认。
+# CSV（仅 api-registry.csv 与 k6 --out csv 的产物）：不强制行尾，
 # 强制 LF 反而会让 Windows 记事本打开时挤成一行。
 *.csv  text

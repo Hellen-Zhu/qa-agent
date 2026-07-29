@@ -23,7 +23,7 @@
   "timeouts": { "request": "60s" },
 
   "data": {
-    "_comment": "路径相对 k6/ 目录。主格式 JSON（见 lib/rows.js）；.csv 路径兼容可读",
+    "_comment": "路径相对 k6/ 目录。仅 JSON（见 lib/rows.js）",
     "createDataFile": "data/create-trade/create-trade-data.json",
     "datDir":         "data/dat"
   },

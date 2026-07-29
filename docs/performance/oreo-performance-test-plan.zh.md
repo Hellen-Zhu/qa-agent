@@ -19,13 +19,13 @@
 | [OREO NFR](oreo-nfr.zh.md) | 什么算通过 | 本页每个场景标注它验证哪些 NFR 编号 |
 | [KPI Definitions](kpi-definitions.zh.md) | 怎么量 | 本页每个场景标注该报哪些指标 |
 | [k6 工程 README](../../trade-performance/k6/README.zh.md) / [实操手册](../../trade-performance/k6/HANDBOOK.zh.md) | k6 怎么实现 | 本页场景落地为它的四层结构（scenarios / steps / profiles / lib） |
-| [Trade API 方案 v2](../trade-api-perf-test-plan-v2-jmeter.md) | JMeter 存量实现 + API 依赖矩阵 | 依赖矩阵（§2.2）仍是 RESIL 场景的依据；JMeter 工程按 §1.1 降为交叉验证 |
+| [Trade API 方案 v2](../trade-api-perf-test-plan-v2-jmeter.md) | JMeter 存量实现 + API 依赖矩阵 | 依赖矩阵（§2.2）仍是 RESIL 场景的依据；JMeter 工程已于 2026-07-29 从仓库移除（§1.1） |
 
 **工程在 `qa/trade-performance/`：`k6/` 为主线，`jmx/` 为存量交叉验证。**
 
-### 1.1 工具选型：k6 为主线，JMeter 存量作交叉验证
+### 1.1 工具选型：k6 为主线（JMeter 存量已移除）
 
-**结论**：场景库自本版起以 k6 为主线实现；已有 JMeter 资产冻结（只修不增），降为交叉验证与迁移源。
+**结论**：场景库自本版起以 k6 为主线实现。原 JMeter 资产已于 2026-07-29 从仓库移除（git 历史保留，作迁移参照）；p02 的双实现对照已完成其交叉验证使命（见 §3.1 S-01 首轮实测）。
 
 选型依据不是"哪个工具快"——p02 双实现读同一份数据源对照，量级一致（见 §3.2 首轮实测）——而是五点工程性差异：
 
@@ -39,16 +39,16 @@
 
 **如实记录 k6 的代价**：二进制 `.dat` 进不了 `SharedArray`，大文件高 VU 时每个 VU 复制一份（S-14 用最贵产品打并发前要预算压测机内存）；团队 k6 经验为零（缓解见 §8 风险 9）；CSV / 多环境参数化开箱不如 JMeter 顺手——但这份"不顺手"换来的正是显式作用域，见第 1 条。
 
-**JMeter 资产迁移清单**（按场景优先级排序，迁一个冻一个）：
+**JMeter 资产迁移清单**（按场景优先级排序；迁移源在 git 历史 —— 移除提交之前的 `jmx/` 与 `groovy/`）：
 
 | 顺序 | 迁什么 | 服务的场景 | 状态 |
 |---|---|---|:---:|
 | ① | `p05-trades-list` | S-09 · S-10 | ✅ 2026-07-29（分页参数名待真实响应核实） |
 | ② | `checker-task-pool` 逻辑进 `setup()` + `p03`/`p04` | S-15 · S-04 | ⬜ |
-| ③ | `s01-create-trade-e2e`（含 journey 与 5 个 step） | S-03 | ✅ 2026-07-29（refdata 地址确认前以 `REFDATA_MODE=csv` 跑） |
+| ③ | `s01-create-trade-e2e`（含 journey 与 5 个 step） | S-03 | ✅ 2026-07-29（refdata 地址确认前以 `REFDATA_MODE=static` 跑） |
 | ④ | `p06-trigger-event` | S-15 submit 侧 · S-05 | ⬜ |
 
-迁移完成前，对应场景可先用 JMeter 存量出数——但**两套工具的数字不混报**：计时定义有差（JMeter `elapsed` 含连接建立，k6 `http_req_duration` 不含），口径按 [KPI Definitions](kpi-definitions.zh.md) 标注工具来源。
+未迁移场景在 k6 侧落地前**没有可执行实现**（JMeter 工程已移除）。引用历史 JMeter 数字时标注工具来源——计时定义有差（JMeter `elapsed` 含连接建立，k6 `http_req_duration` 不含），口径按 [KPI Definitions](kpi-definitions.zh.md) 标注。
 
 ---
 
@@ -84,7 +84,7 @@ OREO 的测试对象按**用户入口**组织，而不是按 33 个 API 平铺�
 
 ### 3.1 场景总表
 
-**实现状态**：✅ 已实现 · 🟨 部分实现 · ⬜ 未实现。**k6 列是主线**；JMeter 列是存量资产，按 §1.1 清单迁移，迁移前可作交叉验证出数。
+**实现状态**：✅ 已实现 · 🟨 部分实现 · ⬜ 未实现。**k6 列是主线**；JMeter 列记录移除前的存量状态（迁移源在 git 历史，见 §1.1）。
 
 | ID | 场景 | 类型 | 优先级 | 验证的 NFR | k6 | JMeter |
 |---|---|---|:---:|---|:---:|:---:|
@@ -123,7 +123,7 @@ OREO 的测试对象按**用户入口**组织，而不是按 33 个 API 平铺�
 | **关键指标** | 单次耗时（按 productType）· **单次内存峰值** · 内存放大系数 · CPU 时间 · **耗时对成本驱动因子（定盘次数 / 文件体积）的函数形态** |
 | **通过标准** | PERF-07/08/09/10 达标；**耗时随成本驱动因子呈线性或次线性** |
 | **产出** | ① 各代表产品单笔耗时 → 查 [Workload Modeling](workload-modeling.zh.md) §4.7.4 表得出**并发目标**（S-14 的输入）<br>② **成本信封 A28**（各驱动因子上限）→ 新产品重测触发规则的基线 |
-| **实现** | 🟨 k6 主线：`k6/scenarios/p02-trade-create.js` + `smoke` / `baseline` profile；JMeter 对照：`jmx/api/p02-trade-create.jmx`。**数据池（`create-trade-data.json`）目前只有一个 productType（FX_TRF），需按 A26 补齐代表产品**；**内存指标缺采集手段** |
+| **实现** | 🟨 k6 主线：`k6/scenarios/p02-trade-create.js` + `smoke` / `baseline` profile；JMeter 对照实现已移除（git 历史）。**数据池（`create-trade-data.json`）目前只有一个 productType（FX_TRF），需按 A26 补齐代表产品**；**内存指标缺采集手段** |
 | **首轮实测** | **FX_TRF（2026-07 下旬，本地 dev，k6 n=1,045）：P50 287 / P95 298 / P99 312 ms**；JMeter 同数据源对照为同一量级（P50 257~319）。按 [Workload Modeling](workload-modeling.zh.md) §4.7.4 取值规则得**并发目标 k = 2**（升到 3 的边界在单笔均值 ≈ 3.4 s）。⚠ 本地环境数字只作量级参照与回归基线起点，不外推生产 |
 | **阻塞** | **OBS-02**（解析内存峰值不可观测；JVM heap 面板可在 1 并发下给粗结论）· **A24 Composer 产品目录未确认** · A26 代表产品 `.dat` 样本缺失（本地仅 FX_TRF 一份，真实样本不入库）。当前只能出 FX_TRF 的耗时结论 |
 
@@ -146,7 +146,7 @@ S-16 的退化配比来自这里认定的"最贵产品"。**它不出结果，�
 | **负载形态** | **单请求**，遍历返回行数：50 / 200 / 500 行 |
 | **关键指标** | UC gRPC 调用数 · risk-engine 调用数 · DB 查询数（各按返回行数） |
 | **通过标准** | **扇出 = O(1)**，即调用数不随返回行数增长 |
-| **实现** | 🟨 k6 主线已建（`k6/scenarios/p05-trades-list.js`，行数进 `oreo_trades_rows` 指标；⚠ 分页参数名沿用推断值，首次 smoke 须核对返回行数）；JMeter 对照：`jmx/api/p05-trades-list.jmx`（行数进 jtl 的 `tradesRowCount` 列）。**精确扇出计数仍缺，但粗测手段已有**（见下） |
+| **实现** | 🟨 k6 主线已建（`k6/scenarios/p05-trades-list.js`，行数进 `oreo_trades_rows` 指标；⚠ 分页参数名沿用推断值，首次 smoke 须核对返回行数）；JMeter 对照实现已移除（git 历史）。**精确扇出计数仍缺，但粗测手段已有**（见下） |
 | **阻塞** | **OBS-01**（精确扇出不可观测）——**已可降级绕过**：服务端 Prometheus 现成的 `rpc_client_duration_milliseconds_count` 按窗口取差值即得 gRPC 出站次数（见 [GRAFANA.zh.md](../../trade-performance/GRAFANA.zh.md) §5） |
 
 **这是全计划中信息密度最高的一个场景**，成本极低（3 次请求）而结论极重：
@@ -250,7 +250,7 @@ P(≥2 并发) 从 3% 跳到 12%，K 从 4 升到 5。**越慢的产品越容易
 | **拒绝比例** | 按 A8 = 5% 配置，**reject 路径必须覆盖** |
 | **关键指标** | 四个事务的分位数 · `checker_tasks` 队列深度趋势 · 审计记录数（S-18） |
 | **通过标准** | PERF-12/13/14/17 达标；SCALE-02 队列不单调增长 |
-| **实现** | ⬜ k6（承载方式已定，见下）；JMeter 存量已建任务池与审批 fragment（`jmx/fragments/setup/checker-task-pool.jmx`、`checker-flow/*`、`p03`/`p04`），作迁移源 |
+| **实现** | ⬜ k6（承载方式已定，见下）；原 JMeter 工程已建任务池与审批 fragment（`checker-task-pool.jmx`、`checker-flow/*`、`p03`/`p04`，git 历史），作迁移源 |
 | **阻塞** | 无技术阻塞，但**脚本设计是全套里最难的一处**，见下 |
 
 **maker → checker 的数据交接**是本计划中唯一的非平凡脚本问题。maker 侧产出 taskId，checker 侧消费——但 k6 的 VU 之间**没有可变共享状态**（`SharedArray` 只读，且只能在 init 阶段构建），两个 scenario 无法在运行中直接传值。三种做法：
@@ -261,7 +261,7 @@ P(≥2 并发) 从 3% 跳到 12%，K 从 4 升到 5。**越慢的产品越容易
 | B. 外部交接（Redis / 辅助服务） | maker 写入外部队列，checker 轮询取 | 贴近真实时序 | 需 xk6 扩展或自建服务，引入新故障面与噪音；行内环境多一项审批 |
 | C. 文件交接 | 经文件传递 taskId | — | **k6 做不到**：`open()` 仅 init 阶段可用，运行期不能读写文件 |
 
-**推荐 A**，理由与参考数据的处理一致：**把不可控的时序依赖挪到 setup 阶段，让测量阶段只剩单一变量。** 在 k6 里这几乎是唯一务实的选择——而这不是妥协：JMeter 侧同样的三选一我们也论证过 A 胜出（真实交错时序的价值，不足以换取"两侧速率互相影响导致结论无法归因"的代价）。JMeter 存量的 `checker-task-pool.jmx` 就是方案 A 的实现，迁移时逻辑照搬进 `setup()`。
+**推荐 A**，理由与参考数据的处理一致：**把不可控的时序依赖挪到 setup 阶段，让测量阶段只剩单一变量。** 在 k6 里这几乎是唯一务实的选择——而这不是妥协：JMeter 侧同样的三选一我们也论证过 A 胜出（真实交错时序的价值，不足以换取"两侧速率互相影响导致结论无法归因"的代价）。原 JMeter 工程的 `checker-task-pool.jmx`（git 历史）就是方案 A 的实现，迁移时逻辑照搬进 `setup()`。
 
 若确实需要验证实时交错（例如怀疑 submit 与 approve 在 DB 层互锁），用 **S-05 子场景②** 专门覆盖，而不是把 S-15 复杂化。
 
@@ -271,12 +271,12 @@ P(≥2 并发) 从 3% 跳到 12%，K 从 4 升到 5。**越慢的产品越容易
 
 | ID | 目标 | 负载形态 | 通过标准 | 备注 |
 |---|---|---|---|---|
-| **S-03** | Create Trade 完整前端链路 | 按 v2 §5.3 的调用序列 + think time | PERF-07, PERF-11, PERF-19 | k6 🟨（`s01-create-trade-e2e.js` + `journeys/j01`；refdata 地址确认前以 `REFDATA_MODE=csv` 跑，须标注偏差）；JMeter ✅（`jmx/scenarios/s01-create-trade-e2e.jmx`） |
+| **S-03** | Create Trade 完整前端链路 | 按 v2 §5.3 的调用序列 + think time | PERF-07, PERF-11, PERF-19 | k6 🟨（`s01-create-trade-e2e.js` + `journeys/j01`；refdata 地址确认前以 `REFDATA_MODE=static` 跑，须标注偏差） |
 | **S-11** | 下游降级隔离 | 分别令 UC / risk-engine / notification 降级 | RESIL-01/02/05/06，劣化 ≤ 10% | **需故障注入能力**；UC 优先（爆炸半径 9 个 API） |
 | **S-12** | DAT 解析对无关接口的挤占 | 后台 large 档并发解析 + 前台 refdata 只读 | RESIL-03，劣化 ≤ 20% | 验证"进程内 CPU 竞争"假设 |
 | **S-02** | Booking cutoff 峰值 | 4× 均值持续 1 小时 | PERF-07, PERF-19 | 收尾接 S-18 |
 | **S-13** | 批处理与在线并行 | trade-aging / sync-cashflows / refdata sync 与在线负载并行 | RESIL-04，劣化 ≤ 20% | 需确认 refdata sync 写入模式（upsert vs truncate-reload），二者失效模型完全不同 |
-| **S-04** | Checker 批量清队列 | `bulk-approve` 批次 1/5/20/50，3 批并发 | PERF-15/16；**单位耗时不随批次上升** | 突发形态，不用恒定到达率。JMeter 脚本已建（`p03` / `p04`），k6 随迁移清单第 ② 位 |
+| **S-04** | Checker 批量清队列 | `bulk-approve` 批次 1/5/20/50，3 批并发 | PERF-15/16；**单位耗时不随批次上升** | 突发形态，不用恒定到达率。原 JMeter 脚本（`p03` / `p04`，git 历史）为迁移源，k6 随迁移清单第 ② 位 |
 | **S-16** | 全容量混合负载 | [Workload Modeling](workload-modeling.zh.md) §6 全部设计容量同时施加 | **PERF-19**（所有阈值同时达标） | 唯一能暴露跨路径资源竞争的场景。k6 多 scenario 单文件承载（每路径独立到达率）——选它做主线的直接原因之一。**含两个 productType 配比子场景，见下** |
 | **S-07** | 月末 / 季末 roll | 3× 普通日，全天 | PERF-20，劣化 ≤ 20% | 事件配比偏向 roll / reassignment |
 | **S-17** | Soak — 长交易日 | 设计容量持续 4~8 小时 | AVAIL-01, MAINT-04；无内存/连接泄漏 | **优先级高于 Spike**：blotter 自动刷新恒定跑整天。⚠ 产生数据的路径必须按**到达率**打（见 §4"运行产生的数据"行） |
@@ -319,12 +319,12 @@ S-16 是唯一以 productType 作为**配比**（而非扫描维度）的场景�
 | **Composer 产品目录** | 全量 productType 清单 + 各自定盘次数 / schedule 形态 | 产品 owner 提供（A24） | ⬜ **阻塞 A26 代表产品选取** |
 | **迁移数据集统计** | 存量 book 的 productType 分布 | 架构 / DBA 出统计（A25） | ⬜ **阻塞 S-16a 配比** |
 | **Counterparty / Portfolio** | 每轮运行解析 | **setUp 阶段查询 + 真实建一笔验证 + 归档快照** | ✅ 已实现 |
-| **待审批任务池** | S-15 用，N ≈ 200 | `setup()` 预置提交（方案 A） | 🟨 JMeter fragment 已建（`checker-task-pool.jmx`）；k6 迁入 `setup()` 待做 |
+| **待审批任务池** | S-15 用，N ≈ 200 | `setup()` 预置提交（方案 A） | 🟨 逻辑已论证（原 `checker-task-pool.jmx`，git 历史）；k6 迁入 `setup()` 待做 |
 | **同一笔争用目标 trade** | S-05 用，每子场景 1 笔 | `setup()` 建立并记录 id | ⬜ |
 | **用户身份池** | maker × N、checker × M | `data/shared/accounts.csv` | ✅ 已实现（需真实账号） |
 | **运行产生的数据**（每轮的副产品） | 建单数 = VU × 时长 ÷ 单笔耗时。**API 越快造数越多**：0.3 s 时 1 VU × 300 s ≈ 1,000 笔真实 `PENDING APPROVAL` trade；4 VU 满打 4 小时 ≈ **19 万笔**，而按设计容量到达率（0.11 TPS）4 小时只有 ≈ 1,600 笔 | ① 与 DBA / 开发议定清理协议（批量拒绝 / 归档 / 专用标记）；② 产生数据的长时场景一律用 `arrival` 到达率形态，禁用 constant-vus 满打 | ⬜ **第一阶段项**；未清理会漂移 S-10 的数据档位 |
 
-**参考数据是唯一"测试无法控制"的一类**：counterparty / portfolio 由 sync batch job 从第三方同步。硬编码会过期，且失效表现是 **HTTP 200 + 业务全拒**——只看状态码的报告显示 0 错误率。处理方式见 [v2 方案](../trade-api-perf-test-plan-v2-jmeter.md) §4.4，两套工程均已实现（k6：`k6/setup/preflight.js`；JMeter：`jmx/fragments/setup/refdata-preflight.jmx`）。
+**参考数据是唯一"测试无法控制"的一类**：counterparty / portfolio 由 sync batch job 从第三方同步。硬编码会过期，且失效表现是 **HTTP 200 + 业务全拒**——只看状态码的报告显示 0 错误率。处理方式见 [v2 方案](../trade-api-perf-test-plan-v2-jmeter.md) §4.4，k6 已实现（`k6/setup/preflight.js`）。
 
 ---
 
@@ -383,7 +383,7 @@ S-17 Soak · S-08 联动              ← 长时与真实体验
 |---|---|---|
 | **第一阶段：解除阻塞** | 提出 OBS-02/05 观测需求 + Micrometer 直方图开启；建造数工厂；**与 DBA 议定压测建单清理协议**；申请审计只读权限与 Prometheus remote-write；确认前端轮询参数 A10~A12；索取 A26 代表产品 `.dat` 样本 | 无 —— **可立即开始，且不做这些后面全部受限** |
 | **第二阶段：优先级 1~2** | S-01（A26 扫描）· S-09（rpc_client 差值法，**可先行**）· S-18 · S-05 · S-10 · S-14 · S-15；并行执行 §1.1 迁移清单 ①~② | 第一阶段 |
-| **第三阶段：优先级 3~5** | S-03（JMeter 已有，k6 迁移第 ③ 位）· S-11 · S-12 · S-02 · S-13 · S-04 · S-16 | 故障注入能力 |
+| **第三阶段：优先级 3~5** | S-03（k6 已建 🟨，见 §3.1）· S-11 · S-12 · S-02 · S-13 · S-04 · S-16 | 故障注入能力 |
 | **第四阶段：优先级 6~8** | S-07 · S-17 · S-06 · S-08 | 独立压测环境 |
 
 **第一阶段不产出任何性能数字，但它决定后面三个阶段能否得出有效结论。** 跳过它直接跑场景，会得到一批无法归因的数字。
@@ -435,7 +435,7 @@ S-17 Soak · S-08 联动              ← 长时与真实体验
 | 6 | **SEC-01 身份模型待确认** | 若引入网关认证，压测接入点需改造 | 见 [NFR](oreo-nfr.zh.md) §6，需架构回答 |
 | 7 | 无独立压测环境 | 结论只能作趋势对比 | 阶段四前置 |
 | 8 | WebSocket 完全未覆盖 | create / trigger-event 的推送路径无结论 | 缺口登记，另行立项 |
-| 9 | **团队 k6 经验为零，迁移期双栈并存** | 脚本质量与进度风险；两套工具结论口径混用 | [k6 实操手册](../../trade-performance/k6/HANDBOOK.zh.md)按"从零到出数"写就；两套工程结构逐层对应，p02 双实现是参照答案；JMeter 资产**冻结只修不增**，按 §1.1 清单迁移；`tests/csv.test.mjs` 不装 k6 也能自检脚本逻辑 |
+| 9 | **团队 k6 经验为零** | 脚本质量与进度风险 | [k6 实操手册](../../trade-performance/k6/HANDBOOK.zh.md)按"从零到出数"写就；JMeter 资产已移除，迁移按 §1.1 清单从 git 历史取源；`tests/*.test.mjs` 不装 k6 也能自检脚本逻辑 |
 | 10 | **压测建单无清理协议** | 环境数据持续漂移，S-10 档位失真，最终影响所有 blotter 结论 | 第一阶段与 DBA / 开发议定；产生数据的场景一律用到达率形态（§6.3 门槛 5） |
 
 ---
@@ -445,12 +445,12 @@ S-17 Soak · S-08 联动              ← 长时与真实体验
 | 交付物 | 内容 | 位置 |
 |---|---|---|
 | **k6 工程（主线）** | 四层结构（scenarios / steps / profiles / lib）、三类错误分离、run.sh / run.ps1、静态自检（node 直跑 `tests/csv.test.mjs`，不需装 k6） | `qa/trade-performance/k6/` |
-| JMeter 存量工程 | 交叉验证与迁移源，冻结只修不增 | `qa/trade-performance/jmx/` + `scripts/` |
+| JMeter 存量工程（已移除） | 迁移源，git 历史保留 | git 历史（2026-07-29 移除提交之前） |
 | 每轮 run manifest | git commit、工具版本、解析后的全部参数、epoch 时间窗（对齐 Grafana） | `results/<runId>/manifest.txt`（两套 runner 均已实现） |
-| 单轮报告 | 三类错误分离 + 成功样本单列分位数 + 样本量警告；k6 侧 `summary.txt`（`k6/lib/summary.js`），JMeter 侧 `scripts/summarize.py` 读 jtl，**两侧输出逐行同构可对照** | `results/<runId>/` · 指标口径按 [KPI Definitions](kpi-definitions.zh.md) §6 |
-| SLA 判定 | k6 profile 内建 thresholds，退出码即结论（`load` 已含 technical=0、业务成功率 >99%）；**NFR 编号 ↔ threshold 映射表待补**；JMeter jtl 侧的 `assert-sla.py` 随迁移弃建 | `k6/profiles/*.json` 🟨 |
+| 单轮报告 | 三类错误分离 + 成功样本单列分位数 + 样本量警告；`summary.txt`（`k6/lib/summary.js`） | `results/<runId>/` · 指标口径按 [KPI Definitions](kpi-definitions.zh.md) §6 |
+| SLA 判定 | k6 profile 内建 thresholds，退出码即结论（`load` 已含 technical=0、业务成功率 >99%）；**NFR 编号 ↔ threshold 映射表待补** | `k6/profiles/*.json` 🟨 |
 | 审计核对脚本 | S-18 收尾核对（SQL 对账，工具无关） | ⬜ 未建 |
-| 操作与判读文档 | 单接口验收操作手册 · Grafana 判读与集成 · k6 原理与上手 | [`RUNBOOK-p02-create-trade.zh.md`](../../trade-performance/RUNBOOK-p02-create-trade.zh.md) · [`GRAFANA.zh.md`](../../trade-performance/GRAFANA.zh.md) · `k6/README.zh.md` / `k6/HANDBOOK.zh.md` |
+| 操作与判读文档 | Grafana 判读与集成 · k6 原理与上手（含从零到出数） | [`GRAFANA.zh.md`](../../trade-performance/GRAFANA.zh.md) · [`k6/README.zh.md`](../../trade-performance/k6/README.zh.md) / [`k6/HANDBOOK.zh.md`](../../trade-performance/k6/HANDBOOK.zh.md) |
 | 阶段总结 | 达标项 / 未达标项 / **未验证项** / 容量结论 / 架构建议 | Confluence |
 
 ---

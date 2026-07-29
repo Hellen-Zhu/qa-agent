@@ -25,7 +25,7 @@ function padL(s, w) {
 }
 
 /**
- * 与 scripts/summarize.py 的 fmt_ms 保持一致：超过 10 秒改用秒，
+ * 超过 10 秒改用秒显示：
  * 否则一个 60000 会把整行挤歪，而超时样本恰恰是最该看清的那一行。
  */
 function fmtMs(v) {
@@ -60,7 +60,7 @@ function pctHeader() {
   return ' '.repeat(PCT_INDENT) + PCT_COLS.map((c) => padL(c, 8)).join('');
 }
 
-/** 一行分位数，列顺序与 scripts/summarize.py 逐列对齐 */
+/** 一行分位数 */
 function pctRow(label, vals) {
   return (
     '    ' + padD(label, PCT_INDENT - 4) +
@@ -104,8 +104,6 @@ export function buildTextSummary(data, meta) {
   if (tech > 0 || scr > 0 || biz > 0) L.push('');
 
   // ── 耗时 ─────────────────────────────────────────────────
-  // 列顺序刻意与 scripts/summarize.py 完全一致 —— 跨框架对比时要逐行对照，
-  // 两边列不一样的话每次都得先在脑子里做一次映射，迟早看错行。
   L.push('── 耗时 (ms) ──────────────────────────────────────');
   if (succ && succ.count > 0) {
     L.push(pctHeader());
@@ -134,7 +132,7 @@ export function buildTextSummary(data, meta) {
   //   'oreo_success_duration{name:X}': ['max>=0']
   // 哨兵阈值恒真，存在的唯一意义是让该子指标出现在 summary 数据里
   // （k6 只为声明过阈值的 tag 组合生成子指标）。单接口场景没有这些声明，
-  // 本段自动不出现。对应 scripts/summarize.py 的按 label 分组。
+  // 本段自动不出现。
   const stepRows = Object.keys(data.metrics)
     .filter((k) => k.startsWith('oreo_success_duration{'))
     .map((k) => {

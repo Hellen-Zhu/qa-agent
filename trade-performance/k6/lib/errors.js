@@ -1,8 +1,6 @@
 /*
  * lib/errors.js —— 三类错误分离
  *
- * 对应 groovy/assert-create-response.groovy。逻辑逐条一致，两边结论才可比。
- *
  * ══ 为什么不能只看 HTTP 状态码 ═══════════════════════════════
  * 这个接口**业务失败时照样返回 HTTP 200**，业务状态在 body 的 code / status 里。
  * 只看状态码的报告会显示"错误率 0%"，而实际一条 trade 都没建成。
@@ -15,11 +13,10 @@
  * 混在一个"错误率"里的报告没法用：12% 错误率到底该找开发还是该修数据？
  * ═══════════════════════════════════════════════════════════
  *
- * ⚠ 标签基数（cardinality）—— k6 与 JMeter 的一个关键差异：
- *   JMeter 的 sample_variables 把业务字段写成 **jtl 的列**，多少种值都无所谓。
+ * ⚠ 标签基数（cardinality）：
  *   k6 的 tag 是 **指标的维度**，高基数标签会让内存和 Prometheus 存储爆炸。
  *
- *   → 可以打标签：runPhase / caseId / productType / pairId / errClass（各几个值）
+ *   → 可以打标签：runPhase / caseId / productType / errClass（各几个值）
  *   → **绝对不要**打标签：tradeId / taskId / tradeReference（每次请求都不同）
  *   需要逐笔明细时用 --out csv 或结构化日志，不要塞进 tag。
  */
@@ -48,7 +45,7 @@ export const ERR = {
 
 /**
  * 判定一次 create 响应属于哪一类。
- * 与 assert-create-response.groovy 的分支顺序完全一致。
+ * 分支顺序即判定优先级，不要调换。
  *
  * @param {Object} res  k6 的 Response
  * @param {Object} tags 低基数标签，会附加到所有指标上
@@ -145,9 +142,8 @@ export function recordOutcome(errClass, tags, res) {
  *
  * 与 classifyCreate 的差别：这些接口没有已确认的"业务拒绝"形态
  * （读接口拿不到 PENDING APPROVAL 这类业务状态可断言），
- * 所以只产出 technical / script / ok 三种结果 —— 对应 JMeter 侧
- * 这些 fragment 只挂 "http 200" 断言的现状。哪天确认了读接口的业务
- * 错误码形态，在 validate 回调里判并把这里升级成四类。
+ * 所以只产出 technical / script / ok 三种结果。哪天确认了读接口的
+ * 业务错误码形态，在 validate 回调里判并把这里升级成四类。
  *
  * @param {Object}   res      k6 Response
  * @param {Object}   tags     低基数标签

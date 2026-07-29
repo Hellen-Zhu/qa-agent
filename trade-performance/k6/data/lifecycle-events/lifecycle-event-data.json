@@ -1,0 +1,15 @@
+{
+  "_comment": "生命周期事件用例池 —— 供 p06-trigger-event（迁移清单 ④，尚未实现）。字段：eventType 事件类型；needsApproval 是否走四眼审批（true 的事件会产生 checker task）；partialPct 部分事件的百分比，非部分事件留空；notes 自由文本。",
+  "_format": "契约见 lib/rows.js：rows 数组，_ 开头的键是注释，值一律按字符串处理。",
+  "rows": [
+    { "eventCaseId": "E001", "eventType": "Cancellation",             "needsApproval": "true",  "partialPct": "",   "notes": "requires checker approval" },
+    { "eventCaseId": "E002", "eventType": "EarlyTermination",         "needsApproval": "false", "partialPct": "",   "notes": "rises with market volatility" },
+    { "eventCaseId": "E003", "eventType": "NovationRemaining",        "needsApproval": "false", "partialPct": "",   "notes": "" },
+    { "eventCaseId": "E004", "eventType": "PartialNovation",          "needsApproval": "false", "partialPct": "50", "notes": "partial - recomputes remaining notional" },
+    { "eventCaseId": "E005", "eventType": "PartialNovationRemaining", "needsApproval": "false", "partialPct": "",   "notes": "" },
+    { "eventCaseId": "E006", "eventType": "StepOutFull",              "needsApproval": "false", "partialPct": "",   "notes": "" },
+    { "eventCaseId": "E007", "eventType": "StepOutPartial",           "needsApproval": "false", "partialPct": "30", "notes": "partial" },
+    { "eventCaseId": "E008", "eventType": "PortfolioReassignment",    "needsApproval": "false", "partialPct": "",   "notes": "" },
+    { "eventCaseId": "E009", "eventType": "Allocation",               "needsApproval": "false", "partialPct": "",   "notes": "write amplification - split factor TBC" }
+  ]
+}

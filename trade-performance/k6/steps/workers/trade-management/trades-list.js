@@ -3,8 +3,6 @@
  *
  * 【层级】原子步骤 —— 一个 API 一个文件
  * 【API】  workers.trade-management.list  ·  GET /trades
- * 【对应】jmx/fragments/steps/workers/trade-management/trades-list.jmx
- *        + groovy/build-trades-query.groovy + trades-record-rowcount.groovy
  *
  * ══ 这是全系统请求量最大的路径 ═══════════════════════════════════
  * Trade Portal 单页含多个 blotter，每个是一次独立列表查询，且自动刷新：
@@ -16,11 +14,11 @@
  * ═══════════════════════════════════════════════════════════════
  *
  * ── blotter 列表与按 ref 定位共用本文件 ──
- * 同一个端点、同一份契约，差异只是查询参数（与 JMeter 侧 R2 规则一致）：
+ * 同一个端点、同一份契约，差异只是查询参数：
  *   opts.search 有值 → search 定位；无值 → blotter 整页（size/page）。
  *
- * ⚠ 参数名 size / page / search / status 是**推断值**（继承 JMeter 侧的
- *   同一假设，见 build-trades-query.groovy）。猜错的表现是服务端忽略
+ * ⚠ 参数名 size / page / search / status 是**推断值**（沿用最初脚本的
+ *   假设，未经服务端确认）。猜错的表现是服务端忽略
  *   未知参数、返回默认页 —— **会静默错**。所以：
  *   1) 首次 smoke 必须人工核对返回行数 == 请求 size；
  *   2) 本步骤在行数不符时记 oreo_trades_rows_mismatch 并告警。
@@ -39,7 +37,7 @@ const URL = `${cfg.workersUrl}/trades`;
 export const tRows = new Trend('oreo_trades_rows');
 export const cRowsMismatch = new Counter('oreo_trades_rows_mismatch');
 
-/** 查询串构造。对应 build-trades-query.groovy，分支逐条一致。 */
+/** 查询串构造：search 定位与 blotter 整页两个分支。 */
 export function buildTradesQuery(opts) {
   const parts = [];
   const search = (opts.search || '').trim();
@@ -54,7 +52,7 @@ export function buildTradesQuery(opts) {
 }
 
 /**
- * 从响应体提取返回行数。对应 trades-record-rowcount.groovy 的三种形态：
+ * 从响应体提取返回行数。兼容三种响应形态：
  *   data 直接是数组 / Spring Page 的 data.content / data.items
  * 都不匹配返回 -1（形态未知 ≠ 出错 —— 可能是没见过的分页包装）。
  */

@@ -3,10 +3,9 @@
  *
  * 【层级】journey —— 把 steps 组合成一条完整前端用户路径；
  *        自己不含 executor / thresholds（那是 scenarios 的职责）
- * 【对应】jmx/journeys/j01-create-trade.jmx
  * 【被谁引用】scenarios/s01-create-trade-e2e.js
  *
- * ── 用户路径（与 JMeter 侧逐步一致）──
+ * ── 用户路径 ──
  *   1. 打开 create-trade 页面 → 拉两个下拉框          [refdata × 2]
  *      ↓ think：用户选组合、选交易对手、挑 .dat 文件
  *   2. 风险预览（软依赖，失败不阻断）                  [calc-risk-for-new]
@@ -16,19 +15,20 @@
  *   4. 查看刚建好的这笔（踩 UC gRPC + risk-engine）    [detail + risk-metrics]
  *
  * ── refdataMode ──
- *   live  真拉下拉框（忠实路径）。refdata 地址未确认前会连接拒绝 ——
- *         那是显式失败，见 scenarios/s01 的 setup 提示。
- *   csv   跳过下拉框查询，refdata 从 CSV 取（等价 JMeter 的全局池降级）。
- *         **已知偏差**：不覆盖 refdata 查询路径，报告必须标注。
+ *   live    真拉下拉框（忠实路径）。refdata 地址未确认前会连接拒绝 ——
+ *           那是显式失败，见 scenarios/s01 的 setup 提示。
+ *   static  跳过下拉框查询，归属字段取用例行内嵌值
+ *           （portfolioId / counterpartyFmId / counterpartyName 就在 create-trade-data.json 里）。
+ *           **已知偏差**：不覆盖 refdata 查询路径，报告必须标注。
  *
- * live 模式两个列表都拉成功时才现场绑定；任一失败则降级回 CSV 行
- * （对应 JMeter 的 refdataBound=false → 从池里挑），并计 oreo_refdata_fallback ——
- * 这个计数非 0 说明"页面打开就失败"在真实用户那里也会发生，值得单独看。
+ * live 模式两个列表都拉成功时才现场绑定；任一失败则降级回用例内嵌值，
+ * 并计 oreo_refdata_fallback —— 这个计数非 0 说明"页面打开就失败"
+ * 在真实用户那里也会发生，值得单独看。
  */
 
 import { Counter } from 'k6/metrics';
 import { think } from '../lib/think.js';
-import { pickRefdata, pickCase } from '../lib/data.js';
+import { pickCase } from '../lib/data.js';
 import { portfoliosList } from '../steps/refdata/portfolios-list.js';
 import { counterpartiesList } from '../steps/refdata/counterparties-list.js';
 import { calcRiskForNew } from '../steps/workers/trade-management/calc-risk-for-new.js';
@@ -47,9 +47,9 @@ function pickRandom(list) {
  * 一次迭代 = 一个用户从打开页面到看完详情的完整动作。
  *
  * @param {Object} opts
- * @param {number} opts.i            全局迭代号（CSV 游标）
+ * @param {number} opts.i            全局迭代号（数据游标）
  * @param {string} opts.runPhase     'setup' | 'main'
- * @param {string} opts.refdataMode  'live' | 'csv'
+ * @param {string} opts.refdataMode  'live' | 'static'
  * @returns 与 createTrade 相同的结果对象（含 tradeId / errClass）
  */
 export function j01CreateTrade(opts) {
@@ -57,6 +57,7 @@ export function j01CreateTrade(opts) {
   const caseRow = pickCase(i);
 
   // ── 1. 打开页面：拉下拉框 ────────────────────────────────
+  // refdata 为 null 时下游步骤自动取用例内嵌归属字段（static 模式与降级共用这条路）
   let refdata = null;
   if (refdataMode === 'live') {
     const pf = portfoliosList({ runPhase });
@@ -69,19 +70,15 @@ export function j01CreateTrade(opts) {
       //   A 的 fmId 配 B 的 name，表现为"错误率 3%，无规律"（见步骤文件头注）
       const c = pickRandom(cp.list);
       refdata = {
-        pairId: 'LIVE',
         portfolioId: String(p.id || ''),
         counterpartyFmId: String(c.fmId || ''),
         counterpartyName: String(c.name || ''),
       };
       // 随机而非取模：E2E 要的是真实分布，不是可复现对照实验
-      // （后者是单接口测试的目标，由 CSV 轮询承担）
+      // （后者是单接口测试的目标，由用例池轮询承担）
     } else {
-      cRefdataFallback.add(1);
-      refdata = pickRefdata(i); // 降级：等价 JMeter refdataBound=false 走全局池
+      cRefdataFallback.add(1); // 降级：下游步骤取用例内嵌值
     }
-  } else {
-    refdata = pickRefdata(i);
   }
 
   think(2000, 3000); // 用户填表：选组合、选交易对手、挑文件
@@ -98,7 +95,7 @@ export function j01CreateTrade(opts) {
 
   // ── 4. 查看详情 ─────────────────────────────────────────
   // create 失败时整段跳过：不加这个守卫会发出 GET /trades/NOT_FOUND，
-  // 制造一批 404 把真正的 create 失败淹没掉（与 JMeter 的 IfController 一致）
+  // 制造一批 404 把真正的 create 失败淹没掉
   if (created.errClass === ERR.OK && created.tradeId !== 'NOT_FOUND') {
     tradeDetail({ tradeId: created.tradeId, runPhase });
     tradeRiskMetrics({ tradeId: created.tradeId, runPhase });

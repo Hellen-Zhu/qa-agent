@@ -6,22 +6,22 @@
 .DESCRIPTION
     .\k6\run.ps1 <plan> <env> <profile> [KEY=value ...]
 
-      plan     k6\scenarios\ 下的文件名（不含 .js）
-      env      k6\config\    下的文件名（不含 .json）
-      profile  k6\profiles\  下的文件名（不含 .json）
+      plan     scenarios\ 下的文件名（不含 .js）
+      env      config\    下的文件名（不含 .json）
+      profile  profiles\  下的文件名（不含 .json）
       KEY=value  覆盖项，直接写，**不要加 -e 前缀**（原因见下方 NOTES）
 
 .EXAMPLE
     .\k6\run.ps1 p02-trade-create dev smoke
     .\k6\run.ps1 p02-trade-create dev baseline VUS=8 DURATION=300s
     .\k6\run.ps1 p02-trade-create dev arrival  RATE=4
-    .\k6\run.ps1 p02-trade-create dev baseline REFDATA_FILE=data/refdata/refdata-pairs-single.json
+    .\k6\run.ps1 p02-trade-create dev baseline CREATE_DATA_FILE=data/create-trade/create-trade-invalid.json
 
 .NOTES
     ⚠ 为什么覆盖项不用 `-e KEY=value`：
       PowerShell 会把 `-e` 当成**参数名前缀**去匹配本脚本的参数。
       `-e` 唯一匹配到 -EnvName，于是 `-e VUS=8` 被绑成 **EnvName='VUS=8'**，
-      报出来的是 `ERROR: env 'VUS=8' not found (k6\config\VUS=8.json)` ——
+      报出来的是 `ERROR: env 'VUS=8' not found (config\VUS=8.json)` ——
       一条完全指向错误方向的信息（2026-07-28 用 pwsh 7.6 实测确认）。
       所以这里收裸的 KEY=value，由脚本自己补上 -e 交给 k6。
       run.sh 已同步成同一种写法 —— 两边命令行长得一样，笔记才通用。
@@ -59,23 +59,23 @@ try {
     $OutputEncoding = [System.Text.Encoding]::UTF8
 } catch { }
 
-$ProjectRoot = Split-Path -Parent $PSScriptRoot
-Set-Location $ProjectRoot
+$K6Root = $PSScriptRoot
+Set-Location $K6Root
 
 function Show-Usage {
     Write-Host "usage: .\k6\run.ps1 <plan> <env> <profile> [KEY=value ...]" -ForegroundColor Yellow
     Write-Host ""
-    Write-Host "plans:    $((Get-ChildItem 'k6\scenarios\*.js'  -ErrorAction SilentlyContinue | ForEach-Object BaseName) -join ' ')"
-    Write-Host "envs:     $((Get-ChildItem 'k6\config\*.json'   -ErrorAction SilentlyContinue | ForEach-Object BaseName) -join ' ')"
-    Write-Host "profiles: $((Get-ChildItem 'k6\profiles\*.json' -ErrorAction SilentlyContinue | ForEach-Object BaseName) -join ' ')"
+    Write-Host "plans:    $((Get-ChildItem 'scenarios\*.js'  -ErrorAction SilentlyContinue | ForEach-Object BaseName) -join ' ')"
+    Write-Host "envs:     $((Get-ChildItem 'config\*.json'   -ErrorAction SilentlyContinue | ForEach-Object BaseName) -join ' ')"
+    Write-Host "profiles: $((Get-ChildItem 'profiles\*.json' -ErrorAction SilentlyContinue | ForEach-Object BaseName) -join ' ')"
     exit 1
 }
 
 if (-not $Plan -or -not $TargetEnv -or -not $ProfileName) { Show-Usage }
 
-$PlanFile    = "k6\scenarios\$Plan.js"
-$EnvFile     = "k6\config\$TargetEnv.json"
-$ProfileFile = "k6\profiles\$ProfileName.json"
+$PlanFile    = "scenarios\$Plan.js"
+$EnvFile     = "config\$TargetEnv.json"
+$ProfileFile = "profiles\$ProfileName.json"
 
 if (-not (Test-Path $PlanFile))    { Write-Host "ERROR: plan '$Plan' not found ($PlanFile)" -ForegroundColor Red; Show-Usage }
 if (-not (Test-Path $EnvFile))     { Write-Host "ERROR: env '$TargetEnv' not found ($EnvFile)" -ForegroundColor Red; Show-Usage }
@@ -108,7 +108,7 @@ if (-not (Get-Command k6 -ErrorAction SilentlyContinue)) {
 # ── 运行标识 ─────────────────────────────────────────────────
 $Stamp  = Get-Date -Format 'yyyyMMdd-HHmmss'
 $RunId  = "${Plan}_${TargetEnv}_${ProfileName}_$Stamp"
-$RunDir = "k6\results\$RunId"
+$RunDir = "results\$RunId"
 New-Item -ItemType Directory -Path $RunDir -Force | Out-Null
 
 # k6 内部路径一律用正斜杠：handleSummary 的输出键和 --out 都交给 Go 处理，
@@ -140,10 +140,10 @@ $null = $lines.Add("powershell:   $($PSVersionTable.PSVersion)")
 
 if (Get-Command git -ErrorAction SilentlyContinue) {
     $prev = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
-    git -C $ProjectRoot rev-parse --git-dir 2>&1 | Out-Null
+    git -C $K6Root rev-parse --git-dir 2>&1 | Out-Null
     if ($LASTEXITCODE -eq 0) {
-        $null = $lines.Add("scriptCommit: $(git -C $ProjectRoot rev-parse --short HEAD)")
-        $null = $lines.Add("scriptDirty:  $((git -C $ProjectRoot status --porcelain | Measure-Object -Line).Lines) file(s)")
+        $null = $lines.Add("scriptCommit: $(git -C $K6Root rev-parse --short HEAD)")
+        $null = $lines.Add("scriptDirty:  $((git -C $K6Root status --porcelain | Measure-Object -Line).Lines) file(s)")
     }
     $ErrorActionPreference = $prev
 }
@@ -219,7 +219,7 @@ if (Select-String -Path "$RunDir\k6.log" -Pattern 'PREFLIGHT FAILED' -Quiet -Err
     Write-Host "! PREFLIGHT FAILED -- 参考数据业务上不可用。" -ForegroundColor Red
     Select-String -Path "$RunDir\k6.log" -Pattern 'PREFLIGHT' |
         Select-Object -Last 5 | ForEach-Object { Write-Host "  $($_.Line)" }
-    Write-Host "  这份结果不可作为性能结论。先修数据，见 data\refdata\README.md。" -ForegroundColor Red
+    Write-Host "  这份结果不可作为性能结论。先修数据，见 data\create-trade\README.md。" -ForegroundColor Red
 }
 
 exit $K6Rc

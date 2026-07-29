@@ -1,0 +1,13 @@
+{
+  "_comment": [
+    "非法 .dat 用例池：验证 INTEG-04（解析失败不得留下部分创建的 trade）与 SEC-05（显式拒绝）。",
+    "用法：CREATE_DATA_FILE=data/create-trade/create-trade-invalid.json（预期全部业务拒绝，errClass=business）。",
+    "⚠ 归属字段必须填**有效**真值 —— refdata 无效时服务端可能在解析 .dat 之前就拒绝，测到的就不是解析路径了。"
+  ],
+  "rows": [
+    { "caseId": "X001", "datFile": "invalid/corrupt.dat",      "productType": "INVALID", "notionalCurrency": "", "portfolioId": "TBC", "counterpartyFmId": "TBC", "counterpartyName": "TBC", "note": "正常文件字节随机翻转" },
+    { "caseId": "X002", "datFile": "invalid/truncated.dat",    "productType": "INVALID", "notionalCurrency": "", "portfolioId": "TBC", "counterpartyFmId": "TBC", "counterpartyName": "TBC", "note": "截断到 50%" },
+    { "caseId": "X003", "datFile": "invalid/empty.dat",        "productType": "INVALID", "notionalCurrency": "", "portfolioId": "TBC", "counterpartyFmId": "TBC", "counterpartyName": "TBC", "note": "0 字节" },
+    { "caseId": "X004", "datFile": "invalid/wrong-format.dat", "productType": "INVALID", "notionalCurrency": "", "portfolioId": "TBC", "counterpartyFmId": "TBC", "counterpartyName": "TBC", "note": "非 dat 格式文本" }
+  ]
+}

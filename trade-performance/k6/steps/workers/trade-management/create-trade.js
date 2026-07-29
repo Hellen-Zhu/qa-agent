@@ -3,27 +3,23 @@
  *
  * 【层级】原子步骤 —— 一个 API 一个文件
  * 【API】  workers.trade-management.create  ·  POST /trades/create
- * 【对应】jmx/fragments/steps/workers/trade-management/create-trade.jmx
  *
  * ══ 唯一真相来源 ═══════════════════════════════════════════════
  * create 的请求构造、响应判定、结果提取只在这里定义一次。
- * **setUp 的前置校验也调用本函数** —— 两个调用方共用同一份契约。
- *
- * 在 JMeter 里这需要 Test Fragment + Include Controller + 一条校验规则（R2）
- * 来保证没人复制第二份；在 k6 里这是 `import` 的天然属性，不需要额外机制。
+ * **setUp 的前置校验也调用本函数** —— 两个调用方共用同一份契约，
+ * `import` 天然保证没有第二份。
  *
  * 调用方的差异**不在请求上**，只在于：
  *   - 传入的 runPhase 标签（setup / main）
  *   - 拿到返回值后各自套用什么策略（preflight 会中止测试，主循环只记录）
- * 这与 JMeter 里"策略挂在 Include 外层的 GenericController 上"是同一个设计。
  * ═══════════════════════════════════════════════════════════════
  *
- * ── multipart 要点（与 JMeter 侧同源，勿改）──
+ * ── multipart 要点（依据真实 curl 校准，勿改）──
  * 只要请求体里有 http.file()，k6 就自动按 multipart/form-data 编码，
  * 并**自己生成 boundary**。
  *
  * ⚠ 绝不能在 headers 里手写 Content-Type —— 手写值不带 boundary，
- *   且会覆盖生成值，服务端无法分段。这条约束 JMeter 和 k6 完全一样。
+ *   且会覆盖生成值，服务端无法分段。
  *
  * `trade` 是**普通表单字段**（真实 curl 用 -F 'trade={...}'，不是 -F 'trade=@file'），
  * 所以直接传字符串即可，不需要写临时文件。
@@ -38,7 +34,6 @@ const URL = `${cfg.workersUrl}/trades/create`;
 
 /**
  * 拼 multipart 里 `trade` 字段的值。
- * 对应 groovy/build-trade-payload.groovy。
  *
  * 用 JSON.stringify 而非字符串拼接：真实 counterparty 名字里有 `*`
  * （PRINTINGINT10LTD*HKG），还可能出现引号、反斜杠、非 ASCII。
@@ -57,7 +52,6 @@ export function buildTradePayload(refdata, caseRow) {
 
 /**
  * 校验入参是否真的取到了值。
- * 对应 groovy/select-refdata.groovy 的 csv 分支 + resolve-dat-file.groovy 的 ${ 检查。
  *
  * 静态数据模式下这一步不能省：数据文件路径写错或字段名对不上时，字段会是
  * undefined / 空串 / 占位符，请求照发，服务端返回业务拒绝 ——
@@ -65,17 +59,17 @@ export function buildTradePayload(refdata, caseRow) {
  */
 const PLACEHOLDER = /^\s*(tbc|todo|xxx+|n\/a|待定|placeholder)\s*$/i;
 
-export function validateInputs(refdata, caseRow) {
+export function validateInputs(caseRow) {
   const problems = [];
 
   ['portfolioId', 'counterpartyFmId', 'counterpartyName'].forEach((k) => {
-    const v = refdata[k];
-    if (!v || !String(v).trim()) problems.push(`refdata.${k} 未取到（检查 refdataFile 路径与字段名）`);
-    else if (PLACEHOLDER.test(v)) problems.push(`refdata.${k}='${v}' 仍是占位值（见 data/refdata/README.md）`);
+    const v = caseRow[k];
+    if (!v || !String(v).trim()) problems.push(`${k} 未取到（检查 createDataFile 路径与字段名）`);
+    else if (PLACEHOLDER.test(v)) problems.push(`${k}='${v}' 仍是占位值（见 data/create-trade/README.md）`);
   });
 
   if (!caseRow.datFile || !String(caseRow.datFile).trim()) {
-    problems.push('caseRow.datFile 未取到（检查 createDataFile 路径与字段名）');
+    problems.push('datFile 未取到（检查 createDataFile 路径与字段名）');
   }
 
   return problems;
@@ -85,23 +79,24 @@ export function validateInputs(refdata, caseRow) {
  * 发一笔 create。**唯一的请求出口。**
  *
  * @param {Object}  opts
- * @param {Object}  opts.refdata   一条 refdata-pairs.json（或兼容 CSV）数据
- * @param {Object}  opts.caseRow   一条 create-trade-data.json（或兼容 CSV）数据
- * @param {string}  opts.runPhase  'setup' | 'main'
- * @param {string}  [opts.userId]  身份，默认 maker
+ * @param {Object}  opts.caseRow    一条 create-trade-data.json 数据（含内嵌归属字段）
+ * @param {Object}  [opts.refdata]  覆盖归属字段（E2E live 模式现场绑定时传入）；
+ *                                  不传则取用例内嵌的 portfolioId / counterpartyFmId / counterpartyName
+ * @param {string}  opts.runPhase   'setup' | 'main'
+ * @param {string}  [opts.userId]   身份，默认 maker
  * @returns {{res, errClass, detail, tradeId, taskId, tags, tradeReference}}
  */
 export function createTrade(opts) {
-  const { refdata, caseRow, runPhase } = opts;
+  const { caseRow, runPhase } = opts;
+  const refdata = opts.refdata || caseRow;
   const userId = opts.userId || cfg.makerUserId;
 
   // ── 低基数标签：会成为指标的维度，用来切分结果 ──
   // ⚠ 不要往这里加 tradeId / tradeReference 之类每次都不同的值（见 lib/errors.js）
   const tags = {
-    name: 'workers_trademgmt_create',   // k6 用 name 标签聚合，等价于 JMeter 的采样器名
+    name: 'workers_trademgmt_create',   // k6 按 name 标签聚合各步骤的指标
     runPhase: runPhase,
     caseId: caseRow.caseId || 'PREFLIGHT',
-    pairId: refdata.pairId || 'NA',
     productType: caseRow.productType || 'NA',
   };
 

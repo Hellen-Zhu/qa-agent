@@ -1,0 +1,155 @@
+# .dat 文件池
+
+**这是本接口唯一的成本变量。** `POST /trades/create` 的 payload 只有 4 个归属字段
+（portfolio / counterparty / name / currency），交易的**产品类型、名义金额、期限、复杂度
+全部由 .dat 决定**——所以变异维度在这个目录，不在数据文件。
+
+## 目录：按 productType 分，不按体积分
+
+```
+products/            真实样本，一个 productType 一个子目录
+  FX_TRF/
+  <每新增一个产品类型加一个目录>
+synthetic/           人造文件，用于健壮性验证而非成本画像
+invalid/             人造坏文件，用于 fail-fast 验证
+```
+
+### 为什么不是 small / medium / large
+
+早期版本用体积分档，那个结构隐含一个错误前提：**体积是可以自由选择的自变量**。
+
+它不是。**体积是产品结构的结果**——一笔 TARF 文件大，是因为它有 24 个定盘。
+现实中不存在"TARF × small"这种组合。
+
+当时的 CSV 就长成了这样：
+
+```csv
+C001,small/fx_trf_01.dat,FX_TRF,cheap,TBC,small,
+C003,medium/fx_trf_01.dat,FX_TRF,typical,TBC,medium,
+C005,large/fx_trf_01.dat,FX_TRF,expensive,TBC,large,
+```
+
+同一个 `FX_TRF` 同时是 small / medium / large——**一组现实中不存在的用例**。
+按 productType 分目录之后，这种行写不出来了。
+
+现在目录按 productType 分，体积不再是数据字段——它是文件本身的属性，
+`ls -l` 就能看到，不需要在用例里声明一遍。
+
+## 要几个文件？—— 每个 productType 一个，不要复制重命名
+
+**把一个 .dat 复制几份改名买不到任何东西，而且会骗你：**
+
+1. **内容完全相同。** 服务端若按内容哈希缓存或去重，5 份副本的行为等同于 1 份——
+   你测到的是缓存命中，不是解析成本。这个偏差在报告里完全看不出来。
+2. **数据文件里 5 条看起来是 5 个用例，实际是 1 个。** 覆盖度的假象比没有覆盖更危险。
+3. **它想解决的"唯一性"问题不在文件名里，在文件内容里。** 若服务端要求 .dat 内某个
+   交易引用号唯一，改文件名一点用都没有。
+
+所以：**每个 productType 一个真实文件就够**，前提是内容可以复用。
+要确认的是那个前提，不是文件数量——见下方三个待确认问题。
+
+### 需要几个 productType？至少三个
+
+按成本驱动因子取代表，不要枚举全部产品（[Workload Modeling §4.7.2](../../../../docs/performance/workload-modeling.zh.md)）：
+
+| 代表 | 选取依据 | 用途 |
+|---|---|---|
+| **最便宜** | 定盘 1 次、bullet、封闭解定价 | 成本下界 |
+| **最贵** | 定盘最多、schedule 最长、路径依赖定价 | **成本上界 —— 决定并发目标与内存上限** |
+| **最常见** | 迁移数据集里占比最高的类型 | 常态验收 |
+
+**只有 1 个 productType 时，"P95 对定盘次数"这条曲线只有一个点，画不出斜率**——
+而斜率才是容量规划要的东西：新产品上线时要能回答"它会不会超出现有容量"。
+`index-dat.py` 覆盖度不足时会 WARN。
+
+## 三种供数模式，OREO 用哪个取决于三个问题
+
+| 模式 | 做法 | 适用 |
+|---|---|---|
+| **A 固定样本集** | 每 productType 一个真实文件，反复用 | 内容无唯一性约束 —— **多数情况** |
+| **B 模板化生成** | 运行时替换必须变的字段 | 有唯一性约束且 .dat 是文本格式 |
+| **C 预生成池** | 离线脚本预生成 M 份，测试时取用 | 有唯一性约束，或需要量级伸缩 |
+
+**从 A 起步；需要唯一性就走 C，不要走 B。**
+B 要在测量窗口内写临时文件——磁盘 I/O、文件句柄管理、tearDown 清目录，
+全部算进被测耗时。C 把这个成本挪到测前，效果相同而干净。
+
+### 待开发确认（决定 A 还是 C）
+
+1. **.dat 内容里有需要唯一的字段吗？**（交易引用号 / 外部 ID）
+   有 → 同一个文件重复上传会被拒，必须走 C。
+2. **.dat 里有日期吗？**（起息日 / 定盘日 / 到期日）
+   有 → 样本会**过期**，需要定期重采或在预生成时滚动日期。
+   这一条决定样本的保鲜期，不问清楚就会在某个周一突然全部业务失败。
+3. **服务端会按内容缓存或去重吗？**
+   会 → 反复上传同一文件测到的是缓存命中，容量结论偏乐观。
+
+三个都是"否" → 模式 A，现在这套结构就够了。
+任意一个是"是" → 需要一个离线生成脚本，届时放 `scripts/gen-dat.py`。
+
+## invalid/ —— 这四个是人造的，且必须人造
+
+| 文件 | 构造方式 | 期望 |
+|---|---|---|
+| `corrupt.dat` | 正常文件中间字节随机翻转 | 快速拒绝，不应超时 |
+| `truncated.dat` | 正常文件截断到 50% | 快速拒绝 |
+| `empty.dat` | 0 字节 | 快速拒绝，且不应抛未捕获异常 |
+| `wrong-format.dat` | 直接放一个 .txt / .png | 快速拒绝 |
+
+拿到一个真实样本后，四个都能生成：
+
+```bash
+cd data/dat
+S=products/FX_TRF/fx_trf_01.dat
+: > invalid/empty.dat
+head -c $(( $(stat -f%z $S) / 2 )) $S > invalid/truncated.dat
+echo "this is not a dat file" > invalid/wrong-format.dat
+python3 -c "
+import random
+b = bytearray(open('$S','rb').read())
+random.seed(42)                       # 固定种子 —— 坏文件也必须可复现
+for _ in range(len(b)//100): b[random.randrange(len(b))] ^= 0xFF
+open('invalid/corrupt.dat','wb').write(b)"
+```
+
+**为什么 invalid 算性能测试**：一个不能 fail-fast 的解析器，在生产里被批量坏文件
+打中时会把 CPU 全部吃掉，拖垮同进程内所有接口——**包括与它毫无业务关系的 refdata 查询**。
+
+跑法（**期望断言失败**，看的是 P95 耗时而不是错误率）：
+
+```bash
+./k6/run.sh p02-trade-create dev baseline \
+    CREATE_DATA_FILE=data/create-trade/create-trade-invalid.json
+```
+
+## synthetic/ —— 超大文件，是健壮性不是成本画像
+
+如果真实产品都产生不了很大的文件，那"超大文件"就是一个**人造场景**：
+它回答"有人传了个 50MB 上来会怎样"，**不能拿来做产品成本画像**。
+放在 `synthetic/` 而不是 `products/` 就是为了让这个区别在目录结构上可见。
+
+## 对账
+
+```bash
+./scripts/index-dat.py
+```
+
+它查两件事：数据引用的文件存在、磁盘上的文件都被引用。
+
+## 目前状态
+
+**空目录，需要业务/开发提供真实样本。** 最省事的采集方式见
+[`../create-trade/README.md` 怎么填](../create-trade/README.md)：在 UI 上手工建一笔 trade，
+DevTools 里 Copy as cURL，.dat 就在 request payload 里。
+
+还需要确认：
+
+- **Composer 产品目录**（A24）：支持哪些 productType，各自定盘次数与 schedule 形态
+- **迁移数据集的产品分布统计**（A25）——这一条把配比从"猜"变成"统计"
+- 上面那三个供数模式问题
+
+## 不要提交大文件
+
+`products/` 下的样本可能有几十 MB。建议只提交能代表"最常见"的那一个，
+其余走对象存储或本地生成，在 `.gitignore` 里排除。
+加之前先确认真实文件体积（`ls -lh`）。

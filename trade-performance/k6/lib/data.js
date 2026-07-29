@@ -1,16 +1,11 @@
 /*
  * lib/data.js —— 数据装载
  *
- * 对应 JMeter 的两个 CSV Data Set + ${datDir}/${effectiveDatFile}。
- *
  * ── 数据格式：JSON 为主，CSV 兼容 ──
- * k6 侧主格式是 JSON（契约见 lib/rows.js：顶层 rows 数组、_ 开头键是注释、
- * 值一律转字符串保持 CSV 语义）。按**文件扩展名**分发解析器，
- * `.csv` 路径依然能读 —— 两个用途：
- *   1. 手上已有真值 CSV 的机器可先 REFDATA_FILE=xxx.csv 顶住，
- *      再用 scripts/data-sync.py --from-csv --write 迁进 JSON；
- *   2. 快速复用 JMeter 侧/DevTools 导出的现成文件做对照实验。
- * JMeter 侧读的 .csv 由 scripts/data-sync.py 从 JSON 生成 —— JSON 是唯一源。
+ * 主格式是 JSON（契约见 lib/rows.js：顶层 rows 数组、_ 开头键是注释、
+ * 值一律转字符串）。按**文件扩展名**分发解析器，`.csv` 路径依然能读 ——
+ * 用途：手上已有真值 CSV 的机器（如压测机上遗留的旧数据、DevTools 导出）
+ * 可先 CREATE_DATA_FILE=xxx.csv 顶住，再手工把值搬进 JSON。JSON 是唯一维护的源。
  *
  * ══ 三个必须理解的 k6 约束 ═══════════════════════════════════
  *
@@ -41,8 +36,8 @@ import { parseCsv } from './csv.js';
 import { rowsFromJson } from './rows.js';
 import { cfg } from './config.js';
 
-// 相对 k6/lib/ → 上两级到 trade-performance/
-const ROOT = '../../';
+// 相对 lib/ → 上一级到 k6/（数据路径都以 k6/ 为根）
+const ROOT = '../';
 
 /** 按扩展名分发：.json 走 rows.js（主格式），其余按 CSV 解析（兼容） */
 function loadRows(relPath) {
@@ -53,16 +48,14 @@ function loadRows(relPath) {
 // ── 行数据：走 SharedArray，全部 VU 共用一份 ─────────────────
 // open() 在 SharedArray 的回调里调用是官方推荐写法：回调只在 init 执行一次，
 // 结果存在 Go 侧，JS 侧按需取 —— 这才是"共享"的意思。
-export const refdataPairs = new SharedArray('refdata-pairs', () =>
-  loadRows(cfg.data.refdataFile)
-);
-
+// 一条 = 一个完整用例：.dat 引用 + 内嵌归属字段（portfolioId /
+// counterpartyFmId / counterpartyName），不再有独立的 refdata 池。
 export const createCases = new SharedArray('create-cases', () =>
   loadRows(cfg.data.createDataFile)
 );
 
 // ── .dat：按 VU 复制，无法避免 ───────────────────────────────
-// 只加载 CSV 里真正引用到的文件，不扫整个目录 —— 目录里可能躺着
+// 只加载数据文件里真正引用到的文件，不扫整个目录 —— 目录里可能躺着
 // synthetic/ 和 invalid/ 的大文件，全读进来纯属浪费。
 const datBinaries = {};
 for (let i = 0; i < createCases.length; i++) {
@@ -76,8 +69,8 @@ export function getDat(relPath) {
   if (b === undefined) {
     // 只会在 CSV 与磁盘不一致时发生，且此时已过了 init —— 只能报错，不能补读
     throw new Error(
-      `.dat 未加载：${relPath}。init 阶段只加载 CSV 引用到的文件，` +
-      `请检查 ${cfg.data.createDataFile} 的 datFile 列与 data/dat/ 是否一致` +
+      `.dat 未加载：${relPath}。init 阶段只加载数据文件引用到的文件，` +
+      `请检查 ${cfg.data.createDataFile} 的 datFile 字段与 data/dat/ 是否一致` +
       `（跑 ./scripts/index-dat.py 对账）`
     );
   }
@@ -85,7 +78,7 @@ export function getDat(relPath) {
 }
 
 /*
- * 路径归一化：CSV 里的 datFile 列一律用 /，但在 Windows 上编辑过的 CSV
+ * 路径归一化：datFile 字段一律用 /，但在 Windows 上编辑过的数据文件
  * 可能混进反斜杠（\）。k6 的 open() 在 Windows 上两种都认，
  * 但 baseName 只按 / 切就会把整条路径当成文件名塞进 multipart 的 filename，
  * 发出去变成 `filename="products\FX_TRF\fx_trf_01.dat"` —— 服务端多半照单全收，
@@ -103,25 +96,13 @@ export function baseName(relPath) {
 }
 
 /*
- * ── 取数：模拟 JMeter 的 shareMode.all（全局游标）─────────────
+ * ── 取数：全局游标 roundRobin ────────────────────────────────
  *
- * iterationInTest 是**跨全部 VU 的全局单调计数器**，语义与 shareMode.all 一致。
- *
- * ⚠ 与 JMeter 相同的耦合陷阱依然存在：
- *   两个数组用同一个 i 取模，**行数相同时组合会被锁死**
- *   （N 行 × N 行只跑到 N 种，而不是 N²）。
- *   行数取互质即可打散。这条约束是数学的，跟工具无关。
- *
- * ✅ 与 JMeter 的一处**改进**：
- *   JMeter 的 setUp 线程会消耗掉 CSV 第一行，主循环从第二行开始。
- *   k6 的 setup() 不占用 scenario 迭代，**没有这个偏移**。
+ * iterationInTest 是**跨全部 VU 的全局单调计数器**：
+ * 全部 VU 按同一个游标轮换用例，覆盖均匀且可复现。
+ * setup() 不占用 scenario 迭代 —— 主循环从第一条数据开始，没有偏移。
  */
 export function pickCase(i) {
   if (createCases.length === 0) throw new Error(`${cfg.data.createDataFile} 没有数据行`);
   return createCases[i % createCases.length];
-}
-
-export function pickRefdata(i) {
-  if (refdataPairs.length === 0) throw new Error(`${cfg.data.refdataFile} 没有数据行`);
-  return refdataPairs[i % refdataPairs.length];
 }

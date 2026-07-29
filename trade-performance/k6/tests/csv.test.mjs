@@ -1,30 +1,20 @@
 /*
- * k6/tests/csv.test.mjs —— lib/csv.js 的单元测试
+ * tests/csv.test.mjs —— lib/csv.js 的单元测试
  *
- * 跑法（在项目根目录）：
- *   node k6/tests/csv.test.mjs
+ * 跑法：node k6/tests/csv.test.mjs
  *
- * ══ 为什么这个文件存在 ═══════════════════════════════════════
- * 这是换 k6 的核心理由之一的**实证**：脚本逻辑可以脱离压测独立验证。
- *
- * JMeter 侧的对应逻辑散落在 groovy/*.groovy 里，挂在 JSR223 元件上，
- * **唯一的验证方式是跑一次真实压测** —— 最贵的验证方式，而且
- * 一次跑批同时在验证网络、环境、数据、服务端和脚本，出错时分不清是谁的问题。
+ * lib/csv.js 是**兼容路径**：主格式是 JSON（见 rows.test.mjs），
+ * 但 CREATE_DATA_FILE=xxx.csv 依然能读 —— 供真值 CSV 尚未搬进 JSON 的机器过渡。
+ * 只要这条路径还在，解析逻辑就要有测试。
  *
  * 这里用 node 直接 import，因为 lib/csv.js **不依赖任何 k6 模块**。
  * 这不是巧合：解析、判定、拼装这类纯逻辑都应该和 k6 API 隔离开，
  * 隔离开就能测。用到 http / metrics 的部分（errors.js、create-trade.js）
  * 需要 k6 运行时，测法见 README.zh.md「怎么测脚本本身」。
- * ═══════════════════════════════════════════════════════════
  */
 
 import { parseCsv } from '../lib/csv.js';
-import fs from 'node:fs';
-import path from 'node:path';
-import url from 'node:url';
 import assert from 'node:assert';
-
-const ROOT = path.resolve(path.dirname(url.fileURLToPath(import.meta.url)), '../..');
 
 let pass = 0;
 let fail = 0;
@@ -52,7 +42,7 @@ t('末列为空（notionalCurrency 的真实形态）', () => {
   assert.strictEqual(parseCsv('a,b,c\n1,2,')[0].c, '');
 });
 
-t('引号包裹、内含逗号 ← JMeter 侧 quotedData=false 会在这里错位', () => {
+t('引号包裹、内含逗号 ← 不处理引号的解析器会在这里错位', () => {
   assert.strictEqual(parseCsv('id,name\nR1,"UNIVERSAL WEST, HK"')[0].name, 'UNIVERSAL WEST, HK');
 });
 
@@ -90,36 +80,6 @@ t('__line 指出真实行号（报错时要用）', () => {
   const r = parseCsv('a\n1\n2');
   assert.strictEqual(r[0].__line, 2);
   assert.strictEqual(r[1].__line, 3);
-});
-
-console.log('\n真实数据文件\n');
-
-t('data/refdata/refdata-pairs.csv', () => {
-  const r = parseCsv(fs.readFileSync(path.join(ROOT, 'data/refdata/refdata-pairs.csv'), 'utf8'));
-  assert.ok(r.length > 0, '没有数据行');
-  ['pairId', 'portfolioId', 'counterpartyFmId', 'counterpartyName'].forEach((k) =>
-    assert.ok(k in r[0], `缺列 ${k} —— 表头与 k6/steps/.../create-trade.js 的期望不一致`)
-  );
-});
-
-t('data/create-trade/create-trade-data.csv', () => {
-  const r = parseCsv(fs.readFileSync(path.join(ROOT, 'data/create-trade/create-trade-data.csv'), 'utf8'));
-  assert.ok(r.length > 0, '没有数据行');
-  ['caseId', 'datFile', 'productType', 'notionalCurrency'].forEach((k) =>
-    assert.ok(k in r[0], `缺列 ${k}`)
-  );
-});
-
-t('两份 CSV 行数互质（否则组合被锁死）', () => {
-  const a = parseCsv(fs.readFileSync(path.join(ROOT, 'data/refdata/refdata-pairs.csv'), 'utf8')).length;
-  const b = parseCsv(fs.readFileSync(path.join(ROOT, 'data/create-trade/create-trade-data.csv'), 'utf8')).length;
-  const gcd = (x, y) => (y === 0 ? x : gcd(y, x % y));
-  // 任一为 1 时不存在耦合问题
-  assert.ok(
-    a === 1 || b === 1 || gcd(a, b) === 1,
-    `refdata=${a} 行、case=${b} 行，最大公约数 ${gcd(a, b)} > 1 —— ` +
-      `组合会被锁死，只跑到 ${(a * b) / gcd(a, b)} 种而不是 ${a * b} 种`
-  );
 });
 
 console.log(`\n  ${pass} passed, ${fail} failed\n`);

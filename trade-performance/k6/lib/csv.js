@@ -7,11 +7,9 @@
  *   2. 引入一条无人审计的供应链
  * 我们的 CSV 只有"表头 + 逗号分隔 + 可能带引号"三种情况，30 行代码就够。
  *
- * ⚠ 与 JMeter 的一处**故意差异**：
- *   JMeter 的 CSV Data Set 设了 quotedData=false（不处理引号）。
- *   这里**处理引号**。原因见 data/refdata/README.md：真实 counterparty 名字
+ * ⚠ 这里**处理引号**（"a,b" 不会错位成两列）：真实 counterparty 名字
  *   里出现过 `*`，出现逗号只是时间问题，而那种失败表现为"某一行的字段整体错位"，
- *   排查成本极高。JMeter 侧应该同步把 quotedData 改成 true。
+ *   排查成本极高。见 data/refdata/README.md。
  */
 
 /** 拆一行，处理 "" 转义 */

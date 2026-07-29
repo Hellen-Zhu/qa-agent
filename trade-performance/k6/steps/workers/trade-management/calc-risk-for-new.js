@@ -3,7 +3,6 @@
  *
  * 【层级】原子步骤 —— 一个 API 一个文件
  * 【API】  workers.trade-management.calc-risk-for-new  ·  POST /trades/calculate-risk-for-new
- * 【对应】jmx/fragments/steps/workers/trade-management/calc-risk-for-new.jmx
  *
  * ── 建议性风控（软依赖，v2 §2.3）──
  * 前端在用户填完表单后调用它预览风险，**失败不阻断继续创建** ——
@@ -12,13 +11,11 @@
  * 资源画像偏乐观（NFR PERF-11 是它专属的阈值）。
  *
  * ── 判定口径 ──
- * 只判 HTTP 200（对应 JMeter 侧只挂 tag-risk-outcome、无业务断言的现状）：
- * 该接口的业务响应形态未确认，先不猜。非 200 记 technical ——
+ * 只判 HTTP 200：该接口的业务响应形态未确认，先不猜。非 200 记 technical ——
  * 默认**不屏蔽**软依赖失败：503 是意料之外的，必须在报告里刺眼地显示。
- * （softDependencyMasking 的降级实验模式暂未移植，做 S-11 时再加。）
+ * （softDependencyMasking 的降级实验模式暂未实现，做 S-11 时再加。）
  *
- * payload 与 create 完全同源（import 同一个 buildTradePayload）——
- * 对应 JMeter 侧两个 fragment 共用 build-trade-payload.groovy。
+ * payload 与 create 完全同源（import 同一个 buildTradePayload）。
  */
 
 import http from 'k6/http';
@@ -34,18 +31,19 @@ const URL = `${cfg.workersUrl}/trades/calculate-risk-for-new`;
 export const rRiskPreview = new Rate('oreo_risk_preview_ok');
 
 /**
- * @param {Object} opts  {refdata, caseRow, runPhase, userId}
+ * @param {Object} opts  {caseRow, refdata?, runPhase, userId}
+ *   refdata 不传则取用例内嵌归属字段（与 createTrade 同一约定）
  * @returns {{res, ok, errClass, riskFailCode, tags}}
  */
 export function calcRiskForNew(opts) {
-  const { refdata, caseRow, runPhase } = opts;
+  const { caseRow, runPhase } = opts;
+  const refdata = opts.refdata || caseRow;
   const userId = opts.userId || cfg.makerUserId;
 
   const tags = {
     name: 'workers_trademgmt_calcriskfornew',
     runPhase: runPhase,
     caseId: caseRow.caseId || 'NA',
-    pairId: refdata.pairId || 'NA',
     productType: caseRow.productType || 'NA',
   };
 

@@ -29,7 +29,7 @@
 
 | 标签 | 含义 | 谁执行 |
 |---|---|---|
-| **PT** | 性能测试可验证（[Test Plan](oreo-performance-test-plan.zh.md) 场景） | QA，k6 套件（存量 JMeter 作交叉验证，见计划 §1.1） |
+| **PT** | 性能测试可验证（[Test Plan](oreo-performance-test-plan.zh.md) 场景） | QA，k6 套件（见计划 §1.1） |
 | **FT** | 功能测试可验证 | QA，功能自动化 |
 | **AR** | 需架构评审确认（无法通过黑盒测试证明） | 架构 |
 | **OPS** | 需运维演练验证（故障注入、恢复演练） | 运维 + QA |

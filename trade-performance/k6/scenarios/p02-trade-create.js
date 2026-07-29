@@ -2,28 +2,24 @@
  * scenarios/p02-trade-create.js
  *
  * 【层级】可运行计划 —— 薄壳，自己不定义请求
- * 【对应】jmx/api/p02-trade-create.jmx
  * 【测什么】POST /trades/create 的纯服务端能力
  * 【怎么跑】./k6/run.sh p02-trade-create dev smoke
  *
- * ── 与 E2E 场景的关键差别（与 JMeter 侧一致）──
- * 1. **完全不查 refdata** —— portfolio / counterparty 由 CSV 直接供数。
+ * ── 与 E2E 场景的关键差别 ──
+ * 1. **完全不查 refdata** —— portfolio / counterparty 由静态数据直接供数。
  *    E2E 里 refdata 是被测链路的一部分；单接口测试里它是噪音。
  * 2. **不加 think time** —— 测的是"服务端一秒能处理多少"，不是用户体验。
  * 3. **不含 view-trade-details** —— 同理。
  *
- * ══ k6 相对 JMeter 的三个结构性简化 ═════════════════════════════
- * 1. 没有 Transaction Controller ⇒ **没有"事务行 + 采样行"双计数问题**。
- *    JMeter 里算 TPS 必须小心不要把两者相加；这里 http_reqs 就是请求数。
- * 2. setup() 不占用 scenario 迭代 ⇒ **preflight 不会消耗 CSV 第一行**，
- *    也不会混进主循环的耗时统计（它自带 runPhase=setup 标签，天然可分）。
- * 3. import 天然保证契约只有一份 ⇒ 不需要 validate.py 的 R2 规则去查重复。
- * ═══════════════════════════════════════════════════════════════
+ * ── 计数口径 ──
+ * http_reqs 就是请求数（没有"事务行 + 采样行"双计数）；
+ * setup() 不占用 scenario 迭代，preflight 不消耗数据第一行，
+ * 也不混进主循环的耗时统计（自带 runPhase=setup 标签，天然可分）。
  */
 
 import exec from 'k6/execution';
 import { cfg } from '../lib/config.js';
-import { pickCase, pickRefdata } from '../lib/data.js';
+import { pickCase } from '../lib/data.js';
 import { createTrade } from '../steps/workers/trade-management/create-trade.js';
 import { preflight } from '../setup/preflight.js';
 import { buildTextSummary } from '../lib/summary.js';
@@ -69,14 +65,13 @@ export function setup() {
 
 // ── 主循环：一次迭代 = 一笔 create ────────────────────────────
 export function createTradeIteration() {
-  // 全局单调计数器，语义等同 JMeter 的 shareMode.all（一个全局游标）
+  // 跨全部 VU 的全局单调计数器 —— 一个全局数据游标
   const i = exec.scenario.iterationInTest;
 
   createTrade({
-    refdata: pickRefdata(i),
-    caseRow: pickCase(i),
+    caseRow: pickCase(i),   // 归属字段内嵌在用例行里，refdata 不另传
     runPhase: 'main',
-    // 身份固定 maker，不轮换（NFR SEC-02 见 config/dev.properties）。
+    // 身份固定 maker，不轮换（NFR SEC-02 见 config/dev.json）。
     // 需要"分散 maker vs 集中同一 maker"的对照实验时，
     // 在这里按 exec.vu.idInTest 取不同账号即可 —— 但那是另一个实验。
   });

@@ -1,0 +1,19 @@
+{
+  "_comment": [
+    "create 用例池。契约见 lib/rows.js。一条 = 一个完整可跑用例：.dat + 归属字段（portfolio / counterparty）。",
+    "datFile 相对 data/dat/。portfolioId / counterpartyFmId / counterpartyName 必须来自同一份真实 curl（同源配对，理由与采集方式见本目录 README.md）。",
+    "按 A26 补齐代表产品（最便宜 / 最贵 / 最常见）后，每个 productType 一条以上。"
+  ],
+  "rows": [
+    {
+      "caseId": "C001",
+      "datFile": "products/FX_TRF/fx_trf_01.dat",
+      "productType": "FX_TRF",
+      "notionalCurrency": "",
+      "portfolioId": "TBC",
+      "counterpartyFmId": "TBC",
+      "counterpartyName": "TBC",
+      "note": "待真实 curl 采集，见 README.md"
+    }
+  ]
+}

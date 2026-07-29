@@ -1,11 +1,10 @@
 /*
- * k6/tests/rows.test.mjs —— lib/rows.js 的单元测试
+ * tests/rows.test.mjs —— lib/rows.js 的单元测试
  *
- * 跑法（在项目根目录）：
- *   node k6/tests/rows.test.mjs
+ * 跑法：node k6/tests/rows.test.mjs
  *
  * 与 csv.test.mjs 同理：lib/rows.js 不依赖任何 k6 模块，node 直接 import。
- * 最后两条用**真实数据文件**做冒烟 —— 解析器对，不代表文件本身对。
+ * 最后几条用**真实数据文件**做冒烟 —— 解析器对，不代表文件本身对。
  */
 
 import { rowsFromJson } from '../lib/rows.js';
@@ -14,7 +13,7 @@ import path from 'node:path';
 import url from 'node:url';
 import assert from 'node:assert';
 
-const ROOT = path.resolve(path.dirname(url.fileURLToPath(import.meta.url)), '../..');
+const ROOT = path.resolve(path.dirname(url.fileURLToPath(import.meta.url)), '..');
 
 let pass = 0;
 let fail = 0;
@@ -94,22 +93,22 @@ t('某条不是对象：报错含条号', () => {
 });
 
 // ── 真实文件冒烟 ──────────────────────────────────────────────
-t('真实文件：refdata-pairs.json 字段齐全', () => {
-  const text = fs.readFileSync(path.join(ROOT, 'data/refdata/refdata-pairs.json'), 'utf8');
-  const rows = rowsFromJson(text, 'refdata-pairs.json');
-  assert.ok(rows.length >= 1);
-  ['pairId', 'portfolioId', 'counterpartyFmId', 'counterpartyName'].forEach((k) =>
-    assert.ok(k in rows[0], `缺字段 ${k}`)
-  );
-});
+// 一条 = 一个完整用例：.dat 引用 + 内嵌归属字段，与
+// steps/.../create-trade.js 的 buildTradePayload / validateInputs 期望一致。
+const CASE_KEYS = ['caseId', 'datFile', 'productType', 'portfolioId', 'counterpartyFmId', 'counterpartyName'];
 
 t('真实文件：create-trade-data.json 字段齐全', () => {
   const text = fs.readFileSync(path.join(ROOT, 'data/create-trade/create-trade-data.json'), 'utf8');
   const rows = rowsFromJson(text, 'create-trade-data.json');
   assert.ok(rows.length >= 1);
-  ['caseId', 'datFile', 'productType'].forEach((k) =>
-    assert.ok(k in rows[0], `缺字段 ${k}`)
-  );
+  CASE_KEYS.forEach((k) => assert.ok(k in rows[0], `缺字段 ${k}`));
+});
+
+t('真实文件：create-trade-invalid.json 字段齐全', () => {
+  const text = fs.readFileSync(path.join(ROOT, 'data/create-trade/create-trade-invalid.json'), 'utf8');
+  const rows = rowsFromJson(text, 'create-trade-invalid.json');
+  assert.ok(rows.length >= 1);
+  CASE_KEYS.forEach((k) => assert.ok(k in rows[0], `缺字段 ${k}`));
 });
 
 console.log(`\n  ${pass} passed, ${fail} failed\n`);

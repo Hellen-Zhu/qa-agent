@@ -3,7 +3,6 @@
  *
  * 【层级】原子步骤 —— 一个 API 一个文件
  * 【API】  workers.trade-management.detail  ·  GET /trades/{id}
- * 【对应】jmx/fragments/steps/workers/trade-management/trade-detail.jmx
  *
  * ⚠ 本接口走 **UC gRPC**（依赖影响面第一：9 个接口共用）——
  *   E2E 把它放进 journey，正是为了覆盖 create 本身碰不到的这条下游。

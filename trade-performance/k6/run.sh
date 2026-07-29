@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 #
-# k6/run.sh —— 三维正交的唯一执行入口（对应 scripts/run.sh）
+# k6/run.sh —— 三维正交的唯一执行入口
 #
 #   ./k6/run.sh <plan> <env> <profile> [KEY=value ...]
 #
-#   plan     k6/scenarios/ 下的文件名（不含 .js）
-#   env      k6/config/ 下的文件名（不含 .json）
-#   profile  k6/profiles/ 下的文件名（不含 .json）
+#   plan     scenarios/ 下的文件名（不含 .js）
+#   env      config/ 下的文件名（不含 .json）
+#   profile  profiles/ 下的文件名（不含 .json）
 #   KEY=value  覆盖项，直接写，**不加 -e 前缀**
 #
 # 例：
@@ -14,7 +14,7 @@
 #   ./k6/run.sh p02-trade-create dev baseline
 #   ./k6/run.sh p02-trade-create dev baseline VUS=8 DURATION=300s
 #   ./k6/run.sh p02-trade-create dev arrival  RATE=4
-#   ./k6/run.sh p02-trade-create dev baseline REFDATA_FILE=data/refdata/refdata-pairs-single.json
+#   ./k6/run.sh p02-trade-create dev baseline CREATE_DATA_FILE=data/create-trade/create-trade-invalid.json
 #
 # ⚠ 覆盖项刻意不用 `-e KEY=value`：Windows 侧的 run.ps1 里 PowerShell 会把 `-e`
 #   当参数名前缀去匹配，报 "ambiguous parameter"。两边统一成裸 KEY=value，
@@ -24,22 +24,21 @@
 #   K6_PROMETHEUS_RW_SERVER_URL=http://<prom>:9090/api/v1/write \
 #   ./k6/run.sh p02-trade-create dev baseline
 #
-# ── 与 JMeter 版 run.sh 的差异 ──
-# k6 的 open() 按**脚本文件**解析相对路径，不按 cwd —— 所以不像 JMeter 那样
-# "不 cd 就静默 0 sample"。但仍然 cd 到项目根，是为了让 results/ 落在固定位置，
-# 且 manifest 里的 git 信息可取。
+# k6 的 open() 按**脚本文件**解析相对路径，不按 cwd —— 不 cd 也能跑。
+# 仍然 cd 到 k6/ 目录，是为了让 results/ 落在固定位置，
+# 且从任何 cwd 调用都是同一副行为。
 
 set -euo pipefail
 
-PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-cd "$PROJECT_ROOT"
+K6_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$K6_ROOT"
 
 usage() {
     echo "usage: $0 <plan> <env> <profile> [KEY=value ...]" >&2
     echo "" >&2
-    echo "plans:    $(ls k6/scenarios/*.js       2>/dev/null | xargs -n1 basename | sed 's/\.js//'   | tr '\n' ' ')" >&2
-    echo "envs:     $(ls k6/config/*.json        2>/dev/null | xargs -n1 basename | sed 's/\.json//' | tr '\n' ' ')" >&2
-    echo "profiles: $(ls k6/profiles/*.json      2>/dev/null | xargs -n1 basename | sed 's/\.json//' | tr '\n' ' ')" >&2
+    echo "plans:    $(ls scenarios/*.js       2>/dev/null | xargs -n1 basename | sed 's/\.js//'   | tr '\n' ' ')" >&2
+    echo "envs:     $(ls config/*.json        2>/dev/null | xargs -n1 basename | sed 's/\.json//' | tr '\n' ' ')" >&2
+    echo "profiles: $(ls profiles/*.json      2>/dev/null | xargs -n1 basename | sed 's/\.json//' | tr '\n' ' ')" >&2
     exit 1
 }
 
@@ -62,9 +61,9 @@ for o in "${RAW_OVERRIDES[@]+"${RAW_OVERRIDES[@]}"}"; do
     OVERRIDE_ARGS+=(-e "$o")
 done
 
-PLAN_FILE="k6/scenarios/$PLAN.js"
-ENV_FILE="k6/config/$ENV.json"
-PROFILE_FILE="k6/profiles/$PROFILE.json"
+PLAN_FILE="scenarios/$PLAN.js"
+ENV_FILE="config/$ENV.json"
+PROFILE_FILE="profiles/$PROFILE.json"
 
 [[ -f "$PLAN_FILE"    ]] || { echo "ERROR: plan '$PLAN' not found ($PLAN_FILE)" >&2; usage; }
 [[ -f "$ENV_FILE"     ]] || { echo "ERROR: env '$ENV' not found ($ENV_FILE)" >&2; usage; }
@@ -79,7 +78,7 @@ command -v k6 >/dev/null 2>&1 || {
 }
 
 RUN_ID="${PLAN}_${ENV}_${PROFILE}_$(date +%Y%m%d-%H%M%S)"
-RUN_DIR="k6/results/$RUN_ID"
+RUN_DIR="results/$RUN_ID"
 mkdir -p "$RUN_DIR"
 
 # ── run manifest ──
@@ -97,9 +96,9 @@ MANIFEST="$RUN_DIR/manifest.txt"
     echo "host:         $(hostname)"
     echo "user:         $(whoami)"
     echo "k6:           $(k6 version 2>&1 | head -1 || echo unknown)"
-    if git -C "$PROJECT_ROOT" rev-parse --git-dir >/dev/null 2>&1; then
-        echo "scriptCommit: $(git -C "$PROJECT_ROOT" rev-parse --short HEAD)"
-        echo "scriptDirty:  $(git -C "$PROJECT_ROOT" status --porcelain | wc -l | tr -d ' ') file(s)"
+    if git -C "$K6_ROOT" rev-parse --git-dir >/dev/null 2>&1; then
+        echo "scriptCommit: $(git -C "$K6_ROOT" rev-parse --short HEAD)"
+        echo "scriptDirty:  $(git -C "$K6_ROOT" status --porcelain | wc -l | tr -d ' ') file(s)"
     fi
     echo ""
     echo "--- $ENV_FILE ---";     cat "$ENV_FILE"
@@ -162,7 +161,7 @@ if grep -q 'PREFLIGHT FAILED' "$RUN_DIR/k6.log" 2>/dev/null; then
     echo ""
     echo "⚠ PREFLIGHT FAILED —— 参考数据业务上不可用。"
     grep 'PREFLIGHT' "$RUN_DIR/k6.log" | tail -5
-    echo "  这份结果不可作为性能结论。先修数据，见 data/refdata/README.md。"
+    echo "  这份结果不可作为性能结论。先修数据，见 data/create-trade/README.md。"
 fi
 
 exit $K6_RC

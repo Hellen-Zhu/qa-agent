@@ -1,8 +1,6 @@
 /*
  * lib/config.js —— 三维正交的合并点
  *
- * 与 JMeter 的 `-q config/x.properties -q profiles/y.properties -Jkey=val` 一一对应：
- *
  *   维度一 计划    scenarios/*.js          "测什么"
  *   维度二 环境    config/<ENV>.json       "打哪个环境"      -e ENV=dev
  *   维度三 负载    profiles/<PROFILE>.json "施加多大压力"    -e PROFILE=baseline
@@ -12,8 +10,7 @@
  *   模块顶层就是 init 上下文，所以这里没问题；但**不要**在 default 函数里 import 它之外的东西。
  *
  * ⚠ open() 的相对路径以**本文件所在目录**为基准（k6/lib/），不是当前工作目录。
- *   这与 JMeter 的 Include Controller 按 cwd 解析正好相反 —— 那个坑在 k6 里不存在，
- *   所以 run.sh 不需要 cd（但仍然 cd，理由见 run.sh）。
+ *   所以 run.sh 不需要为了路径而 cd（但仍然 cd，理由见 run.sh）。
  */
 
 const ENV_NAME = __ENV.ENV || 'dev';
@@ -37,7 +34,7 @@ function pickInt(envKey, fallback) {
 }
 
 // ── 服务寻址 ──────────────────────────────────────────────────
-// 刻意保持"每个服务各自寻址"的结构，与 config/*.properties 的 5 个 svc 一致。
+// 刻意保持"每个服务各自寻址"的结构（config/*.json 里 5 个 svc）。
 // 不设全局 host：忘记指定服务的请求会直接失败，而不是静默打到别的服务上。
 const svc = envCfg.services;
 
@@ -80,7 +77,7 @@ export const cfg = {
   baseUrl,
   workersUrl: baseUrl('workers'),
 
-  // 身份：固定 maker / checker，不轮换。理由见 config/dev.properties 与 NFR SEC-02。
+  // 身份：固定 maker / checker，不轮换。理由见 config/dev.json 与 NFR SEC-02。
   makerUserId: pick('MAKER_USER_ID', envCfg.identity.makerUserId),
   checkerUserId: pick('CHECKER_USER_ID', envCfg.identity.checkerUserId),
 
@@ -88,15 +85,13 @@ export const cfg = {
 
   requestTimeout: pick('REQUEST_TIMEOUT', envCfg.timeouts.request),
 
-  // 数据文件路径：与 config/*.properties 里的写法保持**逐字相同**，
-  // 便于两套框架对照（都是相对项目根的路径）。
+  // 数据文件路径：相对 k6/ 目录（run.sh 的 cwd，也是 lib/data.js 的 ROOT）。
   data: {
-    refdataFile: pick('REFDATA_FILE', envCfg.data.refdataFile),
     createDataFile: pick('CREATE_DATA_FILE', envCfg.data.createDataFile),
     datDir: envCfg.data.datDir,
   },
 
-  // abort | warn（prune 未实现，与 JMeter 侧保持一致）
+  // abort | warn（prune 未实现）
   preflightPolicy: pick('PREFLIGHT_POLICY', envCfg.preflightPolicy || 'warn'),
 
   scenario,

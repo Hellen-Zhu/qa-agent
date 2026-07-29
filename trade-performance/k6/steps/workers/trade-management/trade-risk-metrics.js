@@ -3,8 +3,6 @@
  *
  * 【层级】原子步骤 —— 一个 API 一个文件
  * 【API】  workers.trade-management.risk-metrics  ·  GET /trades/{id}/risk-metrics
- * 【对应】jmx/fragments/steps/workers/trade-management/trade-risk-metrics.jmx
- *        + groovy/tag-risk-outcome.groovy
  *
  * ── 软依赖（risk-engine gRPC）──
  * 失败**不中止**本次迭代，只记录 —— 这是该 API 的固有性质（前端行为：

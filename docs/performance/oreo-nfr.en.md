@@ -29,7 +29,7 @@ Writing a requirement down does not make it verifiable. Each requirement is tagg
 
 | Tag | Meaning | Who runs it |
 |---|---|---|
-| **PT** | Verifiable by performance test ([Test Plan](oreo-performance-test-plan.en.md) scenario) | QA, k6 suite (legacy JMeter as cross-validation, see plan §1.1) |
+| **PT** | Verifiable by performance test ([Test Plan](oreo-performance-test-plan.en.md) scenario) | QA, k6 suite (see plan §1.1) |
 | **FT** | Verifiable by functional test | QA, functional automation |
 | **AR** | Requires architecture review (cannot be proven black-box) | Architecture |
 | **OPS** | Requires an operational drill (fault injection, recovery exercise) | Operations + QA |

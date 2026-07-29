@@ -23,13 +23,12 @@
   "timeouts": { "request": "60s" },
 
   "data": {
-    "_comment": "路径相对项目根。JSON 为 k6 主格式（数据在 rows 键下，_ 开头的键是注释，见 k6/lib/rows.js）；JMeter 侧同名 .csv 由 scripts/data-sync.py 生成。.csv 路径也能读（兼容真值 CSV 尚未迁移的机器），迁移用 data-sync.py --from-csv --write",
-    "refdataFile":    "data/refdata/refdata-pairs.json",
+    "_comment": "路径相对 k6/ 目录。主格式 JSON（数据在 rows 键下，_ 开头的键是注释，见 lib/rows.js）；.csv 路径也能读（兼容真值 CSV 尚未迁移的机器，值搬进 JSON 后删掉 CSV）",
     "createDataFile": "data/create-trade/create-trade-data.json",
     "datDir":         "data/dat"
   },
 
-  "_preflight": "abort | warn（prune 未实现，与 JMeter 侧一致）。dev 数据波动大，默认 warn。",
+  "_preflight": "abort | warn（prune 未实现）。dev 数据波动大，默认 warn。",
   "preflightPolicy": "warn",
 
   "_dynRun": "来自真实 curl，语义待确认",

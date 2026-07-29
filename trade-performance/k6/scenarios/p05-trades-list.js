@@ -2,7 +2,6 @@
  * scenarios/p05-trades-list.js
  *
  * 【层级】可运行计划 —— 薄壳，自己不定义请求
- * 【对应】jmx/api/p05-trades-list.jmx
  * 【测什么】GET /trades —— 全系统请求量最大的接口（S-09 / S-10 的被测对象）
  * 【怎么跑】./k6/run.sh p05-trades-list dev smoke
  *          ./k6/run.sh p05-trades-list dev arrival RATE=4        # 稳态 4.13 TPS

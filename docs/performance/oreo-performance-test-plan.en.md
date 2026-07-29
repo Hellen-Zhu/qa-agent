@@ -19,13 +19,13 @@ Five documents cover performance, each owning one layer. **This page answers onl
 | [OREO NFR](oreo-nfr.en.md) | What counts as passing | Every scenario cites the NFR IDs it verifies |
 | [KPI Definitions](kpi-definitions.en.md) | How things are measured | Every scenario cites the metrics it must report |
 | [k6 harness README](../../trade-performance/k6/README.zh.md) / [hands-on handbook](../../trade-performance/k6/HANDBOOK.zh.md) | How the k6 is built | Scenarios are implemented in its four-layer structure (scenarios / steps / profiles / lib) |
-| [Trade API Plan v2](../trade-api-perf-test-plan-v2-jmeter.md) | JMeter legacy implementation + API dependency matrix | The dependency matrix (§2.2) still underpins the RESIL scenarios; the JMeter harness is demoted to cross-validation per §1.1 |
+| [Trade API Plan v2](../trade-api-perf-test-plan-v2-jmeter.md) | JMeter legacy implementation + API dependency matrix | The dependency matrix (§2.2) still underpins the RESIL scenarios; the JMeter harness was removed from the repo on 2026-07-29 (§1.1) |
 
 **The harness lives in `qa/trade-performance/`: `k6/` is the primary line, `jmx/` is legacy cross-validation.**
 
-### 1.1 Tool selection: k6 primary, JMeter legacy as cross-validation
+### 1.1 Tool selection: k6 primary (JMeter legacy removed)
 
-**Decision**: from this version on, the scenario library is implemented in k6 as the primary line; existing JMeter assets are frozen (fixes only, no additions) and demoted to cross-validation and migration sources.
+**Decision**: from this version on, the scenario library is implemented in k6 as the primary line. The JMeter assets were removed from the repo on 2026-07-29 (retained in git history as migration references); the dual p02 implementation has served its cross-validation purpose (see §3.1 S-01 first measurements).
 
 The basis is not "which tool is faster" — the two p02 implementations read the same data files and agree to within noise (see the first measurements in §3.2) — but five engineering differences:
 
@@ -39,16 +39,16 @@ The basis is not "which tool is faster" — the two p02 implementations read the
 
 **k6's costs, recorded honestly**: binary `.dat` cannot enter a `SharedArray`, so each VU holds its own copy (budget load-generator memory before running S-14 with the most expensive product at concurrency); the team has zero k6 experience (mitigation: §8 risk 9); CSV / multi-environment parameterisation is less convenient out of the box than JMeter — but that inconvenience buys exactly the explicit scoping of point 1.
 
-**JMeter asset migration list** (ordered by scenario priority; freeze each asset as it is migrated):
+**JMeter asset migration list** (ordered by scenario priority; migration sources live in git history — `jmx/` and `groovy/` before the removal commit):
 
 | Order | Asset | Scenarios served | Status |
 |---|---|---|:---:|
 | ① | `p05-trades-list` | S-09 · S-10 | ✅ 2026-07-29 (pagination param names still to verify against a real response) |
 | ② | `checker-task-pool` logic into `setup()` + `p03`/`p04` | S-15 · S-04 | ⬜ |
-| ③ | `s01-create-trade-e2e` (journey + 5 steps) | S-03 | ✅ 2026-07-29 (run with `REFDATA_MODE=csv` until the refdata address is confirmed) |
+| ③ | `s01-create-trade-e2e` (journey + 5 steps) | S-03 | ✅ 2026-07-29 (run with `REFDATA_MODE=static` until the refdata address is confirmed) |
 | ④ | `p06-trigger-event` | S-15 submit side · S-05 | ⬜ |
 
-Until migration completes, the affected scenarios may produce numbers from the JMeter legacy — but **the two tools' figures are never mixed in one report**: timing definitions differ (JMeter `elapsed` includes connection setup, k6 `http_req_duration` does not); label the tool per [KPI Definitions](kpi-definitions.en.md).
+Scenarios not yet migrated have **no runnable implementation** until they land in k6 (the JMeter harness is gone). When citing historical JMeter numbers, label the tool — timing definitions differ (JMeter `elapsed` includes connection setup, k6 `http_req_duration` does not); per [KPI Definitions](kpi-definitions.en.md).
 
 ---
 
@@ -84,7 +84,7 @@ OREO's test targets are organised by **user entry point** rather than as a flat 
 
 ### 3.1 Master table
 
-**Implementation**: ✅ implemented · 🟨 partial · ⬜ not implemented. **The k6 column is the primary line**; the JMeter column is legacy, migrating per the §1.1 list and usable for cross-validation until then.
+**Implementation**: ✅ implemented · 🟨 partial · ⬜ not implemented. **The k6 column is the primary line**; the JMeter column records the legacy state before removal (migration sources in git history, see §1.1).
 
 | ID | Scenario | Type | Priority | NFRs verified | k6 | JMeter |
 |---|---|---|:---:|---|:---:|:---:|
@@ -123,7 +123,7 @@ Notes: S-18 is a post-run reconciliation script (SQL), tool-independent, hence �
 | **Key metrics** | Duration per productType · **peak memory per parse** · memory amplification factor · CPU time · **shape of duration vs cost driver (fixing count / file size)** |
 | **Pass criteria** | PERF-07/08/09/10 met; **duration is linear or sub-linear in the cost drivers** |
 | **Outputs** | ① Per-representative duration → read the **concurrency target** from [Workload Modeling](workload-modeling.en.md) §4.7.4 (input to S-14)<br>② **Cost envelope A28** (ceiling per driver) → baseline for the new-product re-test trigger |
-| **Impl** | 🟨 k6 primary: `k6/scenarios/p02-trade-create.js` + `smoke` / `baseline` profiles; JMeter counterpart: `jmx/api/p02-trade-create.jmx`. **The data pool (`create-trade-data.json`) currently holds only one productType (FX_TRF) and must be extended to the A26 representatives**; **no collection mechanism for memory** |
+| **Impl** | 🟨 k6 primary: `k6/scenarios/p02-trade-create.js` + `smoke` / `baseline` profiles; JMeter counterpart removed (git history). **The data pool (`create-trade-data.json`) currently holds only one productType (FX_TRF) and must be extended to the A26 representatives**; **no collection mechanism for memory** |
 | **First measurements** | **FX_TRF (late 2026-07, local dev, k6 n=1,045): P50 287 / P95 298 / P99 312 ms**; the JMeter run on the same data files agrees to within noise (P50 257–319). Applying the [Workload Modeling](workload-modeling.en.md) §4.7.4 rule gives a **concurrency target k = 2** (the boundary to 3 sits at a mean per-request time of ≈ 3.4 s). ⚠ Local-environment figures serve only as an order-of-magnitude reference and a regression-baseline starting point — never extrapolated to production |
 | **Blocked by** | **OBS-02** (parse peak memory not observable; the JVM heap panel gives a coarse read at 1 concurrent) · **A24 Composer catalogue unconfirmed** · A26 representative `.dat` samples missing (only one FX_TRF sample exists locally; real samples are never committed). Currently only FX_TRF duration conclusions are possible |
 
@@ -148,7 +148,7 @@ most expensive. **Without its results, neither of the other two can be designed.
 | **Load shape** | **Single request**, sweeping returned rows: 50 / 200 / 500 |
 | **Key metrics** | UC gRPC call count · risk-engine call count · DB query count (each vs returned rows) |
 | **Pass criteria** | **Fan-out = O(1)** — call count does not grow with returned rows |
-| **Impl** | 🟨 k6 primary built (`k6/scenarios/p05-trades-list.js`, row count lands in the `oreo_trades_rows` metric; ⚠ pagination param names inherit the guessed values — the first smoke must verify returned rows); JMeter counterpart: `jmx/api/p05-trades-list.jmx` (row count in the jtl `tradesRowCount` column). **Precise fan-out counting is still missing, but a coarse method now exists** (see below) |
+| **Impl** | 🟨 k6 primary built (`k6/scenarios/p05-trades-list.js`, row count lands in the `oreo_trades_rows` metric; ⚠ pagination param names inherit the guessed values — the first smoke must verify returned rows); JMeter counterpart removed (git history). **Precise fan-out counting is still missing, but a coarse method now exists** (see below) |
 | **Blocked by** | **OBS-01** (precise fan-out not observable) — **now bypassable**: the server's Prometheus already exposes `rpc_client_duration_milliseconds_count`; the delta across a window gives the outbound gRPC call count (see [GRAFANA.zh.md](../../trade-performance/GRAFANA.zh.md) §5) |
 
 **This is the highest information density per unit of cost in the whole plan** — three requests, and a decisive conclusion:
@@ -254,7 +254,7 @@ congestion collapse remains possible at 0.013 TPS. That is the risk this scenari
 | **Rejection ratio** | Configured to A8 = 5%; **the reject path must be covered** |
 | **Key metrics** | Percentiles for all four transactions · `checker_tasks` queue-depth trend · audit record count (S-18) |
 | **Pass criteria** | PERF-12/13/14/17 met; SCALE-02 queue does not grow monotonically |
-| **Impl** | ⬜ k6 (the carrying pattern is settled, see below); JMeter legacy already has the task pool and approval fragments (`jmx/fragments/setup/checker-task-pool.jmx`, `checker-flow/*`, `p03`/`p04`) as migration sources |
+| **Impl** | ⬜ k6 (the carrying pattern is settled, see below); the former JMeter harness had built the task pool and approval fragments (`checker-task-pool.jmx`, `checker-flow/*`, `p03`/`p04` — git history) as migration sources |
 | **Blocked by** | No technical blocker, but **the hardest script design in the suite** — see below |
 
 **The maker → checker handoff** is the one non-trivial scripting problem in this plan. The maker side produces taskIds and the checker side consumes them — but k6 VUs have **no mutable shared state** (`SharedArray` is read-only and init-time only), so two scenarios cannot pass values at runtime. Three approaches:
@@ -265,7 +265,7 @@ congestion collapse remains possible at 0.013 TPS. That is the risk this scenari
 | B. External handoff (Redis / helper service) | Makers write to an external queue; checkers poll it | Closer to real timing | Needs an xk6 extension or a bespoke service — new failure surface and noise, plus one more approval in a bank environment |
 | C. File handoff | Pass taskIds via a file | — | **Impossible in k6**: `open()` is init-time only; no file I/O at runtime |
 
-**A is recommended**, for the same reason as the reference-data approach: **move the uncontrollable timing dependency into setup so the measurement phase has one variable left.** In k6 it is close to the only practical choice — and that is no compromise: we reached the same verdict for the JMeter version of this three-way choice (realistic interleaving is not worth two sides' rates influencing each other until the result cannot be attributed). The legacy `checker-task-pool.jmx` **is** option A; migration copies its logic into `setup()`.
+**A is recommended**, for the same reason as the reference-data approach: **move the uncontrollable timing dependency into setup so the measurement phase has one variable left.** In k6 it is close to the only practical choice — and that is no compromise: we reached the same verdict for the JMeter version of this three-way choice (realistic interleaving is not worth two sides' rates influencing each other until the result cannot be attributed). The former harness's `checker-task-pool.jmx` (git history) **is** option A; migration copies its logic into `setup()`.
 
 If interleaving genuinely needs verification (e.g. suspicion that submit and approve mutually lock at the DB layer), cover it with **S-05 sub-scenario ②** rather than complicating S-15.
 
@@ -275,12 +275,12 @@ If interleaving genuinely needs verification (e.g. suspicion that submit and app
 
 | ID | Goal | Load shape | Pass criteria | Notes |
 |---|---|---|---|---|
-| **S-03** | Full Create Trade frontend journey | Call sequence per v2 §5.3 + think time | PERF-07, PERF-11, PERF-19 | k6 🟨 (`s01-create-trade-e2e.js` + `journeys/j01`; run with `REFDATA_MODE=csv` until the refdata address is confirmed, deviation must be declared); JMeter ✅ (`jmx/scenarios/s01-create-trade-e2e.jmx`) |
+| **S-03** | Full Create Trade frontend journey | Call sequence per v2 §5.3 + think time | PERF-07, PERF-11, PERF-19 | k6 🟨 (`s01-create-trade-e2e.js` + `journeys/j01`; run with `REFDATA_MODE=static` until the refdata address is confirmed, deviation must be declared) |
 | **S-11** | Downstream degradation isolation | Degrade UC / risk-engine / notification in turn | RESIL-01/02/05/06, degradation ≤ 10% | **Needs fault injection**; UC first (blast radius: 9 APIs) |
 | **S-12** | DAT parsing crowding out unrelated endpoints | Background concurrent large-tier parses + foreground refdata reads | RESIL-03, degradation ≤ 20% | Verifies the "in-process CPU competition" assumption |
 | **S-02** | Booking cutoff peak | 4× mean sustained for one hour | PERF-07, PERF-19 | Close out with S-18 |
 | **S-13** | Batch jobs in parallel with online traffic | trade-aging / sync-cashflows / refdata sync alongside online load | RESIL-04, degradation ≤ 20% | Requires confirming the refdata sync write mode (upsert vs truncate-reload) — the two have entirely different failure models |
-| **S-04** | Checker batch queue-clearing | `bulk-approve` at batch 1/5/20/50, 3 concurrent batches | PERF-15/16; **per-unit latency must not rise with batch size** | A burst shape; do not use constant arrival rate. JMeter scripts built (`p03` / `p04`); k6 follows migration item ② |
+| **S-04** | Checker batch queue-clearing | `bulk-approve` at batch 1/5/20/50, 3 concurrent batches | PERF-15/16; **per-unit latency must not rise with batch size** | A burst shape; do not use constant arrival rate. The former JMeter scripts (`p03` / `p04`, git history) are the migration source; k6 follows migration item ② |
 | **S-16** | Full-capacity mixed load | All design capacities from [Workload Modeling](workload-modeling.en.md) §6 applied together | **PERF-19** (all thresholds met simultaneously) | The only scenario that can expose cross-path resource competition. Carried by k6 multi-scenario in one file (independent arrival rate per path) — one of the direct reasons k6 was chosen. **Has two productType mix sub-scenarios, see below** |
 | **S-07** | Month / quarter-end roll | 3× a normal day, all day | PERF-20, degradation ≤ 20% | Event mix weighted toward rolls / reassignment |
 | **S-17** | Soak — long trading day | Design capacity for 4–8 hours | AVAIL-01, MAINT-04; no memory or connection leak | **Ranks above Spike**: blotter auto-refresh runs constantly all day. ⚠ Data-creating paths must run at **arrival rate** (see the "run-generated data" row in §4) |
@@ -327,12 +327,12 @@ that genuinely occurs; it is not headroom that can be filed as "extreme scenario
 | **Composer product catalogue** | Full productType list with fixing counts / schedule shapes | Product owner provides (A24) | ⬜ **Blocks A26 representative selection** |
 | **Migration dataset statistics** | productType distribution of the existing book | Architecture / DBA produce the statistics (A25) | ⬜ **Blocks the S-16a mix** |
 | **Counterparty / Portfolio** | Resolved per run | **setUp query + real trade creation to validate + archived snapshot** | ✅ Implemented |
-| **Pending task pool** | For S-15, N ≈ 200 | Pre-seeded submissions in `setup()` (option A) | 🟨 JMeter fragment built (`checker-task-pool.jmx`); porting into k6 `setup()` pending |
+| **Pending task pool** | For S-15, N ≈ 200 | Pre-seeded submissions in `setup()` (option A) | 🟨 logic proven (former `checker-task-pool.jmx`, git history); porting into k6 `setup()` pending |
 | **Shared contention target trade** | For S-05, one per sub-scenario | Created and recorded in `setup()` | ⬜ |
 | **User identity pool** | N makers, M checkers | `data/shared/accounts.csv` | ✅ Implemented (needs real accounts) |
 | **Run-generated data** (each round's by-product) | Trades created = VUs × duration ÷ per-request time. **The faster the API, the more data**: at 0.3 s, 1 VU × 300 s ≈ 1,000 real `PENDING APPROVAL` trades; 4 VUs flat-out for 4 h ≈ **190k**, whereas the design-capacity arrival rate (0.11 TPS) over 4 h is ≈ 1,600 | ① Agree a cleanup protocol with DBA / dev (bulk reject / archival / dedicated marker); ② long data-creating runs always use the `arrival` rate shape, never flat-out constant-vus | ⬜ **Phase-1 item**; left uncleaned it drifts S-10's data tiers |
 
-**Reference data is the one class the test cannot control**: counterparty / portfolio arrive via a sync batch job from a third party. Hard-coding them goes stale, and staleness manifests as **HTTP 200 + wholesale business rejection** — reporting as a 0% error rate. Handling is described in [v2 plan](../trade-api-perf-test-plan-v2-jmeter.md) §4.4 and implemented in both harnesses (k6: `k6/setup/preflight.js`; JMeter: `jmx/fragments/setup/refdata-preflight.jmx`).
+**Reference data is the one class the test cannot control**: counterparty / portfolio arrive via a sync batch job from a third party. Hard-coding them goes stale, and staleness manifests as **HTTP 200 + wholesale business rejection** — reporting as a 0% error rate. Handling is described in [v2 plan](../trade-api-perf-test-plan-v2-jmeter.md) §4.4 and implemented in `k6/setup/preflight.js`.
 
 ---
 
@@ -391,7 +391,7 @@ S-17 Soak · S-08 Combined          <- duration and real experience
 |---|---|---|
 | **Phase 1: unblock** | Raise OBS-02/05 observability requirements + Micrometer histogram enablement; build the data factory; **agree the run-generated-data cleanup protocol with DBA**; request read-only audit access and Prometheus remote-write; confirm frontend polling parameters A10–A12; obtain the A26 representative `.dat` samples | None — **can start immediately, and everything later is constrained without it** |
 | **Phase 2: priority 1–2** | S-01 (A26 sweep) · S-09 (rpc_client delta method, **can go first**) · S-18 · S-05 · S-10 · S-14 · S-15; migration items ①–② of §1.1 in parallel | Phase 1 |
-| **Phase 3: priority 3–5** | S-03 (JMeter exists; k6 migration item ③) · S-11 · S-12 · S-02 · S-13 · S-04 · S-16 | Fault-injection capability |
+| **Phase 3: priority 3–5** | S-03 (k6 built 🟨, see §3.1) · S-11 · S-12 · S-02 · S-13 · S-04 · S-16 | Fault-injection capability |
 | **Phase 4: priority 6–8** | S-07 · S-17 · S-06 · S-08 | Dedicated performance environment |
 
 **Phase 1 produces no performance numbers, but it determines whether the following three phases can produce valid conclusions.** Skipping it and running scenarios directly yields a set of numbers nobody can attribute.
@@ -443,7 +443,7 @@ A full performance round may be declared "passed" only when all of the following
 | 6 | **SEC-01 identity model unconfirmed** | If gateway authentication is introduced, the load-test entry point needs rework | See [NFR](oreo-nfr.en.md) §6; architecture to answer |
 | 7 | No dedicated performance environment | Conclusions limited to trend comparison | Prerequisite for Phase 4 |
 | 8 | WebSocket entirely uncovered | No conclusion on the push path of create / trigger-event | Registered as a gap; separate initiative |
-| 9 | **Zero team k6 experience, dual-stack during migration** | Script quality and schedule risk; mixed reporting across tools | The [k6 handbook](../../trade-performance/k6/HANDBOOK.zh.md) is written zero-to-numbers; the two harnesses correspond layer for layer and the dual p02 implementation is the worked example; JMeter assets **frozen, fixes only**, migrating per the §1.1 list; `tests/csv.test.mjs` self-checks script logic without k6 installed |
+| 9 | **Zero team k6 experience** | Script quality and schedule risk | The [k6 handbook](../../trade-performance/k6/HANDBOOK.zh.md) is written zero-to-numbers; the JMeter assets are removed — migration takes its sources from git history per the §1.1 list; `tests/*.test.mjs` self-check script logic without k6 installed |
 | 10 | **No cleanup protocol for run-generated trades** | Environment data drifts run over run; S-10 tiers distort; ultimately every blotter conclusion suffers | Agree with DBA / dev in Phase 1; data-creating scenarios always use the arrival-rate shape (§6.3 gate 5) |
 
 ---
@@ -453,12 +453,12 @@ A full performance round may be declared "passed" only when all of the following
 | Deliverable | Content | Location |
 |---|---|---|
 | **k6 harness (primary)** | Four-layer structure (scenarios / steps / profiles / lib), three-class error separation, run.sh / run.ps1, static self-check (`tests/csv.test.mjs` runs under plain node, no k6 needed) | `qa/trade-performance/k6/` |
-| JMeter legacy harness | Cross-validation and migration source; frozen, fixes only | `qa/trade-performance/jmx/` + `scripts/` |
+| JMeter legacy harness (removed) | Migration source, retained in git history | git history (before the 2026-07-29 removal commit) |
 | Per-run manifest | git commit, tool versions, all resolved parameters, epoch window (aligns with Grafana) | `results/<runId>/manifest.txt` (implemented in both runners) |
-| Round report | Three-class error separation + success-only percentiles + sample-size warnings; k6 side `summary.txt` (`k6/lib/summary.js`), JMeter side `scripts/summarize.py` over the jtl — **the two outputs are line-for-line isomorphic for comparison** | `results/<runId>/` · metric definitions per [KPI Definitions](kpi-definitions.en.md) §6 |
-| SLA verdict | k6 profile thresholds built in; exit code carries the verdict (`load` already enforces technical = 0, business success > 99%); **NFR-ID ↔ threshold mapping table still to write**; the jtl-side `assert-sla.py` is dropped with the migration | `k6/profiles/*.json` 🟨 |
+| Round report | Three-class error separation + success-only percentiles + sample-size warnings; `summary.txt` (`k6/lib/summary.js`) | `results/<runId>/` · metric definitions per [KPI Definitions](kpi-definitions.en.md) §6 |
+| SLA verdict | k6 profile thresholds built in; exit code carries the verdict (`load` already enforces technical = 0, business success > 99%); **NFR-ID ↔ threshold mapping table still to write** | `k6/profiles/*.json` 🟨 |
 | Audit reconciliation script | S-18 closing check (SQL reconciliation, tool-independent) | ⬜ not built |
-| Operating and reading docs | Single-API acceptance runbook · Grafana reading and integration · k6 rationale and onboarding | [`RUNBOOK-p02-create-trade.zh.md`](../../trade-performance/RUNBOOK-p02-create-trade.zh.md) · [`GRAFANA.zh.md`](../../trade-performance/GRAFANA.zh.md) · `k6/README.zh.md` / `k6/HANDBOOK.zh.md` |
+| Operating and reading docs | Grafana reading and integration · k6 rationale and onboarding (zero-to-numbers) | [`GRAFANA.zh.md`](../../trade-performance/GRAFANA.zh.md) · [`k6/README.zh.md`](../../trade-performance/k6/README.zh.md) / [`k6/HANDBOOK.zh.md`](../../trade-performance/k6/HANDBOOK.zh.md) |
 | Phase summary | Passed / failed / **unverified** items, capacity conclusions, architecture recommendations | Confluence |
 
 ---

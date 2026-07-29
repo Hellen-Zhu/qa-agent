@@ -114,11 +114,14 @@ git rm --cached -r .
 git reset --hard
 ```
 
-验证 `.dat` 没坏——字节数必须和 CSV 里声明的一致:
+验证引用没断（数据引用的 .dat 都在、磁盘文件都被引用）:
 
 ```powershell
-python scripts\index-dat.py
+python k6\scripts\index-dat.py
 ```
+
+若怀疑 `.dat` 被行尾转换改坏,用 `ls -l` / `dir` 与采集侧核对字节数——
+大小变了就是坏了,重新规范化后再检出。
 
 ## 0.6 编辑器
 
@@ -140,22 +143,26 @@ node k6\tests\rows.test.mjs     # JSON 数据解析(主格式)
 node k6\tests\csv.test.mjs      # CSV 兼容路径
 ```
 
-期望分别 `12 passed` / `14 passed, 0 failed`。
+期望分别 `12 passed` / `11 passed, 0 failed`。
 
 这一步验证数据文件解析器和你的数据文件字段名对得上。**过不了就别往下走**——
 后面所有失败都会被它污染。
 
 ## 1.2 填数据
 
-两套框架**共用同一份数据**,所以这一步做一次,JMeter 和 k6 都受益。
+数据只有一份、只填一次,所有场景(p02 / p05 / s01)都从这里取。
 
-### ① 参考数据
+### ① 用例数据(含归属字段)
 
-编辑 `data\refdata\refdata-pairs.json`,把 `TBC` 换成真值:
+编辑 `k6\data\create-trade\create-trade-data.json`,把 `TBC` 换成真值——
+归属字段直接内嵌在用例行里,一行填完就是一个完整可跑用例:
 
 ```json
 {
-  "pairId": "R001",
+  "caseId": "C001",
+  "datFile": "products/FX_TRF/fx_trf_01.dat",
+  "productType": "FX_TRF",
+  "notionalCurrency": "",
   "portfolioId": "ABS-HK-CFD-BDC",
   "counterpartyFmId": "10052235",
   "counterpartyName": "UNIVERSAL WEST",
@@ -163,32 +170,31 @@ node k6\tests\csv.test.mjs      # CSV 兼容路径
 }
 ```
 
-> 真值如果已经填在旧的 CSV 里(本次改版之前采的),不用手抄:
-> `python scripts\data-sync.py --from-csv --write` 一次搬进 JSON。
+> 真值如果已经填在旧的 CSV 里(本次改版之前采的),可先用
+> `CREATE_DATA_FILE=<那个 csv 的路径>` 直接读着顶住(`.csv` 兼容可读),
+> 抽空把值搬进 JSON 后删掉 CSV。
 
 值从哪来:在 UI 上手工建一笔 trade → F12 DevTools → Network → 找到
-`trades/create` → 右键 **Copy as cURL** → payload 里就是这三个字段。
+`trades/create` → 右键 **Copy as cURL** → payload 里就是那三个归属字段,
+`.dat` 也在同一份 curl 里。⚠ 三个归属字段必须整组来自同一份 curl
+(同源配对,理由见 `k6\data\create-trade\README.md`)。
 
-> **一行不够。** 只有一组 refdata 意味着所有 VU 打同一个 portfolio,
-> 你永远处在锁竞争的最坏侧,而且无法归因。**至少采 4~5 组**(每次换个 counterparty 重复上面步骤)。
+> **一条不够。** 只有一条用例意味着所有 VU 打同一个 portfolio,
+> 你永远处在锁竞争的最坏侧,而且无法归因。**至少采 4~5 条**(每次换个 counterparty 重复上面步骤)。
 
 ### ② .dat 文件
 
-把真实 `.dat` 放进 `data\dat\products\FX_TRF\fx_trf_01.dat`,
-然后让脚本把实测字节数填进数据文件,并同步 JMeter 侧 CSV:
-
-```powershell
-python scripts\index-dat.py --write
-python scripts\data-sync.py --write
-```
+把真实 `.dat` 放进 `k6\data\dat\products\FX_TRF\fx_trf_01.dat`,
+路径与 `create-trade-data.json` 里 `datFile` 字段一致。
 
 ### ③ 校验
 
 ```powershell
-python scripts\validate.py
+python k6\scripts\index-dat.py
 ```
 
-必须 exit 0。还在报 TBC 就是①②没做完。
+必须 exit 0(.dat 对账)。TBC 占位值由 preflight 的本地检查兜底——
+smoke 一起跑会在发压前中止并列出问题行,还在报 TBC 就是①②没做完。
 
 ## 1.3 smoke
 
@@ -284,8 +290,7 @@ refdata rows=5  case rows=1
 | `DURATION` | 时长,如 `300s` / `30m` |
 | `RATE` | 到达率(仅 arrival profile) |
 | `ITERATIONS` | 迭代数(仅 smoke) |
-| `REFDATA_FILE` | 换参考数据文件 → 对照实验 |
-| `CREATE_DATA_FILE` | 换用例文件 → 坏 .dat 测试 |
+| `CREATE_DATA_FILE` | 换用例文件 → 坏 .dat 测试 / 锁竞争对照实验 |
 | `MAKER_USER_ID` | 换身份 |
 | `PREFLIGHT_POLICY` | `abort` / `warn` |
 
@@ -378,7 +383,7 @@ export function classifyList(res, tags) {
 
 ## 4.1 看实际发出去的是什么
 
-**这是 k6 里替代 JMeter「View Results Tree」的东西:**
+**看实际发出的请求与响应(GUI 工具里 View Results Tree 的角色):**
 
 ```powershell
 k6 run --http-debug=full -e ENV=dev -e PROFILE=smoke k6\scenarios\p02-trade-create.js
@@ -441,8 +446,8 @@ node k6\tests\csv.test.mjs
 ```
 
 **不依赖 k6 的逻辑要和 k6 API 隔离开**(`lib\csv.js` 不 import 任何 `k6/*`),
-隔离开就能这么测。这是 k6 相对 JMeter 最大的工程优势——
-JMeter 侧的 groovy **唯一验证方式是跑一次真实压测**。
+隔离开就能这么测。这是当初选 k6 最大的工程理由——
+旧 JMeter 方案里的 groovy **唯一验证方式是跑一次真实压测**。
 
 ---
 
@@ -514,7 +519,7 @@ foreach ($r in 1,2,4,8) {
 }
 ```
 
-**这是 JMeter 默认 Thread Group 给不了的。**
+**开放模型是当初选 k6 的核心理由之一(见计划 §1.1)。**
 
 闭合模型下服务端变慢时压力也跟着变慢(压力机自己踩刹车),会**系统性低估过载后果**。
 开放模型按 λ 固定到达,队列真实堆积。
@@ -526,7 +531,7 @@ foreach ($r in 1,2,4,8) {
 
 ```powershell
 # D 类：全部 VU 打同一个 portfolio → 若 TPS 显著下降，存在 portfolio 级锁竞争
-.\k6\run.ps1 p02-trade-create dev baseline VUS=8 REFDATA_FILE=data/refdata/refdata-pairs-single.json
+.\k6\run.ps1 p02-trade-create dev baseline VUS=8 CREATE_DATA_FILE=data/create-trade/create-trade-invalid.json
 
 # 坏 .dat：期望失败，看的是"多快拒绝"（P95），不是错误率
 .\k6\run.ps1 p02-trade-create dev baseline CREATE_DATA_FILE=data/create-trade/create-trade-invalid.json
@@ -610,7 +615,7 @@ Prometheus 需要开启 remote-write 接收端(启动参数 `--web.enable-remote
 **压测指标和后端指标进同一个 TSDB、同一根时间轴**,判读从"两个窗口来回切 + 手动对时"
 变成"一个面板一眼看出":
 
-| JMeter 侧现象 | 后端指标 | 结论 |
+| 压测端现象 | 后端指标 | 结论 |
 |---|---|---|
 | TPS 平了,P95 涨,**CPU 空闲** | `hikaricp_connections_pending > 0` | **DB 连接池瓶颈** |
 | TPS 平了,P95 涨,**CPU 空闲** | `tomcat_threads_busy == max` | 容器线程池打满 |
@@ -650,15 +655,15 @@ Grafana 时间范围（贴进 URL）:
 | `ambiguous parameter -e` | 覆盖项加了 `-e` | 去掉,直接写 `VUS=8` |
 | 中文全是问号/方块 | 控制台不是 UTF-8 | `chcp 65001`,或换 Windows Terminal |
 | `bad interpreter: /usr/bin/env bash^M` | `.sh` 被检出成 CRLF | 见 [0.5](#05-拉代码--️-这一步有个坑) |
-| `.dat` 上传后服务端解析失败 | **git 把二进制当文本改了行尾** | 同上,并跑 `python scripts\index-dat.py` 核对字节数 |
+| `.dat` 上传后服务端解析失败 | **git 把二进制当文本改了行尾** | 同上,重新检出后用 `dir` 与采集侧核对字节数 |
 | PowerShell 报 `NativeCommandError` 但 k6 没输出 | `$ErrorActionPreference='Stop'` + k6 写 stderr | `run.ps1` 已规避;直接敲 `k6 run` 不受影响 |
 
 ## 通用
 
 | 现象 | 原因 | 解 |
 |---|---|---|
-| `PREFLIGHT FAILED — csv 数据不可用` | CSV 还是 `TBC` | 填真值,见 [1.2](#12-填数据) |
-| `.dat 未加载：xxx` | CSV 的 `datFile` 列与磁盘不一致 | `python scripts\index-dat.py` |
+| `PREFLIGHT FAILED — 静态数据不可用` | 数据还是 `TBC` | 填真值,见 [1.2](#12-填数据) |
+| `.dat 未加载：xxx` | 数据的 `datFile` 字段与磁盘不一致 | `python k6\scripts\index-dat.py` |
 | `cannot open file` | 路径相对**脚本文件**,不是 cwd | 检查 `config\*.json` 的 `data.*` 路径 |
 | `threshold for a non-existent metric` | 阈值指标名写错,或该指标本轮没产生 | 检查 `profiles\*.json`;`dropped_iterations` 报错就删掉那条 |
 | 内存暴涨 / OOM | **`.dat` 按 VU 复制** | `VU 数 × 全部 .dat 字节数`,见 README「四个约束」 |
@@ -676,8 +681,9 @@ Grafana 时间范围（贴进 URL）:
 Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 
 # 自检（不需要 k6）
+node k6\tests\rows.test.mjs
 node k6\tests\csv.test.mjs
-python scripts\validate.py
+python k6\scripts\index-dat.py
 
 # 跑
 .\k6\run.ps1 p02-trade-create dev smoke

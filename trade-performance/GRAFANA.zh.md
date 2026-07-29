@@ -5,7 +5,7 @@
 > "TPS 卡在 8 不动，同时 `hikaricp_connections_pending` 涨到 6、CPU 才 35% —— 瓶颈是连接池"。
 > 这份文档讲的就是怎么把后一句话说出来。
 
-适用于 JMeter 与 k6 两套框架（两边的 runner 都会打印同一段 Grafana 时间范围）。
+适用于 k6 工程（runner 跑完会打印本次运行的 Grafana 时间范围）。
 
 ---
 
@@ -156,11 +156,8 @@ management.metrics.distribution.percentiles-histogram.http.server.requests=true
 - **HTTP Latency p95** 面板会显示一个**很好看**的数字（业务拒绝返回得快）
 - 而实际上**一笔 trade 都没建成**
 
-看板这边所有指标全绿，压测报告也全绿 —— 只有 `jtl` 里的 `errClass=business` 能看见。
-
-```bash
-python3 scripts/summarize.py       # 三类错误分开列
-```
+看板这边所有指标全绿 —— 只有压测端的 `oreo_err_business` 计数能看见
+（k6 摘要的"三类错误"段，见 `k6/lib/summary.js`）。
 
 > 所以口径是固定的：
 > **技术层结论看 Grafana，业务层结论看 `errClass`，两边缺一不可。**
@@ -208,7 +205,7 @@ python3 scripts/summarize.py       # 三类错误分开列
 | 看板上同时看到 | 结论 | 下一步 |
 |---|---|---|
 | `hikaricp_connections_pending` > 0，`active` 顶到 `max`（截图里 **max = 10**） | **DB 连接池是瓶颈** | 先量连接持有时长（§5.2），再谈调大池子 |
-| `jvm_cpu_recent_utilization_ratio` 接近 1 | **算力瓶颈**（`.dat` 解析 / risk 计算） | 用 costTier / fixings 切分，看是哪类产品贵 |
+| `jvm_cpu_recent_utilization_ratio` 接近 1 | **算力瓶颈**（`.dat` 解析 / risk 计算） | 用 productType 标签切分，看是哪类产品贵 |
 | gRPC **Client** 出站速率随并发线性上升，且 p99 陡增 | **下游拖的**（risk-engine / user-center） | 切 Service 到那个服务，重走四层 |
 | gRPC 出站**次数**随并发超线性上升 | **N+1 扇出**（见 §5.1） | 这是架构问题，不是容量问题 |
 | GC Collections rate 明显上升、Heap 锯齿谷底持续抬升 | **内存压力** | 短测看不准，留到 soak |
@@ -218,11 +215,11 @@ python3 scripts/summarize.py       # 三类错误分开列
 
 > ### ⚠ "所有资源都闲但 TPS 不涨" —— 当前配置下大概率会撞上
 >
-> 现在 `refdata-pairs.csv` 只有一对可用组合，全部线程打同一个 portfolio。
+> 现在 `create-trade-data.json` 只有一条用例（一组归属值），全部 VU 打同一个 portfolio。
 > 如果服务端有 portfolio 级的锁或唯一性检查，这就是人为制造的串行段，
 > **测到的不是系统容量，是那把锁的容量**。
 >
-> 分辨方法（RUNBOOK §8 的对照实验）：多凑几对 refdata 再跑一次。
+> 分辨方法：多采几条不同 portfolio 的用例再跑一次对照。
 > TPS 明显上去了，就说明存在 portfolio 级竞争 —— 那本身是个值得报的发现。
 
 ---
@@ -331,8 +328,7 @@ sum by (rpc_method) (
 
 ### 方案 A · 时间轴对齐 —— 零改造，现在就能用 ✅ 推荐先做
 
-四个 runner（`scripts/run.sh` `scripts/run.ps1` `k6/run.sh` `k6/run.ps1`）
-跑完都会打印：
+两个 runner（`k6/run.sh` `k6/run.ps1`）跑完都会打印：
 
 ```
 Grafana 时间范围（替换 URL 里的 from=now-1h&to=now）：
@@ -375,14 +371,11 @@ K6_PROMETHEUS_RW_SERVER_URL=http://<prom>:9090/api/v1/write \
 1. Prometheus 必须带 `--web.enable-remote-write-receiver` 启动（默认是关的）
 2. 压测端到 Prometheus 的网络要通
 
-> ⚠ **JMeter 没有等价能力。** 有 `jmeter-prometheus-listener` 这类插件，
-> 但它是 **pull 模型** —— 需要 Prometheus 反过来抓压测机，
-> 也就是要改 Prometheus 的 scrape 配置。在行内环境里这个申请多半比压测本身还慢。
->
-> 这是 k6 相对 JMeter 一个实打实的优势，但**不构成现在就换的理由**：
-> 阶段 1 只是要一份基线数字，方案 A 完全够。
+> 原生 remote-write（push 模型）是当初选 k6 的理由之一（计划 §1.1）——
+> 不需要改 Prometheus 的 scrape 配置去反向抓压测机。
+> 但阶段 1 只是要一份基线数字，方案 A 完全够。
 
-### 方案 C · Grafana Annotation —— 两套框架通用
+### 方案 C · Grafana Annotation
 
 每次跑在**所有面板上**留一条竖线（含 runId），事后翻历史一眼就能定位。
 
@@ -397,15 +390,15 @@ curl -s -X POST "$GRAFANA_URL/api/annotations" \
 成本是一个有写权限的 Grafana API token。拿得到就值得做 ——
 它把"哪一段是压测"这个信息**固化在看板里**，而不是留在某个人的记忆里。
 
-> 要我把这段接进四个 runner（有 token 才启用，没有就跳过）的话说一声。
+> 要我把这段接进两个 runner（有 token 才启用，没有就跳过）的话说一声。
 
 ### 推荐路径
 
 | 阶段 | 做什么 |
 |---|---|
-| **现在（JMeter 阶段 1）** | 方案 A。同时问平台团队要两样东西：Prometheus 的 remote-write 是否可开、Grafana 能否给个写 token |
-| **k6 阶段** | 拿到 remote-write 就上方案 B |
-| **拿到 token 后** | 补方案 C，两套框架都受益 |
+| **现在（阶段 1）** | 方案 A。同时问平台团队要两样东西：Prometheus 的 remote-write 是否可开、Grafana 能否给个写 token |
+| **拿到 remote-write** | 上方案 B |
+| **拿到 token 后** | 补方案 C |
 
 ---
 

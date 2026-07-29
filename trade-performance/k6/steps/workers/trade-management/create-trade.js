@@ -27,7 +27,7 @@
 
 import http from 'k6/http';
 import { cfg } from '../../../lib/config.js';
-import { getDat, baseName } from '../../../lib/data.js';
+import { getDat, baseName } from '../../../lib/create-trade-data.js';
 import { classifyCreate } from '../../../lib/errors.js';
 
 const URL = `${cfg.workersUrl}/trades/create`;
@@ -64,12 +64,12 @@ export function validateInputs(caseRow) {
 
   ['portfolioId', 'counterpartyFmId', 'counterpartyName'].forEach((k) => {
     const v = caseRow[k];
-    if (!v || !String(v).trim()) problems.push(`${k} 未取到（检查 createDataFile 路径与字段名）`);
+    if (!v || !String(v).trim()) problems.push(`${k} 未取到（检查数据文件路径与字段名，见 lib/create-trade-data.js）`);
     else if (PLACEHOLDER.test(v)) problems.push(`${k}='${v}' 仍是占位值（见 data/create-trade/README.md）`);
   });
 
   if (!caseRow.datFile || !String(caseRow.datFile).trim()) {
-    problems.push('datFile 未取到（检查 createDataFile 路径与字段名）');
+    problems.push('datFile 未取到（检查数据文件路径与字段名，见 lib/create-trade-data.js）');
   }
 
   return problems;

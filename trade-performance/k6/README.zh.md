@@ -66,8 +66,9 @@ k6/
 ├── scenarios/*.js                  维度一：计划（测什么，可运行的薄壳）
 ├── journeys/*.js                   用户路径：把 steps 串成一次完整动作
 ├── steps/<svc>/<domain>/*.js       原子步骤：一个 API 一个文件（唯一契约）
-├── setup/preflight.js              开跑前守卫：数据校验 + 真建一笔
-├── lib/                            config 合并 / 数据装载 / 三类错误 / 摘要
+├── setup/<路径>-preflight.js       开跑前守卫：一条被测路径一个（见下方约定）
+├── lib/<路径>-data.js              该路径的数据装载与取数（默认数据文件在这里）
+├── lib/                            其余是框架设施：config / errors / rows / summary
 ├── data/                           测试数据（JSON 为源，契约见 lib/rows.js）
 │   ├── create-trade/               create 用例池（datFile → data/dat/）
 │   ├── lifecycle-events/           生命周期事件池（供未来 p06）
@@ -83,6 +84,38 @@ k6/
 **每一层只做一件事**：scenarios 不定义请求（import journey/steps），
 steps 不定义负载（executor 在 profiles），环境地址只在 config。
 改任何一维不碰其他两维。
+
+### 命名约定：守卫与数据跟着**被测路径**走
+
+| 文件 | 职责 | 现有 |
+|---|---|---|
+| `setup/<路径>-preflight.js` 导出 `<路径>Preflight()` | 这条路径开跑前必须成立的前提 | `create-trade` · `trades-list` · `refdata` |
+| `lib/<路径>-data.js` | 这条路径的数据装载、取数，**以及默认数据文件路径** | `create-trade-data.js` |
+
+两者成对：数据怎么来、怎么证明它今天还能用，是同一件事。
+
+**为什么数据文件路径不在 `config/<env>.json` 里**：config 回答"打哪个环境"
+（地址、身份、超时、preflight 策略）；"用哪个用例池"是**计划维度**的事——
+p05 压列表接口根本不需要 create 用例，放进 env config 等于让每个环境
+都声明一份与自己无关的配置。需要临时换池用覆盖项：
+
+```bash
+./k6/run.sh p02-trade-create dev baseline CREATE_DATA_FILE=data/create-trade/create-trade-invalid.json
+```
+
+> ⚠ 数据**内容**是环境相关的（id 不跨环境通用），但**路径**不是——
+> 换环境时重新采集填进同一个文件，而不是换一个路径。
+
+**守卫绑路径，不绑场景**：p02 和 s01 都创建 trade，共用
+`createTradePreflight()`；s01 还踩 refdata，就再叠一个 `refdataPreflight()`。
+场景的 `setup()` 因此只做组合，保持薄壳：
+
+```js
+export function setup() {
+  refdataPreflight(REFDATA_MODE);   // 不通就没必要再去建 trade
+  return createTradePreflight();
+}
+```
 
 ---
 
@@ -123,7 +156,7 @@ k6 的 tag 会成为指标的维度——**高基数标签会让内存和 Promet
 
 ### ⚠ 4. `open()` 的路径以**脚本文件**为基准
 
-不是当前工作目录。数据路径都以 `k6/` 为根（`lib/data.js` 的 ROOT），
+不是当前工作目录。数据路径都以 `k6/` 为根（`lib/create-trade-data.js` 的 ROOT），
 config 里的 `data/...` 也按这个根解析。
 
 ---

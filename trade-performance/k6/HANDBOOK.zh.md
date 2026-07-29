@@ -215,13 +215,13 @@ Mac/Linux 或 Git Bash:
 > profile  k6\profiles\smoke.json
 > results  k6\results\p02-trade-create_dev_smoke_20260728-...
 
-── preflight ─────────────────────────────────
+── preflight: create-trade ───────────────────
 env=dev profile=smoke
 target=http://10.198.25.56:9089/api/v1/trades/create
 maker=maker@sc.com
-refdata rows=5  case rows=1
+data=data/create-trade/create-trade-data.json  rows=5
 ✓ 检查 1/2：数据字段齐全，无占位值
-✓ 检查 2/2：refdata 业务可用 — pairId=R001 portfolio=ABS-HK-CFD-BDC → TRD-100234 / CHK-98C0DF19 (1843ms)
+✓ 检查 2/2：数据业务可用 — caseId=C001 portfolio=ABS-HK-CFD-BDC → TRD-100234 / CHK-98C0DF19 (1843ms)
 ```
 
 然后是摘要。
@@ -265,7 +265,8 @@ refdata rows=5  case rows=1
 | `scenarios\p02-*.js` | 组装:setup + 循环体 + 摘要 | 加新的可运行计划 |
 | `steps\...\create-trade.js` | **这个 API 的契约** | 后端改接口 |
 | `lib\errors.js` | 响应怎么判定、错误怎么分类 | 判定规则变了 |
-| `lib\data.js` | 数据 / .dat 怎么装载、怎么取 | 取数策略变了 |
+| `lib\create-trade-data.js` | create 路径的数据 / .dat 怎么装载、怎么取（默认数据文件也在这里） | 取数策略变了、换默认用例池 |
+| `setup\create-trade-preflight.js` | create 路径开跑前的两道检查 | 守卫规则变了 |
 | `lib\config.js` | 三维怎么合并 | 加新的可覆盖项 |
 
 **改 `steps\` 里的文件,所有引用它的计划同时生效。** 这是分层的全部收益。

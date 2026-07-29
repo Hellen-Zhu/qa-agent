@@ -22,11 +22,6 @@
 
   "timeouts": { "request": "60s" },
 
-  "data": {
-    "_comment": "路径相对 k6/ 目录。仅 JSON（见 lib/rows.js）",
-    "createDataFile": "data/create-trade/create-trade-data.json",
-    "datDir":         "data/dat"
-  },
 
   "_preflight": "abort | warn（prune 未实现）。perf 轮次数据必须可用，失效即中止。",
   "preflightPolicy": "abort",

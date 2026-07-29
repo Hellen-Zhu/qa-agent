@@ -21,7 +21,7 @@
 import http from 'k6/http';
 import { Rate } from 'k6/metrics';
 import { cfg } from '../../../lib/config.js';
-import { getDat, baseName } from '../../../lib/data.js';
+import { getDat, baseName } from '../../../lib/create-trade-data.js';
 import { buildTradePayload } from './create-trade.js';
 import { recordOutcome, ERR } from '../../../lib/errors.js';
 

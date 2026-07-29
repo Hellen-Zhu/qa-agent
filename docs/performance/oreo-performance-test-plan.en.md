@@ -332,7 +332,7 @@ that genuinely occurs; it is not headroom that can be filed as "extreme scenario
 | **User identity pool** | N makers, M checkers | `data/shared/accounts.csv` | ✅ Implemented (needs real accounts) |
 | **Run-generated data** (each round's by-product) | Trades created = VUs × duration ÷ per-request time. **The faster the API, the more data**: at 0.3 s, 1 VU × 300 s ≈ 1,000 real `PENDING APPROVAL` trades; 4 VUs flat-out for 4 h ≈ **190k**, whereas the design-capacity arrival rate (0.11 TPS) over 4 h is ≈ 1,600 | ① Agree a cleanup protocol with DBA / dev (bulk reject / archival / dedicated marker); ② long data-creating runs always use the `arrival` rate shape, never flat-out constant-vus | ⬜ **Phase-1 item**; left uncleaned it drifts S-10's data tiers |
 
-**Reference data is the one class the test cannot control**: counterparty / portfolio arrive via a sync batch job from a third party. Hard-coding them goes stale, and staleness manifests as **HTTP 200 + wholesale business rejection** — reporting as a 0% error rate. Handling is described in [v2 plan](../trade-api-perf-test-plan-v2-jmeter.md) §4.4 and implemented in `k6/setup/preflight.js`.
+**Reference data is the one class the test cannot control**: counterparty / portfolio arrive via a sync batch job from a third party. Hard-coding them goes stale, and staleness manifests as **HTTP 200 + wholesale business rejection** — reporting as a 0% error rate. Handling is described in [v2 plan](../trade-api-perf-test-plan-v2-jmeter.md) §4.4 and implemented in `k6/setup/create-trade-preflight.js`.
 
 ---
 

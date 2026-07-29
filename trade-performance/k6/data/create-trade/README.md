@@ -44,7 +44,7 @@ Counterparty / Portfolio 由 sync batch job 从第三方同步，变更频率以
 - `live` 模式：数据失效 → setup 当场查不到 → 立刻暴露
 - 静态供数：id 已在库中不存在 → **请求照发，服务端业务拒绝** → 报告里只是错误率升高
 
-所以 `k6/setup/preflight.js` 的检查 2（真发一笔 create）是唯一能证明
+所以 `k6/setup/create-trade-preflight.js` 的检查 2（真发一笔 create）是唯一能证明
 "这条用例今天仍然可用"的东西，不能跳过。
 
 ## 怎么填（当前全是 TBC）

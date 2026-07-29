@@ -85,12 +85,6 @@ export const cfg = {
 
   requestTimeout: pick('REQUEST_TIMEOUT', envCfg.timeouts.request),
 
-  // 数据文件路径：相对 k6/ 目录（run.sh 的 cwd，也是 lib/data.js 的 ROOT）。
-  data: {
-    createDataFile: pick('CREATE_DATA_FILE', envCfg.data.createDataFile),
-    datDir: envCfg.data.datDir,
-  },
-
   // abort | warn（prune 未实现）
   preflightPolicy: pick('PREFLIGHT_POLICY', envCfg.preflightPolicy || 'warn'),
 

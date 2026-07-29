@@ -324,7 +324,7 @@ S-16 是唯一以 productType 作为**配比**（而非扫描维度）的场景�
 | **用户身份池** | maker × N、checker × M | `data/shared/accounts.csv` | ✅ 已实现（需真实账号） |
 | **运行产生的数据**（每轮的副产品） | 建单数 = VU × 时长 ÷ 单笔耗时。**API 越快造数越多**：0.3 s 时 1 VU × 300 s ≈ 1,000 笔真实 `PENDING APPROVAL` trade；4 VU 满打 4 小时 ≈ **19 万笔**，而按设计容量到达率（0.11 TPS）4 小时只有 ≈ 1,600 笔 | ① 与 DBA / 开发议定清理协议（批量拒绝 / 归档 / 专用标记）；② 产生数据的长时场景一律用 `arrival` 到达率形态，禁用 constant-vus 满打 | ⬜ **第一阶段项**；未清理会漂移 S-10 的数据档位 |
 
-**参考数据是唯一"测试无法控制"的一类**：counterparty / portfolio 由 sync batch job 从第三方同步。硬编码会过期，且失效表现是 **HTTP 200 + 业务全拒**——只看状态码的报告显示 0 错误率。处理方式见 [v2 方案](../trade-api-perf-test-plan-v2-jmeter.md) §4.4，k6 已实现（`k6/setup/preflight.js`）。
+**参考数据是唯一"测试无法控制"的一类**：counterparty / portfolio 由 sync batch job 从第三方同步。硬编码会过期，且失效表现是 **HTTP 200 + 业务全拒**——只看状态码的报告显示 0 错误率。处理方式见 [v2 方案](../trade-api-perf-test-plan-v2-jmeter.md) §4.4，k6 已实现（`k6/setup/create-trade-preflight.js`）。
 
 ---
 

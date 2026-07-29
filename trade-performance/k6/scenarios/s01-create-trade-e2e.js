@@ -28,9 +28,8 @@
 import exec from 'k6/execution';
 import { cfg } from '../lib/config.js';
 import { j01CreateTrade } from '../journeys/j01-create-trade.js';
-import { portfoliosList } from '../steps/refdata/portfolios-list.js';
-import { preflight } from '../setup/preflight.js';
-import { ERR } from '../lib/errors.js';
+import { refdataPreflight } from '../setup/refdata-preflight.js';
+import { createTradePreflight } from '../setup/create-trade-preflight.js';
 import { makeHandleSummary } from '../lib/summary.js';
 
 const PLAN = 's01-create-trade-e2e';
@@ -73,27 +72,12 @@ export const options = {
   },
 };
 
-// ── setUp ─────────────────────────────────────────────────────
+// ── setUp：本场景踩两条路径，两个守卫都要过 ───────────────────
+// 薄壳只做组合，逻辑在 setup/ 各自的模块里。顺序有意义：
+// refdata 不通就没必要再去建 trade。
 export function setup() {
-  // live 模式先探 refdata 通不通 —— 不通时给出明确的两条路，
-  // 而不是让主循环跑出一堆 fallback 再让人猜为什么
-  if (REFDATA_MODE === 'live') {
-    const probe = portfoliosList({ runPhase: 'setup' });
-    if (probe.errClass !== ERR.OK) {
-      exec.test.abort(
-        `PREFLIGHT FAILED — refdata 不可达（${probe.detail}）。` +
-        `config/${cfg.envName}.json 的 refdata 地址可能仍是占位值（NFR 待确认 #12）。` +
-        `两条路：① 向架构确认地址后填入 config；② 临时用 REFDATA_MODE=static 跑` +
-        `（降级：不覆盖下拉框查询，报告须标注偏差）`
-      );
-    }
-    console.log(`✓ refdata 可达（${probe.list.length} 个 portfolio）`);
-  } else {
-    console.warn('⚠ REFDATA_MODE=static —— 不覆盖 refdata 查询路径，报告必须标注此偏差');
-  }
-
-  // create 路径的标准 preflight（数据校验 + 真建一笔）
-  return preflight();
+  refdataPreflight(REFDATA_MODE);
+  return createTradePreflight();
 }
 
 // ── 主循环：一次迭代 = 一个用户的完整动作 ────────────────────

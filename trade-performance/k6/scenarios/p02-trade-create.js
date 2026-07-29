@@ -19,9 +19,9 @@
 
 import exec from 'k6/execution';
 import { cfg } from '../lib/config.js';
-import { pickCase } from '../lib/data.js';
+import { pickCase } from '../lib/create-trade-data.js';
 import { createTrade } from '../steps/workers/trade-management/create-trade.js';
-import { preflight } from '../setup/preflight.js';
+import { createTradePreflight } from '../setup/create-trade-preflight.js';
 import { makeHandleSummary } from '../lib/summary.js';
 
 const PLAN = 'p02-trade-create';
@@ -60,7 +60,7 @@ export const options = {
 
 // ── setUp：开跑前守卫 ─────────────────────────────────────────
 export function setup() {
-  return preflight();
+  return createTradePreflight();
 }
 
 // ── 主循环：一次迭代 = 一笔 create ────────────────────────────

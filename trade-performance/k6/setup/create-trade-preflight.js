@@ -1,16 +1,25 @@
 /*
- * setup/preflight.js —— 开跑前守卫
+ * setup/create-trade-preflight.js —— **create-trade 路径**的开跑前守卫
+ *
+ * ── 命名约定 ──
+ *   setup/<被测路径>-preflight.js  导出 <被测路径>Preflight()
+ *   与 lib/<被测路径>-data.js 成对：数据怎么来、怎么证明它今天还能用。
+ * 守卫是**跟着被测路径走的**，不是全局设施 —— p05 压列表接口就不该跑
+ * 一个建 trade 的守卫，它有自己的 setup/trades-list-preflight.js。
+ *
+ * 谁在用：scenarios/p02-trade-create.js、scenarios/s01-create-trade-e2e.js
+ * —— 两个场景都创建 trade，共用同一个守卫是对的（守卫绑路径，不绑场景）。
  *
  * 跑在 setup()：**整个测试开始前执行一次**，返回值由运行时序列化后
  * 拷贝给每个 VU。
  *
- * ══ 为什么静态 refdata 模式下这一步不能省 ═══════════════════
- * 动态模式下失效数据在 setUp 查 refdata 时**当场暴露**。
- * 静态模式没有那次查询 —— 数据文件里的 id 若已失效（counterparty 被
+ * ══ 为什么静态供数下这一步不能省 ═══════════════════════════
+ * live 模式下失效数据在 setup 查 refdata 时**当场暴露**。
+ * 静态供数没有那次查询 —— 数据文件里的 id 若已失效（counterparty 被
  * 第三方停用、portfolio 被归档），请求照发，服务端返回业务拒绝。
  * 报告里表现为"错误率升高"而不是"启动失败"，会被误读成性能问题。
  *
- * 所以这不是可选的加固，是静态模式**唯一**的数据有效性证明。
+ * 所以这不是可选的加固，是静态供数**唯一**的数据有效性证明。
  * 一条静态数据证明不了任何事，只有真发一笔 create 才行。
  * ═══════════════════════════════════════════════════════════
  *
@@ -22,22 +31,20 @@
 
 import exec from 'k6/execution';
 import { cfg } from '../lib/config.js';
-import { createCases, pickCase } from '../lib/data.js';
+import { createCases, pickCase, DATA_FILE } from '../lib/create-trade-data.js';
 import { createTrade, validateInputs } from '../steps/workers/trade-management/create-trade.js';
 import { ERR } from '../lib/errors.js';
 
-export function preflight() {
-  console.log(`── preflight ─────────────────────────────────`);
+export function createTradePreflight() {
+  console.log(`── preflight: create-trade ───────────────────`);
   console.log(`env=${cfg.envName} profile=${cfg.profileName}`);
   console.log(`target=${cfg.workersUrl}/trades/create`);
   console.log(`maker=${cfg.makerUserId}`);
-  console.log(`case rows=${createCases.length}`);
+  console.log(`data=${DATA_FILE}  rows=${createCases.length}`);
 
   // ── 数据存在性 ──────────────────────────────────────────
   if (createCases.length === 0) {
-    exec.test.abort(
-      `PREFLIGHT FAILED — 数据文件没有数据行：${cfg.data.createDataFile}`
-    );
+    exec.test.abort(`PREFLIGHT FAILED — 数据文件没有数据行：${DATA_FILE}`);
   }
 
   // ── 检查 1：本地，不发请求 ──────────────────────────────
@@ -90,6 +97,7 @@ export function preflight() {
     startedAt: new Date().toISOString(),
     preflightOutcome: usable ? 'ok' : cfg.preflightPolicy,
     preflightDurationMs: Math.round(r.res.timings.duration),
+    dataFile: DATA_FILE,
     env: cfg.envName,
     profile: cfg.profileName,
     target: `${cfg.workersUrl}/trades/create`,

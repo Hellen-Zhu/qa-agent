@@ -28,7 +28,7 @@
 
 import { Counter } from 'k6/metrics';
 import { think } from '../lib/think.js';
-import { pickCase } from '../lib/data.js';
+import { pickCase } from '../lib/create-trade-data.js';
 import { portfoliosList } from '../steps/refdata/portfolios-list.js';
 import { counterpartiesList } from '../steps/refdata/counterparties-list.js';
 import { calcRiskForNew } from '../steps/workers/trade-management/calc-risk-for-new.js';

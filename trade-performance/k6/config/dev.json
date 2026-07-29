@@ -22,11 +22,6 @@
 
   "timeouts": { "request": "60s" },
 
-  "data": {
-    "_comment": "路径相对 k6/ 目录。仅 JSON（数据在 rows 键下，_ 开头的键是注释，见 lib/rows.js）",
-    "createDataFile": "data/create-trade/create-trade-data.json",
-    "datDir":         "data/dat"
-  },
 
   "_preflight": "abort | warn（prune 未实现）。dev 数据波动大，默认 warn。",
   "preflightPolicy": "warn",

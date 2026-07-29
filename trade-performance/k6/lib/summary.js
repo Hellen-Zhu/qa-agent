@@ -221,3 +221,36 @@ export function buildTextSummary(data, meta) {
   L.push('');
   return L.join('\n');
 }
+
+/*
+ * ── 标准收尾：三个输出一次封装 ───────────────────────────────
+ * 场景侧只声明 meta（自己是谁、打的什么目标），输出样板收拢在这里：
+ *   stdout                     人读摘要
+ *   $RESULT_DIR/summary.txt    同一份摘要落盘（run.sh / run.ps1 传入 RESULT_DIR）
+ *   $RESULT_DIR/summary.json   全量原始数据（机器可读，事后再加工）
+ *
+ * 用法（场景文件）：
+ *   export const handleSummary = makeHandleSummary(() => ({
+ *     plan: PLAN, env: cfg.envName, profile: cfg.profileName,
+ *     target: `${cfg.workersUrl}/trades/create`,
+ *   }));
+ *
+ * meta 是回调不是对象：统一在测试结束时求值 —— 三个场景写法完全一致，
+ * 不给"有的传值、有的传函数"留缝。
+ * ⚠ 本函数引用 k6 全局 __ENV，但只在运行期求值 —— 本文件仍可被 node
+ *   直接 import（buildTextSummary 的离线验证依赖这一点）。
+ */
+export function makeHandleSummary(metaFn) {
+  return function handleSummary(data) {
+    const text = buildTextSummary(data, metaFn());
+    const out = { stdout: text };
+
+    // runner 会传 RESULT_DIR；直接 k6 run 时只打屏幕
+    const dir = __ENV.RESULT_DIR;
+    if (dir) {
+      out[`${dir}/summary.txt`] = text;
+      out[`${dir}/summary.json`] = JSON.stringify(data, null, 2);
+    }
+    return out;
+  };
+}

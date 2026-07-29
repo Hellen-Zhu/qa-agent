@@ -31,7 +31,7 @@ import { j01CreateTrade } from '../journeys/j01-create-trade.js';
 import { portfoliosList } from '../steps/refdata/portfolios-list.js';
 import { preflight } from '../setup/preflight.js';
 import { ERR } from '../lib/errors.js';
-import { buildTextSummary } from '../lib/summary.js';
+import { makeHandleSummary } from '../lib/summary.js';
 
 const PLAN = 's01-create-trade-e2e';
 
@@ -106,19 +106,9 @@ export function journeyIteration() {
 }
 
 // ── 收尾 ──────────────────────────────────────────────────────
-export function handleSummary(data) {
-  const meta = {
-    plan: PLAN,
-    env: cfg.envName,
-    profile: cfg.profileName,
-    target: `${cfg.workersUrl} (E2E: refdata ×2 → calc-risk → create → detail → risk-metrics, refdataMode=${REFDATA_MODE})`,
-  };
-
-  const out = { stdout: buildTextSummary(data, meta) };
-  const dir = __ENV.RESULT_DIR;
-  if (dir) {
-    out[`${dir}/summary.txt`] = buildTextSummary(data, meta);
-    out[`${dir}/summary.json`] = JSON.stringify(data, null, 2);
-  }
-  return out;
-}
+export const handleSummary = makeHandleSummary(() => ({
+  plan: PLAN,
+  env: cfg.envName,
+  profile: cfg.profileName,
+  target: `${cfg.workersUrl} (E2E: refdata ×2 → calc-risk → create → detail → risk-metrics, refdataMode=${REFDATA_MODE})`,
+}));

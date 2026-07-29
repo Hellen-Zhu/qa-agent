@@ -22,7 +22,7 @@ import { cfg } from '../lib/config.js';
 import { pickCase } from '../lib/data.js';
 import { createTrade } from '../steps/workers/trade-management/create-trade.js';
 import { preflight } from '../setup/preflight.js';
-import { buildTextSummary } from '../lib/summary.js';
+import { makeHandleSummary } from '../lib/summary.js';
 
 const PLAN = 'p02-trade-create';
 
@@ -78,23 +78,9 @@ export function createTradeIteration() {
 }
 
 // ── 收尾 ──────────────────────────────────────────────────────
-export function handleSummary(data) {
-  const meta = {
-    plan: PLAN,
-    env: cfg.envName,
-    profile: cfg.profileName,
-    target: `${cfg.workersUrl}/trades/create`,
-  };
-
-  const out = {
-    stdout: buildTextSummary(data, meta),
-  };
-
-  // run.sh 会把 RESULT_DIR 传进来；直接 k6 run 时只打屏幕
-  const dir = __ENV.RESULT_DIR;
-  if (dir) {
-    out[`${dir}/summary.txt`] = buildTextSummary(data, meta);
-    out[`${dir}/summary.json`] = JSON.stringify(data, null, 2);
-  }
-  return out;
-}
+export const handleSummary = makeHandleSummary(() => ({
+  plan: PLAN,
+  env: cfg.envName,
+  profile: cfg.profileName,
+  target: `${cfg.workersUrl}/trades/create`,
+}));

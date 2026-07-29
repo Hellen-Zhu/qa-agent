@@ -34,7 +34,7 @@ import exec from 'k6/execution';
 import { cfg } from '../lib/config.js';
 import { tradesList } from '../steps/workers/trade-management/trades-list.js';
 import { ERR } from '../lib/errors.js';
-import { buildTextSummary } from '../lib/summary.js';
+import { makeHandleSummary } from '../lib/summary.js';
 
 const PLAN = 'p05-trades-list';
 
@@ -118,19 +118,9 @@ export function tradesListIteration() {
 }
 
 // ── 收尾 ──────────────────────────────────────────────────────
-export function handleSummary(data) {
-  const meta = {
-    plan: PLAN,
-    env: cfg.envName,
-    profile: cfg.profileName,
-    target: `${cfg.workersUrl}/trades?size=${PAGE_SIZE}`,
-  };
-
-  const out = { stdout: buildTextSummary(data, meta) };
-  const dir = __ENV.RESULT_DIR;
-  if (dir) {
-    out[`${dir}/summary.txt`] = buildTextSummary(data, meta);
-    out[`${dir}/summary.json`] = JSON.stringify(data, null, 2);
-  }
-  return out;
-}
+export const handleSummary = makeHandleSummary(() => ({
+  plan: PLAN,
+  env: cfg.envName,
+  profile: cfg.profileName,
+  target: `${cfg.workersUrl}/trades?size=${PAGE_SIZE}`,
+}));

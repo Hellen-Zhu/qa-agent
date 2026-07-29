@@ -15,6 +15,7 @@
 #   ./k6/run.sh p02-trade-create dev baseline VUS=8 DURATION=300s
 #   ./k6/run.sh p02-trade-create dev arrival  RATE=4
 #   ./k6/run.sh p02-trade-create dev baseline CREATE_DATA_FILE=data/create-trade/create-trade-invalid.json
+#   ./k6/run.sh p02-trade-create dev smoke    HTTP_DEBUG=full        # 逐笔打印 HTTP 报文（仅核对用）
 #
 # ⚠ 覆盖项刻意不用 `-e KEY=value`：Windows 侧的 run.ps1 里 PowerShell 会把 `-e`
 #   当参数名前缀去匹配，报 "ambiguous parameter"。两边统一成裸 KEY=value，
@@ -50,6 +51,7 @@ PLAN="$1"; ENV="$2"; PROFILE="$3"; shift 3
 # 与 run.ps1 的校验逻辑保持一致（同样的正则、同样的错误文案）
 RAW_OVERRIDES=("$@")
 OVERRIDE_ARGS=()
+HTTP_DEBUG=""
 for o in "${RAW_OVERRIDES[@]+"${RAW_OVERRIDES[@]}"}"; do
     [[ -z "$o" ]] && continue
     [[ "$o" == "-e" ]] && continue                 # 手滑写了 -e，忽略掉
@@ -57,6 +59,11 @@ for o in "${RAW_OVERRIDES[@]+"${RAW_OVERRIDES[@]}"}"; do
         echo "ERROR: 覆盖项格式不对: '$o'" >&2
         echo "       应为 KEY=value（不加 -e 前缀），例如 VUS=8" >&2
         exit 1
+    fi
+    # HTTP_DEBUG 是 k6 的进程级旗标不是脚本 __ENV 变量，单独截下来（见下方）
+    if [[ "$o" =~ ^HTTP_DEBUG=(.*)$ ]]; then
+        HTTP_DEBUG="${BASH_REMATCH[1]}"
+        continue
     fi
     OVERRIDE_ARGS+=(-e "$o")
 done
@@ -140,12 +147,29 @@ if [[ "${K6_WEB_DASHBOARD:-true}" != "false" ]]; then
     echo ""
 fi
 
+# ── HTTP 报文调试（HTTP_DEBUG=headers|full）──
+# k6 原生旗标：headers 只打请求/响应头，full 连 body 一起打。
+# **仅用于 smoke 级核对**（对拍 multipart 与真实 curl、抓一次完整失败现场）。
+DEBUG_ARGS=()
+if [[ -n "$HTTP_DEBUG" ]]; then
+    case "$HTTP_DEBUG" in
+        headers) DEBUG_ARGS=(--http-debug) ;;
+        full)    DEBUG_ARGS=(--http-debug=full) ;;
+        *) echo "ERROR: HTTP_DEBUG 只接受 headers | full（得到 '$HTTP_DEBUG'）" >&2; exit 1 ;;
+    esac
+    echo "⚠ HTTP_DEBUG=$HTTP_DEBUG —— 逐笔打印 HTTP 报文，仅用于 smoke 级核对；"
+    echo "  正式压测轮开着它数字作废。full 会把 multipart 的 .dat 二进制整段吐进日志，"
+    echo "  且报文含真实 portfolio/counterparty —— 这份 k6.log 用完即清，不要传播。"
+    echo ""
+fi
+
 set +e
 RESULT_DIR="$RUN_DIR" k6 run \
     -e ENV="$ENV" \
     -e PROFILE="$PROFILE" \
     -e RESULT_DIR="$RUN_DIR" \
     "${OVERRIDE_ARGS[@]+"${OVERRIDE_ARGS[@]}"}" \
+    "${DEBUG_ARGS[@]+"${DEBUG_ARGS[@]}"}" \
     "${OUT_ARGS[@]}" \
     --summary-trend-stats "avg,min,med,p(90),p(95),p(99),max,count" \
     "$PLAN_FILE" 2>&1 | tee "$RUN_DIR/k6.log"

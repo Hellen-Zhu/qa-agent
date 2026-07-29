@@ -54,20 +54,15 @@ export const ERR = {
  *   **绝不能把 msg 原文当 reason** —— 自由文本无界，等同把 tradeId 打进 tag。
  */
 
-// 业务拒绝归因模式表：按真实观测的 msg 逐条校准、补充。
-// 现场原文靠下方 logFailure 的限流日志采集 → 回填到这里。
-const BIZ_PATTERNS = [
-  // 服务端临时文件竞态：并发同刻上传、时间戳撞名后文件被先完成方删除
-  // （缺陷论证与绕行开关见 data/dat/README.md「服务端临时文件竞态」）
-  { reason: 'dat-missing', re: /(dat|file).*(not\s*found|missing|不存在)|找不到/i },
-];
-
-export function bizReason(body) {
+// 业务拒绝的归因**模式表属于各 API 的契约**，定义在各自的 step 文件里
+// （一个 API 一个文件），这里只提供匹配 + 兜底。现场原文靠下方 logFailure
+// 的限流日志采集 → 回填到各 step 的模式表。
+export function reasonFrom(body, patterns) {
   const msg = String((body && body.msg) || '');
-  for (let i = 0; i < BIZ_PATTERNS.length; i++) {
-    if (BIZ_PATTERNS[i].re.test(msg)) return BIZ_PATTERNS[i].reason;
+  for (let i = 0; i < (patterns || []).length; i++) {
+    if (patterns[i].re.test(msg)) return patterns[i].reason;
   }
-  // 兜底用服务端业务 code：后端枚举值，天然有界
+  // 兜底用服务端业务 code：统一响应封套 {code, status, msg, data} 的枚举值，天然有界
   const code = body && body.code;
   return typeof code === 'number' ? 'code-' + code : 'code-unknown';
 }
@@ -95,18 +90,31 @@ export function logFailure(errClass, reason, detail, tags) {
   const tail = n === LOG_CAP
     ? ` —— 本 VU 此类日志已达 ${LOG_CAP} 条，后续静默（计数看指标，逐笔看 result.csv）`
     : '';
-  console.warn(`✗ [${errClass}/${reason}] case=${t.caseId || 'NA'} phase=${t.runPhase || 'NA'} ${detail}${tail}`);
+  // name = 是哪个 API（E2E 六个接口混跑时必须能分）；__VU 用于对上"每 VU 限流"的口径（setup 阶段为 0）
+  console.warn(`✗ [${errClass}/${reason}] ${t.name || 'NA'} vu=${__VU} case=${t.caseId || 'NA'} phase=${t.runPhase || 'NA'} ${detail}${tail}`);
 }
 
 /**
- * 判定一次 create 响应属于哪一类。
- * 分支顺序即判定优先级，不要调换。
+ * 通用判定引擎。**公共层不认识任何具体接口** —— 技术失败与 JSON 解析
+ * 对所有 API 都一样，在这里统一处理；业务语义通过 spec 回调注入，
+ * 契约留在各 step 文件里（一个 API 一个文件）。几十个单接口场景
+ * 都走这一个入口，新增 API 不改本文件。
  *
- * @param {Object} res  k6 的 Response
- * @param {Object} tags 低基数标签，会附加到所有指标上
- * @returns {{errClass: string, detail: string, tradeId: string, taskId: string}}
+ * 分支顺序即判定优先级（technical → not-json → business → shape），不要调换。
+ *
+ * @param {Object} res   k6 的 Response
+ * @param {Object} tags  低基数标签，会附加到所有指标上
+ * @param {Object} [spec] 该 API 的响应契约：
+ *   spec.business (body) => null | {reason, detail}
+ *                 业务拒绝判定（HTTP 200 且 JSON 合法后调用）。
+ *                 不传 = 该接口没有已确认的业务拒绝形态（读接口现状）。
+ *   spec.shape    (body) => null | 问题描述
+ *                 结构校验（业务通过后调用）。结构不符（列名猜错、
+ *                 id 格式不对）是**脚本侧**问题 → script 类。
+ * @returns {{errClass, detail, reason, body}}  body 仅在 JSON 解析成功后非 null
  */
-export function classifyCreate(res, tags) {
+export function classifyResponse(res, tags, spec) {
+  const s = spec || {};
   const t = tags || {};
 
   // ── 类别 1：技术失败 ──
@@ -117,7 +125,7 @@ export function classifyCreate(res, tags) {
     const detail = `technical: HTTP ${res.status}${res.error ? ' ' + res.error : ''}`;
     recordOutcome(ERR.TECHNICAL, t, res, reason);
     logFailure(ERR.TECHNICAL, reason, detail, t);
-    return { errClass: ERR.TECHNICAL, detail, tradeId: 'NOT_FOUND', taskId: 'NOT_FOUND' };
+    return { errClass: ERR.TECHNICAL, detail, reason, body: null };
   }
 
   // ── 类别 3：响应不是 JSON ──
@@ -128,42 +136,32 @@ export function classifyCreate(res, tags) {
     const detail = `script: response is not JSON — ${e.message}`;
     recordOutcome(ERR.SCRIPT, t, res, 'not-json');
     logFailure(ERR.SCRIPT, 'not-json', detail, t);
-    return { errClass: ERR.SCRIPT, detail, tradeId: 'NOT_FOUND', taskId: 'NOT_FOUND' };
+    return { errClass: ERR.SCRIPT, detail, reason: 'not-json', body: null };
   }
 
-  // ── 类别 2：业务拒绝 ──
-  if (body.code !== 200 || body.status !== 'PENDING APPROVAL') {
-    const reason = bizReason(body);
-    // msg 截断：响应文案可能整段堆栈，日志与 detail 只要开头就够定位
-    const detail = `business: code=${body.code} status=${body.status} msg=${String(body.msg || '').slice(0, 160)}`;
-    recordOutcome(ERR.BUSINESS, t, res, reason);
-    logFailure(ERR.BUSINESS, reason, detail, t);
-    return { errClass: ERR.BUSINESS, detail, tradeId: 'NOT_FOUND', taskId: 'NOT_FOUND' };
+  // ── 类别 2：业务拒绝（契约注入）──
+  if (s.business) {
+    const rej = s.business(body);
+    if (rej) {
+      recordOutcome(ERR.BUSINESS, t, res, rej.reason);
+      logFailure(ERR.BUSINESS, rej.reason, rej.detail, t);
+      return { errClass: ERR.BUSINESS, detail: rej.detail, reason: rej.reason, body };
+    }
   }
 
-  // ── 成功路径：结构完整性 ──
-  // 校验格式而不只是非空：提取失败时的兜底值也是非空字符串，
-  // 会被"非空"这种弱断言放过去。
-  const tradeId = body.data && body.data.trade ? String(body.data.trade.id || '') : '';
-  if (!/^TRD-\d+$/.test(tradeId)) {
-    const detail = `script: unexpected tradeId format — '${tradeId}'`;
-    recordOutcome(ERR.SCRIPT, t, res, 'shape');
-    logFailure(ERR.SCRIPT, 'shape', detail, t);
-    return { errClass: ERR.SCRIPT, detail, tradeId: 'NOT_FOUND', taskId: 'NOT_FOUND' };
+  // ── 结构完整性（契约注入）──
+  if (s.shape) {
+    const problem = s.shape(body);
+    if (problem) {
+      const detail = `script: ${problem}`;
+      recordOutcome(ERR.SCRIPT, t, res, 'shape');
+      logFailure(ERR.SCRIPT, 'shape', detail, t);
+      return { errClass: ERR.SCRIPT, detail, reason: 'shape', body };
+    }
   }
-
-  // taskId 目前只存在于 msg 的自然语言里：
-  //   "Submitted for checker approval. TaskId: CHK-98C0DF19"
-  // 只能正则捞，文案一改就断（已作为 improvement 提给开发）。
-  const m = /TaskId:\s*(CHK-[A-Za-z0-9]+)/.exec(String(body.msg || ''));
 
   recordOutcome(ERR.OK, t, res);
-  return {
-    errClass: ERR.OK,
-    detail: 'ok',
-    tradeId,
-    taskId: m ? m[1] : 'NOT_FOUND',
-  };
+  return { errClass: ERR.OK, detail: 'ok', reason: '', body };
 }
 
 /**
@@ -188,46 +186,11 @@ export function recordOutcome(errClass, tags, res, reason) {
 }
 
 /**
- * 只读 JSON 接口的通用判定（trades-list / trade-detail / refdata 列表）。
- *
- * 与 classifyCreate 的差别：这些接口没有已确认的"业务拒绝"形态
- * （读接口拿不到 PENDING APPROVAL 这类业务状态可断言），
- * 所以只产出 technical / script / ok 三种结果。哪天确认了读接口的
- * 业务错误码形态，在 validate 回调里判并把这里升级成四类。
- *
- * @param {Object}   res      k6 Response
- * @param {Object}   tags     低基数标签
- * @param {Function} [validate] (body) => 问题描述|null。
- *                   结构不符（列名猜错、data 不是数组）是**脚本侧**问题 → script 类。
- * @returns {{errClass, detail, body}}  body 仅在 JSON 解析成功时非 null
+ * 只读 JSON 接口的简写（trades-list / trade-detail / refdata 列表）：
+ * 这些接口没有已确认的"业务拒绝"形态（读接口拿不到 PENDING APPROVAL
+ * 这类业务状态可断言），所以契约只有结构校验。哪天确认了读接口的
+ * 业务错误码形态，调用方直接改用 classifyResponse 传 spec.business。
  */
 export function classifyRead(res, tags, validate) {
-  if (res.status !== 200) {
-    const reason = techReason(res);
-    const detail = `technical: HTTP ${res.status}${res.error ? ' ' + res.error : ''}`;
-    recordOutcome(ERR.TECHNICAL, tags, res, reason);
-    logFailure(ERR.TECHNICAL, reason, detail, tags);
-    return { errClass: ERR.TECHNICAL, detail, body: null };
-  }
-
-  let body;
-  try {
-    body = res.json();
-  } catch (e) {
-    const detail = `script: response is not JSON — ${e.message}`;
-    recordOutcome(ERR.SCRIPT, tags, res, 'not-json');
-    logFailure(ERR.SCRIPT, 'not-json', detail, tags);
-    return { errClass: ERR.SCRIPT, detail, body: null };
-  }
-
-  const problem = validate ? validate(body) : null;
-  if (problem) {
-    const detail = `script: ${problem}`;
-    recordOutcome(ERR.SCRIPT, tags, res, 'shape');
-    logFailure(ERR.SCRIPT, 'shape', detail, tags);
-    return { errClass: ERR.SCRIPT, detail, body };
-  }
-
-  recordOutcome(ERR.OK, tags, res);
-  return { errClass: ERR.OK, detail: 'ok', body };
+  return classifyResponse(res, tags, { shape: validate });
 }

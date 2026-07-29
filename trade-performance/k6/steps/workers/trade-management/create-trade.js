@@ -28,9 +28,56 @@
 import http from 'k6/http';
 import { cfg } from '../../../lib/config.js';
 import { getDat, uploadName } from '../../../lib/create-trade-data.js';
-import { classifyCreate } from '../../../lib/errors.js';
+import { classifyResponse, reasonFrom, ERR } from '../../../lib/errors.js';
 
 const URL = `${cfg.workersUrl}/trades/create`;
+
+/*
+ * ── create 的响应契约（业务判定属于本文件，公共 errors.js 只有引擎）──
+ * 成功形态：HTTP 200 + code=200 + status='PENDING APPROVAL'
+ *          + data.trade.id 形如 TRD-\d+
+ * taskId 只存在于 msg 的自然语言里：
+ *   "Submitted for checker approval. TaskId: CHK-98C0DF19"
+ * 只能正则捞，文案一改就断（已作为 improvement 提给开发）。
+ */
+
+// 业务拒绝的归因模式表：按真实观测的 msg 校准、逐条补充。
+// 现场原文靠 errors.js 限流日志采集 → 回填到这里收紧正则。
+const REJECT_PATTERNS = [
+  // 服务端临时文件竞态：并发同刻上传、时间戳撞名后文件被先完成方删除
+  // （缺陷论证与绕行开关 DAT_NAME_MODE 见 data/dat/README.md）
+  { reason: 'dat-missing', re: /(dat|file).*(not\s*found|missing|不存在)|找不到/i },
+];
+
+function classifyCreate(res, tags) {
+  const out = classifyResponse(res, tags, {
+    business: (body) =>
+      body.code !== 200 || body.status !== 'PENDING APPROVAL'
+        ? {
+            reason: reasonFrom(body, REJECT_PATTERNS),
+            // msg 截断：响应文案可能整段堆栈，定位只要开头
+            detail: `business: code=${body.code} status=${body.status} msg=${String(body.msg || '').slice(0, 160)}`,
+          }
+        : null,
+    // 校验格式而不只是非空：提取失败的兜底值也是非空字符串，弱断言放得过去
+    shape: (body) => {
+      const id = body.data && body.data.trade ? String(body.data.trade.id || '') : '';
+      return /^TRD-\d+$/.test(id) ? null : `unexpected tradeId format — '${id}'`;
+    },
+  });
+
+  if (out.errClass !== ERR.OK) {
+    return { errClass: out.errClass, detail: out.detail, tradeId: 'NOT_FOUND', taskId: 'NOT_FOUND' };
+  }
+
+  const m = /TaskId:\s*(CHK-[A-Za-z0-9]+)/.exec(String(out.body.msg || ''));
+  return {
+    errClass: ERR.OK,
+    detail: 'ok',
+    tradeId: String(out.body.data.trade.id),
+    taskId: m ? m[1] : 'NOT_FOUND',
+  };
+}
 
 /**
  * 拼 multipart 里 `trade` 字段的值。

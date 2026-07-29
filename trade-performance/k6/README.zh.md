@@ -205,7 +205,7 @@ config 里的 `data/...` 也按这个根解析。
 |---|---|---|
 | **纯逻辑**（rows.js） | `node k6/tests/rows.test.mjs` | ✅ 12 个用例 |
 | **判定逻辑**（errors.js） | 需 k6 运行时；可写一个喂假响应的 scenario | ⬜ 待补 |
-| **请求构造**（create-trade.js） | `k6 run --http-debug=full` 看实际发出的 multipart | ⬜ 手工 |
+| **请求构造**（create-trade.js） | `./k6/run.sh <plan> dev smoke HTTP_DEBUG=full` 看实际发出的 multipart | ⬜ 手工 |
 | **端到端** | `./k6/run.sh p02-trade-create dev smoke` | ✅ |
 
 **纯逻辑要和 k6 API 隔离**（`lib/rows.js` 不 import 任何 `k6/*`），
@@ -220,7 +220,7 @@ config 里的 `data/...` 也按这个根解析。
       采集方式见 `data/create-trade/README.md`；旧 CSV 里的真值手工填进
       JSON（旧列结构与新 schema 不兼容，已无直读路径）
 - [ ] 把真实 `FX_TRF.dat` 放进 `data/dat/products/FX_TRF/`，跑 `./scripts/index-dat.py` 对账
-- [ ] 跑通 `smoke`，用 `--http-debug=full` 核对发出的 multipart 与真实 curl 一致
+- [ ] 跑通 `smoke`，加 `HTTP_DEBUG=full` 覆盖项核对发出的 multipart 与真实 curl 一致
 - [ ] p05 首次 smoke 人工核对返回行数 == 请求 size（分页参数名是推断值）
 - [ ] 量 `.dat` 加载的实际内存占用（`k6 run` 会打印）
 - [ ] 补 `errors.js` 的判定逻辑测试

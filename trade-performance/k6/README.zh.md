@@ -49,6 +49,11 @@ K6_PROMETHEUS_RW_SERVER_URL=http://<prom-host>:9090/api/v1/write \
   ./k6/run.sh p02-trade-create dev baseline
 ```
 
+时间序列曲线（k6 web dashboard）**默认开启**：跑时 `http://127.0.0.1:5665`
+实时看，跑完导出 `results/<runId>/report.html`（短运行如 smoke 会跳过导出；
+`K6_WEB_DASHBOARD=false` 关闭）。⚠ 它的错误率是 HTTP 层口径，
+**判定以 summary.txt 的三类错误为准**，dashboard 只用来看曲线形态。
+
 ---
 
 ## 目录结构：三维正交 + 四层划分
@@ -69,7 +74,7 @@ k6/
 │   └── dat/                        .dat 样本，按 productType 分目录
 ├── scripts/index-dat.py            .dat 与数据文件的对账（引用完整性检查）
 ├── tests/*.test.mjs                纯逻辑单测（node 直接跑，不需要 k6）
-└── results/<runId>/                每次运行：manifest + 摘要 + 明细 csv
+└── results/<runId>/                每次运行：manifest + 摘要 + 明细 csv + report.html
 ```
 
 三维正交的意思：计划 × 环境 × 负载互相独立，任意组合，

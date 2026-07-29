@@ -326,6 +326,14 @@ sum by (rpc_method) (
 
 ## 7. 三种集成方案
 
+> **方案 0 · k6 web dashboard —— 已内置，先用它看曲线。**
+> 两个 runner 默认开启：跑时 `http://127.0.0.1:5665` 实时看，
+> 跑完在 `results/<runId>/report.html` 留一份自包含 HTML（短运行如 smoke 会跳过导出）。
+> 在 remote-write 审批（方案 B）落地前，这是唯一的压测端时间序列视图。
+> ⚠ 它只看**压测端**曲线，回答不了"为什么慢"——归因仍需下面的方案把
+> 后端指标对到同一根时间轴；且它的错误率是 `http_req_failed`（HTTP 层），
+> 三类错误判定以 `summary.txt` 为准。
+
 ### 方案 A · 时间轴对齐 —— 零改造，现在就能用 ✅ 推荐先做
 
 两个 runner（`k6/run.sh` `k6/run.ps1`）跑完都会打印：

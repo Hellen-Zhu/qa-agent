@@ -124,6 +124,22 @@ if [[ -n "${K6_PROMETHEUS_RW_SERVER_URL:-}" ]]; then
     echo ""
 fi
 
+# ── k6 web dashboard（k6 ≥ v0.49 自带；报 unknown environment variable 就升级 k6）──
+# 跑时 http://127.0.0.1:5665 实时看曲线，跑完导出自包含 HTML ——
+# 拿到 Prometheus remote-write 审批之前，这是唯一的时间序列视图（见 GRAFANA.zh.md §7）。
+# ⚠ 判定不看它：dashboard 的错误率是 http_req_failed（HTTP 层），
+#   本项目业务失败照样返回 HTTP 200 —— 三类错误口径以 summary.txt 为准。
+# 默认开启。并行跑第二个实例会撞端口：K6_WEB_DASHBOARD_PORT=5666 换端口，
+# 或 K6_WEB_DASHBOARD=false 整个关掉。
+# ⚠ 运行太短时 k6 跳过导出（"report generation was skipped, not enough data"，
+#   聚合桶默认 10s）—— smoke 没有 report.html 是正常的，正式轮次才有。
+if [[ "${K6_WEB_DASHBOARD:-true}" != "false" ]]; then
+    export K6_WEB_DASHBOARD=true
+    export K6_WEB_DASHBOARD_EXPORT="$RUN_DIR/report.html"
+    echo "▶ dashboard  http://127.0.0.1:${K6_WEB_DASHBOARD_PORT:-5665} → 导出 $RUN_DIR/report.html"
+    echo ""
+fi
+
 set +e
 RESULT_DIR="$RUN_DIR" k6 run \
     -e ENV="$ENV" \
@@ -144,6 +160,7 @@ echo "── 结果 ────────────────────
 echo "summary:  $RUN_DIR/summary.txt"
 echo "raw:      $RUN_DIR/summary.json"
 echo "csv:      $RUN_DIR/result.csv"
+[[ -f "$RUN_DIR/report.html" ]] && echo "report:   $RUN_DIR/report.html   ← 时间序列曲线（判定以 summary 为准）"
 echo "manifest: $MANIFEST"
 echo ""
 if [[ -n "${GRAFANA_DASHBOARD_URL:-}" ]]; then

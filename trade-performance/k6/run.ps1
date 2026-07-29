@@ -175,6 +175,23 @@ if ($env:K6_PROMETHEUS_RW_SERVER_URL) {
     Write-Host ""
 }
 
+# ── k6 web dashboard（k6 ≥ v0.49 自带；报 unknown environment variable 就升级 k6）──
+# 跑时 http://127.0.0.1:5665 实时看曲线，跑完导出自包含 HTML ——
+# 拿到 Prometheus remote-write 审批之前，这是唯一的时间序列视图（见 GRAFANA.zh.md §7）。
+# ⚠ 判定不看它：dashboard 的错误率是 http_req_failed（HTTP 层），
+#   本项目业务失败照样返回 HTTP 200 —— 三类错误口径以 summary.txt 为准。
+# 默认开启。并行跑第二个实例会撞端口：$env:K6_WEB_DASHBOARD_PORT=5666 换端口，
+# 或 $env:K6_WEB_DASHBOARD='false' 整个关掉。
+# ⚠ 运行太短时 k6 跳过导出（"report generation was skipped, not enough data"，
+#   聚合桶默认 10s）—— smoke 没有 report.html 是正常的，正式轮次才有。
+if ($env:K6_WEB_DASHBOARD -ne 'false') {
+    $env:K6_WEB_DASHBOARD = 'true'
+    $env:K6_WEB_DASHBOARD_EXPORT = "$RunDirFwd/report.html"
+    $DashPort = if ($env:K6_WEB_DASHBOARD_PORT) { $env:K6_WEB_DASHBOARD_PORT } else { '5665' }
+    Write-Host "> dashboard  http://127.0.0.1:$DashPort -> 导出 $RunDirFwd/report.html"
+    Write-Host ""
+}
+
 # ── 执行 ─────────────────────────────────────────────────────
 $env:RESULT_DIR = $RunDirFwd
 
@@ -203,6 +220,9 @@ Write-Host "-- 结果 ------------------------------------------"
 Write-Host "summary:  $RunDir\summary.txt"
 Write-Host "raw:      $RunDir\summary.json"
 Write-Host "csv:      $RunDir\result.csv"
+if (Test-Path "$RunDir\report.html") {
+    Write-Host "report:   $RunDir\report.html   <- 时间序列曲线（判定以 summary 为准）"
+}
 Write-Host "manifest: $Manifest"
 Write-Host ""
 if ($env:GRAFANA_DASHBOARD_URL) {

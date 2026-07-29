@@ -61,7 +61,7 @@ export function classifyCreate(res, tags) {
   // res.status === 0 表示连接层就失败了（超时 / 拒绝 / DNS）——
   // 这种情况 res.body 是 null，必须先挡住。
   if (res.status !== 200) {
-    record(ERR.TECHNICAL, t, res);
+    recordOutcome(ERR.TECHNICAL, t, res);
     return {
       errClass: ERR.TECHNICAL,
       detail: `technical: HTTP ${res.status}${res.error ? ' ' + res.error : ''}`,
@@ -75,7 +75,7 @@ export function classifyCreate(res, tags) {
   try {
     body = res.json();
   } catch (e) {
-    record(ERR.SCRIPT, t, res);
+    recordOutcome(ERR.SCRIPT, t, res);
     return {
       errClass: ERR.SCRIPT,
       detail: `script: response is not JSON — ${e.message}`,
@@ -86,7 +86,7 @@ export function classifyCreate(res, tags) {
 
   // ── 类别 2：业务拒绝 ──
   if (body.code !== 200 || body.status !== 'PENDING APPROVAL') {
-    record(ERR.BUSINESS, t, res);
+    recordOutcome(ERR.BUSINESS, t, res);
     return {
       errClass: ERR.BUSINESS,
       detail: `business: code=${body.code} status=${body.status} msg=${body.msg}`,
@@ -100,7 +100,7 @@ export function classifyCreate(res, tags) {
   // 会被"非空"这种弱断言放过去。
   const tradeId = body.data && body.data.trade ? String(body.data.trade.id || '') : '';
   if (!/^TRD-\d+$/.test(tradeId)) {
-    record(ERR.SCRIPT, t, res);
+    recordOutcome(ERR.SCRIPT, t, res);
     return {
       errClass: ERR.SCRIPT,
       detail: `script: unexpected tradeId format — '${tradeId}'`,
@@ -114,7 +114,7 @@ export function classifyCreate(res, tags) {
   // 只能正则捞，文案一改就断（已作为 improvement 提给开发）。
   const m = /TaskId:\s*(CHK-[A-Za-z0-9]+)/.exec(String(body.msg || ''));
 
-  record(ERR.OK, t, res);
+  recordOutcome(ERR.OK, t, res);
   return {
     errClass: ERR.OK,
     detail: 'ok',
@@ -123,7 +123,11 @@ export function classifyCreate(res, tags) {
   };
 }
 
-function record(errClass, tags, res) {
+/**
+ * 把一次请求的判定结果记进全部指标。**所有步骤的唯一记账出口** ——
+ * 新步骤不要自己 new Counter 重复三类分离，调这里。
+ */
+export function recordOutcome(errClass, tags, res) {
   const t = Object.assign({}, tags, { errClass });
   const ok = errClass === ERR.OK;
 
@@ -134,4 +138,47 @@ function record(errClass, tags, res) {
 
   rBusinessSuccess.add(ok, tags);
   if (ok) tSuccessDuration.add(res.timings.duration, tags);
+}
+
+/**
+ * 只读 JSON 接口的通用判定（trades-list / trade-detail / refdata 列表）。
+ *
+ * 与 classifyCreate 的差别：这些接口没有已确认的"业务拒绝"形态
+ * （读接口拿不到 PENDING APPROVAL 这类业务状态可断言），
+ * 所以只产出 technical / script / ok 三种结果 —— 对应 JMeter 侧
+ * 这些 fragment 只挂 "http 200" 断言的现状。哪天确认了读接口的业务
+ * 错误码形态，在 validate 回调里判并把这里升级成四类。
+ *
+ * @param {Object}   res      k6 Response
+ * @param {Object}   tags     低基数标签
+ * @param {Function} [validate] (body) => 问题描述|null。
+ *                   结构不符（列名猜错、data 不是数组）是**脚本侧**问题 → script 类。
+ * @returns {{errClass, detail, body}}  body 仅在 JSON 解析成功时非 null
+ */
+export function classifyRead(res, tags, validate) {
+  if (res.status !== 200) {
+    recordOutcome(ERR.TECHNICAL, tags, res);
+    return {
+      errClass: ERR.TECHNICAL,
+      detail: `technical: HTTP ${res.status}${res.error ? ' ' + res.error : ''}`,
+      body: null,
+    };
+  }
+
+  let body;
+  try {
+    body = res.json();
+  } catch (e) {
+    recordOutcome(ERR.SCRIPT, tags, res);
+    return { errClass: ERR.SCRIPT, detail: `script: response is not JSON — ${e.message}`, body: null };
+  }
+
+  const problem = validate ? validate(body) : null;
+  if (problem) {
+    recordOutcome(ERR.SCRIPT, tags, res);
+    return { errClass: ERR.SCRIPT, detail: `script: ${problem}`, body };
+  }
+
+  recordOutcome(ERR.OK, tags, res);
+  return { errClass: ERR.OK, detail: 'ok', body };
 }

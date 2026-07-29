@@ -128,6 +128,41 @@ export function buildTextSummary(data, meta) {
   }
   L.push('');
 
+  // ── 分步耗时（E2E 场景）─────────────────────────────────
+  // 上面的"成功样本"在 E2E 里是**多个 API 混在一起**的分布，单看会误导。
+  // 分步数据靠 k6 的子指标机制取得：scenario 在 thresholds 里声明
+  //   'oreo_success_duration{name:X}': ['max>=0']
+  // 哨兵阈值恒真，存在的唯一意义是让该子指标出现在 summary 数据里
+  // （k6 只为声明过阈值的 tag 组合生成子指标）。单接口场景没有这些声明，
+  // 本段自动不出现。对应 scripts/summarize.py 的按 label 分组。
+  const stepRows = Object.keys(data.metrics)
+    .filter((k) => k.startsWith('oreo_success_duration{'))
+    .map((k) => {
+      const nm = /\{name:([^,}]+)/.exec(k);
+      return {
+        label: (nm ? nm[1] : k).replace(/^workers_trademgmt_/, ''),
+        vals: data.metrics[k].values,
+      };
+    })
+    .filter((r) => r.vals && r.vals.count > 0)
+    .sort((a, b) => (a.label < b.label ? -1 : 1));
+
+  if (stepRows.length > 0) {
+    const w = Math.max.apply(null, stepRows.map((r) => dispWidth(r.label)).concat([8])) + 2;
+    L.push('── 分步耗时 (ms，成功样本) ────────────────────────');
+    L.push('    ' + ' '.repeat(w) + PCT_COLS.map((c) => padL(c, 8)).join('') + padL('n', 8));
+    stepRows.forEach((r) => {
+      L.push(
+        '    ' + padD(r.label, w) +
+        fmtMs(r.vals.med) + fmtMs(r.vals['p(90)']) + fmtMs(r.vals['p(95)']) +
+        fmtMs(r.vals['p(99)']) + fmtMs(r.vals.max) + fmtMs(r.vals.avg) +
+        padL(r.vals.count, 8)
+      );
+    });
+    L.push('    ⚠ 各步相加不等于"旅程耗时"—— think time 不在其中，且失败的步骤会缺样本');
+    L.push('');
+  }
+
   // ── 吞吐 ─────────────────────────────────────────────────
   L.push('── 吞吐 ───────────────────────────────────────────');
   L.push(`  运行时长      ${padL(num(durSec, 1), 8)} s`);
@@ -172,7 +207,9 @@ export function buildTextSummary(data, meta) {
         ok: t[expr].ok === true,
       }));
     })
-    .reduce((a, b) => a.concat(b), []);
+    .reduce((a, b) => a.concat(b), [])
+    // 'max>=0' 是分步耗时的哨兵阈值（见上），恒真无信息量，不进判定清单
+    .filter((t) => t.expr !== 'max>=0');
 
   if (thr.length > 0) {
     L.push('── 阈值 ───────────────────────────────────────────');

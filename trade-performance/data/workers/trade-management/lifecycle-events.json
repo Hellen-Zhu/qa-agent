@@ -1,15 +1,16 @@
 {
   "_comment": "Lifecycle event case pool -- for p06-trigger-event (migration list item 4, not yet implemented). Fields: eventType = event type; needsApproval = whether it goes through four-eyes approval (true events produce a checker task); partialPct = percentage for partial events, empty for non-partial events; notes = free text.",
   "_format": "Contract: see lib/rows.js: a rows array, keys starting with _ are comments, all values are treated as strings.",
+  "_rowIdentity": "No hand-maintained id column. eventType is the natural key (9 bounded values) and is what a metric tag should carry; the auto-injected __row (1-based) identifies a row positionally in logs and preflight errors -- same convention as create-trade.json.",
   "rows": [
-    { "eventCaseId": "E001", "eventType": "Cancellation",             "needsApproval": "true",  "partialPct": "",   "notes": "requires checker approval" },
-    { "eventCaseId": "E002", "eventType": "EarlyTermination",         "needsApproval": "false", "partialPct": "",   "notes": "rises with market volatility" },
-    { "eventCaseId": "E003", "eventType": "NovationRemaining",        "needsApproval": "false", "partialPct": "",   "notes": "" },
-    { "eventCaseId": "E004", "eventType": "PartialNovation",          "needsApproval": "false", "partialPct": "50", "notes": "partial - recomputes remaining notional" },
-    { "eventCaseId": "E005", "eventType": "PartialNovationRemaining", "needsApproval": "false", "partialPct": "",   "notes": "" },
-    { "eventCaseId": "E006", "eventType": "StepOutFull",              "needsApproval": "false", "partialPct": "",   "notes": "" },
-    { "eventCaseId": "E007", "eventType": "StepOutPartial",           "needsApproval": "false", "partialPct": "30", "notes": "partial" },
-    { "eventCaseId": "E008", "eventType": "PortfolioReassignment",    "needsApproval": "false", "partialPct": "",   "notes": "" },
-    { "eventCaseId": "E009", "eventType": "Allocation",               "needsApproval": "false", "partialPct": "",   "notes": "write amplification - split factor TBC" }
+    { "eventType": "Cancellation",             "needsApproval": "true",  "partialPct": "",   "notes": "requires checker approval" },
+    { "eventType": "EarlyTermination",         "needsApproval": "false", "partialPct": "",   "notes": "rises with market volatility" },
+    { "eventType": "NovationRemaining",        "needsApproval": "false", "partialPct": "",   "notes": "" },
+    { "eventType": "PartialNovation",          "needsApproval": "false", "partialPct": "50", "notes": "partial - recomputes remaining notional" },
+    { "eventType": "PartialNovationRemaining", "needsApproval": "false", "partialPct": "",   "notes": "" },
+    { "eventType": "StepOutFull",              "needsApproval": "false", "partialPct": "",   "notes": "" },
+    { "eventType": "StepOutPartial",           "needsApproval": "false", "partialPct": "30", "notes": "partial" },
+    { "eventType": "PortfolioReassignment",    "needsApproval": "false", "partialPct": "",   "notes": "" },
+    { "eventType": "Allocation",               "needsApproval": "false", "partialPct": "",   "notes": "write amplification - split factor TBC" }
   ]
 }

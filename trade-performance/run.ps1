@@ -90,6 +90,15 @@ if (-not (Test-Path $PlanFile))    { Write-Host "ERROR: plan '$Plan' not found (
 if (-not (Test-Path $EnvFile))     { Write-Host "ERROR: env '$TargetEnv' not found ($EnvFile)" -ForegroundColor Red; Show-Usage }
 if (-not (Test-Path $ProfileFile)) { Write-Host "ERROR: profile '$ProfileName' not found ($ProfileFile)" -ForegroundColor Red; Show-Usage }
 
+# ── Grafana dashboard: read from config/<env>.json ────────────
+# The address belongs to the environment, so it lives in the env config --
+# dev's dashboard is not perf's (var-host alone differs). PowerShell parses
+# JSON natively; run.sh has no JSON parser and uses a line-scoped sed reader
+# instead (see the cfg_get comment there) -- same values, same precedence.
+# The env var still wins, so a one-off run needs no file edit.
+$EnvCfg = Get-Content $EnvFile -Raw | ConvertFrom-Json
+$GrafanaUrl = if ($env:GRAFANA_DASHBOARD_URL) { $env:GRAFANA_DASHBOARD_URL } else { [string]$EnvCfg.grafanaDashboard }
+
 # ── Override validation: fail early, don't wait for k6 to start before finding the typo ──
 $OverrideArgs = @()
 foreach ($o in $Overrides) {
@@ -145,6 +154,7 @@ $null = $lines.Add("plan:         $PlanFile")
 $null = $lines.Add("env:          $EnvFile")
 $null = $lines.Add("profile:      $ProfileFile")
 $null = $lines.Add("overrides:    $OverrideS")
+$null = $lines.Add("grafana:      $(if ($GrafanaUrl) { $GrafanaUrl } else { '<none>' })")
 # Use [Environment] rather than $env:COMPUTERNAME / $env:USERNAME:
 # the latter only have values on Windows, so cross-platform runs (or CI
 # containers) would leave two empty fields — and the entire point of the
@@ -255,13 +265,13 @@ if (Test-Path "$RunDir\report.html") {
 }
 Write-Host "manifest: $Manifest"
 Write-Host ""
-if ($env:GRAFANA_DASHBOARD_URL) {
-    $sep = if ($env:GRAFANA_DASHBOARD_URL -like '*?*') { '&' } else { '?' }
-    Write-Host "Grafana:  $($env:GRAFANA_DASHBOARD_URL)${sep}from=$StartMs&to=$EndMs"
+if ($GrafanaUrl) {
+    $sep = if ($GrafanaUrl -like '*?*') { '&' } else { '?' }
+    Write-Host "Grafana:  ${GrafanaUrl}${sep}from=$StartMs&to=$EndMs"
 } else {
     Write-Host "Grafana time range (replace from=now-1h&to=now in the URL):"
     Write-Host "  &from=$StartMs&to=$EndMs"
-    Write-Host "  To print the full link directly: `$env:GRAFANA_DASHBOARD_URL='<dashboard URL, including var-host etc.>'"
+    Write-Host "  To get a ready-made link: set grafanaDashboard in $EnvFile (or `$env:GRAFANA_DASHBOARD_URL for one run)"
 }
 
 if (Select-String -Path "$RunDir\k6.log" -Pattern 'PREFLIGHT FAILED' -Quiet -ErrorAction SilentlyContinue) {

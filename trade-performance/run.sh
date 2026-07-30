@@ -77,6 +77,24 @@ PROFILE_FILE="profiles/$PROFILE.json"
 [[ -f "$ENV_FILE"     ]] || { echo "ERROR: env '$ENV' not found ($ENV_FILE)" >&2; usage; }
 [[ -f "$PROFILE_FILE" ]] || { echo "ERROR: profile '$PROFILE' not found ($PROFILE_FILE)" >&2; usage; }
 
+# ── Read one flat scalar out of config/<env>.json ──
+# ⚠ Deliberately NOT a JSON parser. bash has none built in, and neither jq nor
+#   python3 can be assumed on a load-test box, so this handles exactly what is
+#   needed and nothing more: one `"key": value` pair written on its own line,
+#   quotes and a trailing comma stripped. Keys read this way must be unique in
+#   the file. Anything structural stays on the k6 side, where lib/config.js
+#   parses the same file with a real JSON parser.
+cfg_get() {
+    sed -n "s/^[[:space:]]*\"$1\"[[:space:]]*:[[:space:]]*\(.*\)$/\1/p" "$ENV_FILE" \
+        | head -1 | sed 's/,[[:space:]]*$//; s/^"//; s/"$//'
+}
+
+# Grafana dashboard: the address belongs to the environment, so it lives in
+# config/<env>.json -- dev's dashboard is not perf's (var-host alone differs).
+# The env var still wins, so a one-off run needs no file edit (an edited file
+# gets committed by accident, and manifest's overrides line would not show it).
+GRAFANA_URL="${GRAFANA_DASHBOARD_URL:-$(cfg_get grafanaDashboard)}"
+
 command -v k6 >/dev/null 2>&1 || {
     echo "ERROR: k6 not on PATH" >&2
     echo "  macOS:   brew install k6" >&2
@@ -108,6 +126,7 @@ MANIFEST="$RUN_DIR/manifest.txt"
     echo "env:          $ENV_FILE"
     echo "profile:      $PROFILE_FILE"
     echo "overrides:    ${RAW_OVERRIDES[*]:-<none>}"
+    echo "grafana:      ${GRAFANA_URL:-<none>}"
     echo "host:         $(hostname)"
     echo "user:         $(whoami)"
     echo "k6:           $(k6 version 2>&1 | head -1 || echo unknown)"
@@ -190,15 +209,15 @@ echo "csv:      $RUN_DIR/result.csv"
 [[ -f "$RUN_DIR/report.html" ]] && echo "report:   $RUN_DIR/report.html   ← time-series curves (summary is authoritative for pass/fail)"
 echo "manifest: $MANIFEST"
 echo ""
-if [[ -n "${GRAFANA_DASHBOARD_URL:-}" ]]; then
-    sep='?'; [[ "$GRAFANA_DASHBOARD_URL" == *\?* ]] && sep='&'
+if [[ -n "$GRAFANA_URL" ]]; then
+    sep='?'; [[ "$GRAFANA_URL" == *\?* ]] && sep='&'
     START_MS=$(grep -oE 'epochMillis: *[0-9]+' "$MANIFEST" | head -1 | grep -oE '[0-9]+')
     END_MS=$(grep -oE 'endEpochMillis: *[0-9]+' "$MANIFEST" | grep -oE '[0-9]+')
-    echo "Grafana:  ${GRAFANA_DASHBOARD_URL}${sep}from=${START_MS}&to=${END_MS}"
+    echo "Grafana:  ${GRAFANA_URL}${sep}from=${START_MS}&to=${END_MS}"
 else
     echo "Grafana time range (replace from=now-1h&to=now in the URL):"
     grep -E 'epochMillis' "$MANIFEST" | sed 's/^/  /'
-    echo "  To print the full link directly: export GRAFANA_DASHBOARD_URL='<dashboard URL, including var-host etc.>'"
+    echo "  To get a ready-made link: set grafanaDashboard in '$ENV_FILE' (or export GRAFANA_DASHBOARD_URL for one run)"
 fi
 
 if grep -q 'PREFLIGHT FAILED' "$RUN_DIR/k6.log" 2>/dev/null; then

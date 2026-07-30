@@ -66,13 +66,12 @@ k6/
 ├── scenarios/*.js                  维度一：计划（测什么，可运行的薄壳）
 ├── journeys/*.js                   用户路径：把 steps 串成一次完整动作
 ├── steps/<svc>/<domain>/*.js       原子步骤：一个 API 一个文件（唯一契约）
+│   └── <路径>-data.js              路径供数：实例化用例池 + 路径特有装载，与步骤同目录
 ├── setup/<路径>-preflight.js       开跑前守卫：一条被测路径一个（见下方约定）
-├── lib/<路径>-data.js              该路径的数据装载与取数（默认数据文件在这里）
-├── lib/                            其余是框架设施：config / errors / rows / summary
-├── data/                           测试数据（JSON 为源，契约见 lib/rows.js）
-│   ├── create-trade/               create 用例池（datFile → data/dat/）
-│   ├── lifecycle-events/           生命周期事件池（供未来 p06）
-│   └── dat/                        .dat 样本，按 productType 分目录
+├── lib/                            框架设施：config / errors / rows / summary / case-pool
+├── data/                           测试数据：纯 .json + 采集 README，代码不混进去
+│   ├── <svc>/<domain>/             用例池，分区镜像 steps/（现有 workers/trade-management/）
+│   └── dat/                        共用 .dat 样本，按 productType 分目录（datFile 相对此目录）
 ├── scripts/index-dat.py            .dat 与数据文件的对账（引用完整性检查）
 ├── tests/*.test.mjs                纯逻辑单测（node 直接跑，不需要 k6）
 └── results/<runId>/                每次运行：manifest + 摘要 + 明细 csv + report.html
@@ -90,9 +89,16 @@ steps 不定义负载（executor 在 profiles），环境地址只在 config。
 | 文件 | 职责 | 现有 |
 |---|---|---|
 | `setup/<路径>-preflight.js` 导出 `<路径>Preflight()` | 这条路径开跑前必须成立的前提 | `create-trade` · `trades-list` · `refdata` |
-| `lib/<路径>-data.js` | 这条路径的数据装载、取数，**以及默认数据文件路径** | `create-trade-data.js` |
+| `steps/<svc>/<domain>/<路径>-data.js` | 这条路径的供数：用 `lib/case-pool.js` 实例化用例池（**默认数据文件路径在这里**）+ 路径特有装载（如 .dat 预载） | `create-trade-data.js` |
 
 两者成对：数据怎么来、怎么证明它今天还能用，是同一件事。
+分层原则与 errors.js 相同：lib/ 只留对所有路径一样的机制（case-pool 的
+覆盖项、.json 契约、SharedArray、取数游标），路径私产与消费它的步骤同目录；
+data/ 只放 .json，代码不混进去，且分区镜像 steps/（`data/<svc>/<domain>/`）——
+代码和它的数据在两棵树里同坐标。一条被测路径一个池（create 与 calc-risk
+共用同一行是刻意的：风险预览的就是即将提交的那笔），不是一个 API 一个 json。
+行的标识用加载时自动注入的 `__row` 行号（指标 tag `row`、日志、预检报错
+都用它）—— 一行是**数据变体**不是测试用例，不维护手工 id 列。
 
 **为什么数据文件路径不在 `config/<env>.json` 里**：config 回答"打哪个环境"
 （地址、身份、超时、preflight 策略）；"用哪个用例池"是**计划维度**的事——
@@ -100,7 +106,7 @@ p05 压列表接口根本不需要 create 用例，放进 env config 等于让�
 都声明一份与自己无关的配置。需要临时换池用覆盖项：
 
 ```bash
-./k6/run.sh p02-trade-create dev baseline CREATE_DATA_FILE=data/create-trade/create-trade-invalid.json
+./k6/run.sh p02-trade-create dev baseline CREATE_DATA_FILE=data/workers/trade-management/create-trade-lock-variant.json
 ```
 
 > ⚠ 数据**内容**是环境相关的（id 不跨环境通用），但**路径**不是——
@@ -145,7 +151,7 @@ k6 的 tag 会成为指标的维度——**高基数标签会让内存和 Promet
 
 | 可以打标签 | **绝对不要** |
 |---|---|
-| `runPhase` `caseId` `productType` `errClass` | `tradeId` `taskId` `tradeReference` |
+| `runPhase` `row` `productType` `errClass` | `tradeId` `taskId` `tradeReference` |
 
 需要逐笔明细用 `--out csv`（run.sh 已默认开），不要塞进 tag。
 
@@ -156,8 +162,8 @@ k6 的 tag 会成为指标的维度——**高基数标签会让内存和 Promet
 
 ### ⚠ 4. `open()` 的路径以**脚本文件**为基准
 
-不是当前工作目录。数据路径都以 `k6/` 为根（`lib/create-trade-data.js` 的 ROOT），
-config 里的 `data/...` 也按这个根解析。
+不是当前工作目录。数据路径都以 `k6/` 为根，每个做 `open()` 的模块自带
+回到 `k6/` 的 ROOT 前缀（lib/ 下是 `../`，steps/<svc>/<domain>/ 下是 `../../../`）。
 
 ---
 
@@ -203,9 +209,9 @@ config 里的 `data/...` 也按这个根解析。
 
 | 层 | 怎么测 | 现状 |
 |---|---|---|
-| **纯逻辑**（rows.js） | `node k6/tests/rows.test.mjs` | ✅ 12 个用例 |
+| **纯逻辑**（rows.js） | `node k6/tests/rows.test.mjs` | ✅ 11 个用例 |
 | **判定逻辑**（errors.js） | 需 k6 运行时；可写一个喂假响应的 scenario | ⬜ 待补 |
-| **请求构造**（create-trade.js） | `./k6/run.sh <plan> dev smoke HTTP_DEBUG=full` 看实际发出的 multipart | ⬜ 手工 |
+| **请求构造**（create-trade.js） | `K6_HTTP_DEBUG=full ./k6/run.sh <plan> dev smoke` 看实际发出的 multipart | ⬜ 手工 |
 | **端到端** | `./k6/run.sh p02-trade-create dev smoke` | ✅ |
 
 **纯逻辑要和 k6 API 隔离**（`lib/rows.js` 不 import 任何 `k6/*`），
@@ -215,12 +221,13 @@ config 里的 `data/...` 也按这个根解析。
 
 ## 待办
 
-- [ ] 填 `data/create-trade/create-trade-data.json` 的真值——归属字段
+- [ ] 填 `data/workers/trade-management/create-trade.json` 的真值——归属字段
       （portfolioId / counterpartyFmId / counterpartyName）内嵌在用例行里，
-      采集方式见 `data/create-trade/README.md`；旧 CSV 里的真值手工填进
+      采集方式见 `data/workers/trade-management/README.md`；旧 CSV 里的真值手工填进
       JSON（旧列结构与新 schema 不兼容，已无直读路径）
 - [ ] 把真实 `FX_TRF.dat` 放进 `data/dat/products/FX_TRF/`，跑 `./scripts/index-dat.py` 对账
-- [ ] 跑通 `smoke`，加 `HTTP_DEBUG=full` 覆盖项核对发出的 multipart 与真实 curl 一致
+- [ ] 跑通 `smoke`，用 `K6_HTTP_DEBUG=full` 核对发出的 multipart 与真实 curl 一致
+      （Windows：`$env:K6_HTTP_DEBUG='full'` 后再跑）
 - [ ] p05 首次 smoke 人工核对返回行数 == 请求 size（分页参数名是推断值）
 - [ ] 量 `.dat` 加载的实际内存占用（`k6 run` 会打印）
 - [ ] 补 `errors.js` 的判定逻辑测试

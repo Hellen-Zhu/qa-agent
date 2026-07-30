@@ -15,7 +15,7 @@
     .\k6\run.ps1 p02-trade-create dev smoke
     .\k6\run.ps1 p02-trade-create dev baseline VUS=8 DURATION=300s
     .\k6\run.ps1 p02-trade-create dev arrival  RATE=4
-    .\k6\run.ps1 p02-trade-create dev baseline CREATE_DATA_FILE=data/create-trade/create-trade-invalid.json
+    .\k6\run.ps1 p02-trade-create dev baseline CREATE_DATA_FILE=data/workers/trade-management/create-trade-lock-variant.json
 
 .NOTES
     ⚠ 为什么覆盖项不用 `-e KEY=value`：
@@ -83,7 +83,6 @@ if (-not (Test-Path $ProfileFile)) { Write-Host "ERROR: profile '$ProfileName' n
 
 # ── 覆盖项校验：早失败，别等 k6 起来了才发现打错 ──────────────
 $OverrideArgs = @()
-$HttpDebug = ''
 foreach ($o in $Overrides) {
     if ([string]::IsNullOrWhiteSpace($o)) { continue }
     if ($o -like '-e') { continue }                      # 手滑写了 -e，忽略掉
@@ -92,8 +91,6 @@ foreach ($o in $Overrides) {
         Write-Host "       应为 KEY=value（不要加 -e 前缀），例如 VUS=8" -ForegroundColor Red
         exit 1
     }
-    # HTTP_DEBUG 是 k6 的进程级旗标不是脚本 __ENV 变量，单独截下来（见执行段）
-    if ($o -match '^HTTP_DEBUG=(.*)$') { $HttpDebug = $Matches[1]; continue }
     $OverrideArgs += @('-e', $o)
 }
 
@@ -198,28 +195,17 @@ if ($env:K6_WEB_DASHBOARD -ne 'false') {
 # ── 执行 ─────────────────────────────────────────────────────
 $env:RESULT_DIR = $RunDirFwd
 
-# ── HTTP 报文调试（HTTP_DEBUG=headers|full）——与 run.sh 同一段逻辑 ──
-# k6 原生旗标：headers 只打请求/响应头，full 连 body 一起打。
-# **仅用于 smoke 级核对**（对拍 multipart 与真实 curl、抓一次完整失败现场）。
-$DebugArgs = @()
-if ($HttpDebug) {
-    switch ($HttpDebug) {
-        'headers' { $DebugArgs = @('--http-debug') }
-        'full'    { $DebugArgs = @('--http-debug=full') }
-        default   {
-            Write-Host "ERROR: HTTP_DEBUG 只接受 headers | full（得到 '$HttpDebug'）" -ForegroundColor Red
-            exit 1
-        }
-    }
-    Write-Host "⚠ HTTP_DEBUG=$HttpDebug —— 逐笔打印 HTTP 报文，仅用于 smoke 级核对；" -ForegroundColor Yellow
-    Write-Host "  正式压测轮开着它数字作废。full 会把 multipart 的 .dat 二进制整段吐进日志，" -ForegroundColor Yellow
-    Write-Host "  且报文含真实 portfolio/counterparty —— 这份 k6.log 用完即清，不要传播。" -ForegroundColor Yellow
+# 逐笔报文调试走 k6 原生的 K6_HTTP_DEBUG 环境变量直接透传（同
+# K6_WEB_DASHBOARD 的惯例），runner 不做翻译：
+#   $env:K6_HTTP_DEBUG='full'; .\k6\run.ps1 p02-trade-create dev smoke
+if ($env:K6_HTTP_DEBUG) {
+    Write-Host "⚠ K6_HTTP_DEBUG=$($env:K6_HTTP_DEBUG) —— 逐笔打印 HTTP 报文，仅用于 smoke 级核对；" -ForegroundColor Yellow
+    Write-Host "  报文含真实 refdata，full 还会吐 .dat 二进制 —— 这份 k6.log 用完即清。" -ForegroundColor Yellow
     Write-Host ""
 }
 
 $k6Args = @('run', '-e', "ENV=$TargetEnv", '-e', "PROFILE=$ProfileName", '-e', "RESULT_DIR=$RunDirFwd")
 $k6Args += $OverrideArgs
-$k6Args += $DebugArgs
 $k6Args += $OutArgs
 $k6Args += @('--summary-trend-stats', 'avg,min,med,p(90),p(95),p(99),max,count')
 $k6Args += $PlanFile

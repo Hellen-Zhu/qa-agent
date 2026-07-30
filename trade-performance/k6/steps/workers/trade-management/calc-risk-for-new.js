@@ -21,7 +21,7 @@
 import http from 'k6/http';
 import { Rate } from 'k6/metrics';
 import { cfg } from '../../../lib/config.js';
-import { getDat, uploadName } from '../../../lib/create-trade-data.js';
+import { getDat, uploadName } from './create-trade-data.js';
 import { buildTradePayload } from './create-trade.js';
 import { recordOutcome, logFailure, techReason, ERR } from '../../../lib/errors.js';
 
@@ -43,7 +43,7 @@ export function calcRiskForNew(opts) {
   const tags = {
     name: 'workers_trademgmt_calcriskfornew',
     runPhase: runPhase,
-    caseId: caseRow.caseId || 'NA',
+    row: String(caseRow.__row || 0),
     productType: caseRow.productType || 'NA',
   };
 

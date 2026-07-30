@@ -153,12 +153,11 @@ node k6\tests\rows.test.mjs     # JSON 数据解析
 
 ### ① 用例数据(含归属字段)
 
-编辑 `k6\data\create-trade\create-trade-data.json`,把 `TBC` 换成真值——
+编辑 `k6\data\workers\trade-management\create-trade.json`,把 `TBC` 换成真值——
 归属字段直接内嵌在用例行里,一行填完就是一个完整可跑用例:
 
 ```json
 {
-  "caseId": "C001",
   "datFile": "products/FX_TRF/fx_trf_01.dat",
   "productType": "FX_TRF",
   "notionalCurrency": "",
@@ -183,7 +182,7 @@ node k6\tests\rows.test.mjs     # JSON 数据解析
 ### ② .dat 文件
 
 把真实 `.dat` 放进 `k6\data\dat\products\FX_TRF\fx_trf_01.dat`,
-路径与 `create-trade-data.json` 里 `datFile` 字段一致。
+路径与 `create-trade.json` 里 `datFile` 字段一致。
 
 ### ③ 校验
 
@@ -219,9 +218,9 @@ Mac/Linux 或 Git Bash:
 env=dev profile=smoke
 target=http://10.198.25.56:9089/api/v1/trades/create
 maker=maker@sc.com
-data=data/create-trade/create-trade-data.json  rows=5
+data=data/workers/trade-management/create-trade.json  rows=5
 ✓ 检查 1/2：数据字段齐全，无占位值
-✓ 检查 2/2：数据业务可用 — caseId=C001 portfolio=ABS-HK-CFD-BDC → TRD-100234 / CHK-98C0DF19 (1843ms)
+✓ 检查 2/2：数据业务可用 — 第1行 portfolio=ABS-HK-CFD-BDC → TRD-100234 / CHK-98C0DF19 (1843ms)
 ```
 
 然后是摘要。
@@ -530,10 +529,8 @@ foreach ($r in 1,2,4,8) {
 
 ```powershell
 # D 类：全部 VU 打同一个 portfolio → 若 TPS 显著下降，存在 portfolio 级锁竞争
-.\k6\run.ps1 p02-trade-create dev baseline VUS=8 CREATE_DATA_FILE=data/create-trade/create-trade-invalid.json
-
-# 坏 .dat：期望失败，看的是"多快拒绝"（P95），不是错误率
-.\k6\run.ps1 p02-trade-create dev baseline CREATE_DATA_FILE=data/create-trade/create-trade-invalid.json
+# （变体池 = 复制 create-trade.json，所有行填同一组归属值）
+.\k6\run.ps1 p02-trade-create dev baseline VUS=8 CREATE_DATA_FILE=data/workers/trade-management/create-trade-lock-variant.json
 ```
 
 **每次只改一个变量。** manifest 会记下改了什么,三个月后还能解释。

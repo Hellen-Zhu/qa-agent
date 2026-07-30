@@ -31,7 +31,7 @@
 
 import exec from 'k6/execution';
 import { cfg } from '../lib/config.js';
-import { createCases, pickCase, DATA_FILE, DAT_NAME_MODE } from '../lib/create-trade-data.js';
+import { createCases, pickCase, DATA_FILE, DAT_NAME_MODE } from '../steps/workers/trade-management/create-trade-data.js';
 import { createTrade, validateInputs } from '../steps/workers/trade-management/create-trade.js';
 import { ERR } from '../lib/errors.js';
 
@@ -59,7 +59,7 @@ export function createTradePreflight() {
   const allProblems = [];
   for (let i = 0; i < createCases.length; i++) {
     const problems = validateInputs(pickCase(i));
-    problems.forEach((p) => allProblems.push(`[${pickCase(i).caseId || 'i=' + i}] ${p}`));
+    problems.forEach((p) => allProblems.push(`[第${pickCase(i).__row}行] ${p}`));
     if (i >= 50) break;   // 大数据集时够采样了
   }
 
@@ -80,7 +80,7 @@ export function createTradePreflight() {
 
   if (usable) {
     console.log(
-      `✓ 检查 2/2：数据业务可用 — caseId=${caseRow.caseId} ` +
+      `✓ 检查 2/2：数据业务可用 — 第${caseRow.__row}行 ` +
       `portfolio=${caseRow.portfolioId} → ${r.tradeId} / ${r.taskId} ` +
       `(${Math.round(r.res.timings.duration)}ms)`
     );

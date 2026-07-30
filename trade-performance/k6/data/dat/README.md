@@ -11,7 +11,6 @@ products/            真实样本，一个 productType 一个子目录
   FX_TRF/
   <每新增一个产品类型加一个目录>
 synthetic/           人造文件，用于健壮性验证而非成本画像
-invalid/             人造坏文件，用于 fail-fast 验证
 ```
 
 ### 为什么不是 small / medium / large
@@ -132,41 +131,6 @@ create 与 calc-risk 都生效）。它同时是**诊断实验**：
 默认关闭，报告必须标注 `datNameMode` 标签；**服务端修复后关掉开关
 用原名并发复测**——那次复测就是这个缺陷的回归验证，通过后才能关单。
 
-## invalid/ —— 这四个是人造的，且必须人造
-
-| 文件 | 构造方式 | 期望 |
-|---|---|---|
-| `corrupt.dat` | 正常文件中间字节随机翻转 | 快速拒绝，不应超时 |
-| `truncated.dat` | 正常文件截断到 50% | 快速拒绝 |
-| `empty.dat` | 0 字节 | 快速拒绝，且不应抛未捕获异常 |
-| `wrong-format.dat` | 直接放一个 .txt / .png | 快速拒绝 |
-
-拿到一个真实样本后，四个都能生成：
-
-```bash
-cd data/dat
-S=products/FX_TRF/fx_trf_01.dat
-: > invalid/empty.dat
-head -c $(( $(stat -f%z $S) / 2 )) $S > invalid/truncated.dat
-echo "this is not a dat file" > invalid/wrong-format.dat
-python3 -c "
-import random
-b = bytearray(open('$S','rb').read())
-random.seed(42)                       # 固定种子 —— 坏文件也必须可复现
-for _ in range(len(b)//100): b[random.randrange(len(b))] ^= 0xFF
-open('invalid/corrupt.dat','wb').write(b)"
-```
-
-**为什么 invalid 算性能测试**：一个不能 fail-fast 的解析器，在生产里被批量坏文件
-打中时会把 CPU 全部吃掉，拖垮同进程内所有接口——**包括与它毫无业务关系的 refdata 查询**。
-
-跑法（**期望断言失败**，看的是 P95 耗时而不是错误率）：
-
-```bash
-./k6/run.sh p02-trade-create dev baseline \
-    CREATE_DATA_FILE=data/create-trade/create-trade-invalid.json
-```
-
 ## synthetic/ —— 超大文件，是健壮性不是成本画像
 
 如果真实产品都产生不了很大的文件，那"超大文件"就是一个**人造场景**：
@@ -184,7 +148,7 @@ open('invalid/corrupt.dat','wb').write(b)"
 ## 目前状态
 
 **空目录，需要业务/开发提供真实样本。** 最省事的采集方式见
-[`../create-trade/README.md` 怎么填](../create-trade/README.md)：在 UI 上手工建一笔 trade，
+[`../workers/trade-management/README.md` 怎么填](../workers/trade-management/README.md)：在 UI 上手工建一笔 trade，
 DevTools 里 Copy as cURL，.dat 就在 request payload 里。
 
 还需要确认：

@@ -27,7 +27,7 @@
 
 import http from 'k6/http';
 import { cfg } from '../../../lib/config.js';
-import { getDat, uploadName } from '../../../lib/create-trade-data.js';
+import { getDat, uploadName } from './create-trade-data.js';
 import { classifyResponse, reasonFrom, ERR } from '../../../lib/errors.js';
 
 const URL = `${cfg.workersUrl}/trades/create`;
@@ -111,12 +111,12 @@ export function validateInputs(caseRow) {
 
   ['portfolioId', 'counterpartyFmId', 'counterpartyName'].forEach((k) => {
     const v = caseRow[k];
-    if (!v || !String(v).trim()) problems.push(`${k} 未取到（检查数据文件路径与字段名，见 lib/create-trade-data.js）`);
-    else if (PLACEHOLDER.test(v)) problems.push(`${k}='${v}' 仍是占位值（见 data/create-trade/README.md）`);
+    if (!v || !String(v).trim()) problems.push(`${k} 未取到（检查数据文件路径与字段名，见 ./create-trade-data.js）`);
+    else if (PLACEHOLDER.test(v)) problems.push(`${k}='${v}' 仍是占位值（见 data/workers/trade-management/README.md）`);
   });
 
   if (!caseRow.datFile || !String(caseRow.datFile).trim()) {
-    problems.push('datFile 未取到（检查数据文件路径与字段名，见 lib/create-trade-data.js）');
+    problems.push('datFile 未取到（检查数据文件路径与字段名，见 ./create-trade-data.js）');
   }
 
   return problems;
@@ -126,7 +126,7 @@ export function validateInputs(caseRow) {
  * 发一笔 create。**唯一的请求出口。**
  *
  * @param {Object}  opts
- * @param {Object}  opts.caseRow    一条 create-trade-data.json 数据（含内嵌归属字段）
+ * @param {Object}  opts.caseRow    一条 create-trade.json 数据（含内嵌归属字段）
  * @param {Object}  [opts.refdata]  覆盖归属字段（E2E live 模式现场绑定时传入）；
  *                                  不传则取用例内嵌的 portfolioId / counterpartyFmId / counterpartyName
  * @param {string}  opts.runPhase   'setup' | 'main'
@@ -143,14 +143,16 @@ export function createTrade(opts) {
   const tags = {
     name: 'workers_trademgmt_create',   // k6 按 name 标签聚合各步骤的指标
     runPhase: runPhase,
-    caseId: caseRow.caseId || 'PREFLIGHT',
+    // row = 数据文件行号（rows.js 自动注入的 __row）—— "哪行数据坏了"
+    // 从指标就能切出来。不是测试用例 id：一行只是一个数据变体
+    row: String(caseRow.__row || 0),
     productType: caseRow.productType || 'NA',
   };
 
   const body = {
     trade: buildTradePayload(refdata, caseRow),
     // filename 由 uploadName 决定：默认原名；DAT_NAME_MODE=unique 时加唯一
-    // 后缀绕服务端临时文件竞态（偏差开关，见 lib/create-trade-data.js）
+    // 后缀绕服务端临时文件竞态（偏差开关，见 ./create-trade-data.js）
     datFile: http.file(
       getDat(caseRow.datFile),
       uploadName(caseRow.datFile),
@@ -180,6 +182,6 @@ export function createTrade(opts) {
     // 业务唯一标识：仅存在于结果文件，未写入被测系统
     // （payload 目前不接受额外字段 —— 这正是清理策略只能靠
     //   "专用 PERF Portfolio + 状态 + 时间窗口" 兜底的原因）
-    tradeReference: `PERF-${caseRow.caseId || 'PREFLIGHT'}-${runPhase}`,
+    tradeReference: `PERF-r${caseRow.__row || 0}-${runPhase}`,
   });
 }

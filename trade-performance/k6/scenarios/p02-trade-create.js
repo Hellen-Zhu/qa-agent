@@ -19,7 +19,7 @@
 
 import exec from 'k6/execution';
 import { cfg } from '../lib/config.js';
-import { pickCase, DAT_NAME_MODE } from '../lib/create-trade-data.js';
+import { pickCase, DAT_NAME_MODE } from '../steps/workers/trade-management/create-trade-data.js';
 import { createTrade } from '../steps/workers/trade-management/create-trade.js';
 import { createTradePreflight } from '../setup/create-trade-preflight.js';
 import { makeHandleSummary } from '../lib/summary.js';

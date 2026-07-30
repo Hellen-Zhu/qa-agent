@@ -9,13 +9,14 @@
 
 | 文件 | 用途 |
 |---|---|
-| `create-trade-data.json` | 正常路径用例池。roundRobin 轮换（迭代 N 取第 `N % 条数` 条） |
-| `create-trade-invalid.json` | 非法 `.dat` 用例（INTEG-04 / SEC-05），预期全部业务拒绝 |
+| `create-trade.json` | create 用例池。roundRobin 轮换（迭代 N 取第 `N % 条数` 条） |
+| `lifecycle-events.json` | 生命周期事件池（供未来 p06） |
 
-切换用覆盖项，不改脚本：
+需要对照实验时另存一个变体池（如锁竞争：复制 create-trade.json，
+所有行填同一组归属值），用覆盖项切换、不改脚本：
 
 ```bash
-./k6/run.sh p02-trade-create dev baseline CREATE_DATA_FILE=data/create-trade/create-trade-invalid.json
+./k6/run.sh p02-trade-create dev baseline CREATE_DATA_FILE=data/workers/trade-management/create-trade-lock-variant.json
 ```
 
 > 数据只支持 `.json`。改版前旧 CSV 里已采过的真值请手工填进 JSON ——
@@ -68,7 +69,7 @@ DevTools 导出带着会话 cookie、真实 counterparty 名称，**不能进版
 ## 对照实验：portfolio 级锁竞争
 
 全部 VU 打同一个 portfolio 的实验不再需要单独的池文件：
-复制 `create-trade-data.json` 为一个变体（所有行填同一组归属值），
+复制 `create-trade.json` 为一个变体（所有行填同一组归属值），
 用 `CREATE_DATA_FILE=<变体路径>` 指过去即可。
 
 ## 刷新策略

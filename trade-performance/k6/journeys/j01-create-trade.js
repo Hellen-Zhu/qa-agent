@@ -18,7 +18,7 @@
  *   live    真拉下拉框（忠实路径）。refdata 地址未确认前会连接拒绝 ——
  *           那是显式失败，见 scenarios/s01 的 setup 提示。
  *   static  跳过下拉框查询，归属字段取用例行内嵌值
- *           （portfolioId / counterpartyFmId / counterpartyName 就在 create-trade-data.json 里）。
+ *           （portfolioId / counterpartyFmId / counterpartyName 就在 create-trade.json 里）。
  *           **已知偏差**：不覆盖 refdata 查询路径，报告必须标注。
  *
  * live 模式两个列表都拉成功时才现场绑定；任一失败则降级回用例内嵌值，
@@ -28,7 +28,7 @@
 
 import { Counter } from 'k6/metrics';
 import { think } from '../lib/think.js';
-import { pickCase } from '../lib/create-trade-data.js';
+import { pickCase } from '../steps/workers/trade-management/create-trade-data.js';
 import { portfoliosList } from '../steps/refdata/portfolios-list.js';
 import { counterpartiesList } from '../steps/refdata/counterparties-list.js';
 import { calcRiskForNew } from '../steps/workers/trade-management/calc-risk-for-new.js';

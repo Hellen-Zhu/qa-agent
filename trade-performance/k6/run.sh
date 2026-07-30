@@ -14,8 +14,13 @@
 #   ./k6/run.sh p02-trade-create dev baseline
 #   ./k6/run.sh p02-trade-create dev baseline VUS=8 DURATION=300s
 #   ./k6/run.sh p02-trade-create dev arrival  RATE=4
-#   ./k6/run.sh p02-trade-create dev baseline CREATE_DATA_FILE=data/create-trade/create-trade-invalid.json
-#   ./k6/run.sh p02-trade-create dev smoke    HTTP_DEBUG=full        # 逐笔打印 HTTP 报文（仅核对用）
+#   ./k6/run.sh p02-trade-create dev baseline CREATE_DATA_FILE=data/workers/trade-management/create-trade-lock-variant.json
+#
+# 逐笔打印 HTTP 报文（k6 原生 K6_HTTP_DEBUG，**仅 smoke 级核对用**）：
+#   K6_HTTP_DEBUG=headers ./k6/run.sh p02-trade-create dev smoke   # 只打请求/响应头
+#   K6_HTTP_DEBUG=full    ./k6/run.sh p02-trade-create dev smoke   # 连 body 一起打
+# ⚠ 正式压测轮开着它数字作废；full 会把 multipart 的 .dat 二进制整段吐进
+#   日志，且报文含真实 portfolio/counterparty —— 这份 k6.log 用完即清。
 #
 # ⚠ 覆盖项刻意不用 `-e KEY=value`：Windows 侧的 run.ps1 里 PowerShell 会把 `-e`
 #   当参数名前缀去匹配，报 "ambiguous parameter"。两边统一成裸 KEY=value，
@@ -51,7 +56,6 @@ PLAN="$1"; ENV="$2"; PROFILE="$3"; shift 3
 # 与 run.ps1 的校验逻辑保持一致（同样的正则、同样的错误文案）
 RAW_OVERRIDES=("$@")
 OVERRIDE_ARGS=()
-HTTP_DEBUG=""
 for o in "${RAW_OVERRIDES[@]+"${RAW_OVERRIDES[@]}"}"; do
     [[ -z "$o" ]] && continue
     [[ "$o" == "-e" ]] && continue                 # 手滑写了 -e，忽略掉
@@ -59,11 +63,6 @@ for o in "${RAW_OVERRIDES[@]+"${RAW_OVERRIDES[@]}"}"; do
         echo "ERROR: 覆盖项格式不对: '$o'" >&2
         echo "       应为 KEY=value（不加 -e 前缀），例如 VUS=8" >&2
         exit 1
-    fi
-    # HTTP_DEBUG 是 k6 的进程级旗标不是脚本 __ENV 变量，单独截下来（见下方）
-    if [[ "$o" =~ ^HTTP_DEBUG=(.*)$ ]]; then
-        HTTP_DEBUG="${BASH_REMATCH[1]}"
-        continue
     fi
     OVERRIDE_ARGS+=(-e "$o")
 done
@@ -147,19 +146,11 @@ if [[ "${K6_WEB_DASHBOARD:-true}" != "false" ]]; then
     echo ""
 fi
 
-# ── HTTP 报文调试（HTTP_DEBUG=headers|full）──
-# k6 原生旗标：headers 只打请求/响应头，full 连 body 一起打。
-# **仅用于 smoke 级核对**（对拍 multipart 与真实 curl、抓一次完整失败现场）。
-DEBUG_ARGS=()
-if [[ -n "$HTTP_DEBUG" ]]; then
-    case "$HTTP_DEBUG" in
-        headers) DEBUG_ARGS=(--http-debug) ;;
-        full)    DEBUG_ARGS=(--http-debug=full) ;;
-        *) echo "ERROR: HTTP_DEBUG 只接受 headers | full（得到 '$HTTP_DEBUG'）" >&2; exit 1 ;;
-    esac
-    echo "⚠ HTTP_DEBUG=$HTTP_DEBUG —— 逐笔打印 HTTP 报文，仅用于 smoke 级核对；"
-    echo "  正式压测轮开着它数字作废。full 会把 multipart 的 .dat 二进制整段吐进日志，"
-    echo "  且报文含真实 portfolio/counterparty —— 这份 k6.log 用完即清，不要传播。"
+# 逐笔报文调试走 k6 原生的 K6_HTTP_DEBUG 环境变量直接透传（同
+# K6_WEB_DASHBOARD / K6_PROMETHEUS_RW_SERVER_URL 的惯例），runner 不做翻译。
+if [[ -n "${K6_HTTP_DEBUG:-}" ]]; then
+    echo "⚠ K6_HTTP_DEBUG=$K6_HTTP_DEBUG —— 逐笔打印 HTTP 报文，仅用于 smoke 级核对；"
+    echo "  报文含真实 refdata，full 还会吐 .dat 二进制 —— 这份 k6.log 用完即清。"
     echo ""
 fi
 
@@ -169,7 +160,6 @@ RESULT_DIR="$RUN_DIR" k6 run \
     -e PROFILE="$PROFILE" \
     -e RESULT_DIR="$RUN_DIR" \
     "${OVERRIDE_ARGS[@]+"${OVERRIDE_ARGS[@]}"}" \
-    "${DEBUG_ARGS[@]+"${DEBUG_ARGS[@]}"}" \
     "${OUT_ARGS[@]}" \
     --summary-trend-stats "avg,min,med,p(90),p(95),p(99),max,count" \
     "$PLAN_FILE" 2>&1 | tee "$RUN_DIR/k6.log"
@@ -202,7 +192,7 @@ if grep -q 'PREFLIGHT FAILED' "$RUN_DIR/k6.log" 2>/dev/null; then
     echo ""
     echo "⚠ PREFLIGHT FAILED —— 参考数据业务上不可用。"
     grep 'PREFLIGHT' "$RUN_DIR/k6.log" | tail -5
-    echo "  这份结果不可作为性能结论。先修数据，见 data/create-trade/README.md。"
+    echo "  这份结果不可作为性能结论。先修数据，见 data/workers/trade-management/README.md。"
 fi
 
 exit $K6_RC

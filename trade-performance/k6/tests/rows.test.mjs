@@ -95,20 +95,16 @@ t('某条不是对象：报错含条号', () => {
 // ── 真实文件冒烟 ──────────────────────────────────────────────
 // 一条 = 一个完整用例：.dat 引用 + 内嵌归属字段，与
 // steps/.../create-trade.js 的 buildTradePayload / validateInputs 期望一致。
-const CASE_KEYS = ['caseId', 'datFile', 'productType', 'portfolioId', 'counterpartyFmId', 'counterpartyName'];
+// 行标识不在数据里 —— 用加载时自动注入的 __row（不维护 id 列）。
+const CASE_KEYS = ['datFile', 'productType', 'portfolioId', 'counterpartyFmId', 'counterpartyName'];
+const POOL_DIR = 'data/workers/trade-management';
 
-t('真实文件：create-trade-data.json 字段齐全', () => {
-  const text = fs.readFileSync(path.join(ROOT, 'data/create-trade/create-trade-data.json'), 'utf8');
-  const rows = rowsFromJson(text, 'create-trade-data.json');
+t('真实文件：create-trade.json 字段齐全', () => {
+  const text = fs.readFileSync(path.join(ROOT, POOL_DIR, 'create-trade.json'), 'utf8');
+  const rows = rowsFromJson(text, 'create-trade.json');
   assert.ok(rows.length >= 1);
   CASE_KEYS.forEach((k) => assert.ok(k in rows[0], `缺字段 ${k}`));
-});
-
-t('真实文件：create-trade-invalid.json 字段齐全', () => {
-  const text = fs.readFileSync(path.join(ROOT, 'data/create-trade/create-trade-invalid.json'), 'utf8');
-  const rows = rowsFromJson(text, 'create-trade-invalid.json');
-  assert.ok(rows.length >= 1);
-  CASE_KEYS.forEach((k) => assert.ok(k in rows[0], `缺字段 ${k}`));
+  assert.equal(rows[0].__row, 1); // 行标识：自动注入的行号
 });
 
 console.log(`\n  ${pass} passed, ${fail} failed\n`);

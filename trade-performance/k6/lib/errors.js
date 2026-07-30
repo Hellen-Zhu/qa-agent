@@ -16,7 +16,7 @@
  * ⚠ 标签基数（cardinality）：
  *   k6 的 tag 是 **指标的维度**，高基数标签会让内存和 Prometheus 存储爆炸。
  *
- *   → 可以打标签：runPhase / caseId / productType / errClass / reason（各几个有界值）
+ *   → 可以打标签：runPhase / row（数据行号）/ productType / errClass / reason（各几个有界值）
  *   → **绝对不要**打标签：tradeId / taskId / tradeReference（每次请求都不同）
  *   需要逐笔明细时用 --out csv 或结构化日志，不要塞进 tag。
  */
@@ -91,7 +91,7 @@ export function logFailure(errClass, reason, detail, tags) {
     ? ` —— 本 VU 此类日志已达 ${LOG_CAP} 条，后续静默（计数看指标，逐笔看 result.csv）`
     : '';
   // name = 是哪个 API（E2E 六个接口混跑时必须能分）；__VU 用于对上"每 VU 限流"的口径（setup 阶段为 0）
-  console.warn(`✗ [${errClass}/${reason}] ${t.name || 'NA'} vu=${__VU} case=${t.caseId || 'NA'} phase=${t.runPhase || 'NA'} ${detail}${tail}`);
+  console.warn(`✗ [${errClass}/${reason}] ${t.name || 'NA'} vu=${__VU} row=${t.row || 'NA'} phase=${t.runPhase || 'NA'} ${detail}${tail}`);
 }
 
 /**

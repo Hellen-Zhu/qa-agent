@@ -28,7 +28,7 @@
 import exec from 'k6/execution';
 import { cfg } from '../lib/config.js';
 import { j01CreateTrade } from '../journeys/j01-create-trade.js';
-import { DAT_NAME_MODE } from '../lib/create-trade-data.js';
+import { DAT_NAME_MODE } from '../steps/workers/trade-management/create-trade-data.js';
 import { refdataPreflight } from '../setup/refdata-preflight.js';
 import { createTradePreflight } from '../setup/create-trade-preflight.js';
 import { makeHandleSummary } from '../lib/summary.js';

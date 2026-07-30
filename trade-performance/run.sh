@@ -28,7 +28,9 @@
 #   Both sides standardize on bare KEY=value — **the command lines look identical,
 #   so notes stay portable**. That's the small price paid for cross-platform consistency.
 #
-# Send metrics into Prometheus (same timeline as the backend metrics):
+# Send metrics into Prometheus (same timeline as the backend metrics): set
+# prometheusRwUrl in config/<env>.json once per environment, or override for
+# a single run:
 #   K6_PROMETHEUS_RW_SERVER_URL=http://<prom>:9090/api/v1/write \
 #   ./run.sh p02-trade-create dev baseline
 #
@@ -95,6 +97,11 @@ cfg_get() {
 # gets committed by accident, and manifest's overrides line would not show it).
 GRAFANA_URL="${GRAFANA_DASHBOARD_URL:-$(cfg_get grafanaDashboard)}"
 
+# Prometheus remote-write endpoint: same environment-owned / env-var-wins
+# pattern as grafanaDashboard above. Non-empty (from either source) turns the
+# experimental-prometheus-rw output on for this run.
+PROM_URL="${K6_PROMETHEUS_RW_SERVER_URL:-$(cfg_get prometheusRwUrl)}"
+
 command -v k6 >/dev/null 2>&1 || {
     echo "ERROR: k6 not on PATH" >&2
     echo "  macOS:   brew install k6" >&2
@@ -127,6 +134,7 @@ MANIFEST="$RUN_DIR/manifest.txt"
     echo "profile:      $PROFILE_FILE"
     echo "overrides:    ${RAW_OVERRIDES[*]:-<none>}"
     echo "grafana:      ${GRAFANA_URL:-<none>}"
+    echo "prometheus:   ${PROM_URL:-<none>}"
     echo "host:         $(hostname)"
     echo "user:         $(whoami)"
     echo "k6:           $(k6 version 2>&1 | head -1 || echo unknown)"
@@ -153,8 +161,11 @@ OUT_ARGS=(--out "csv=$RUN_DIR/result.csv")
 # so TPS/P95 sit on the same panel and the same timeline as metrics like
 # hikaricp_connections_pending.
 # ⚠ On some versions the output name is experimental-prometheus-rw; if it errors, try the other one.
-if [[ -n "${K6_PROMETHEUS_RW_SERVER_URL:-}" ]]; then
+if [[ -n "$PROM_URL" ]]; then
     OUT_ARGS+=(--out "experimental-prometheus-rw")
+    # k6 reads the endpoint from this env var (the output has no CLI flag for
+    # it) -- when the value came from the config file it must be exported here.
+    export K6_PROMETHEUS_RW_SERVER_URL="$PROM_URL"
     # k6's default trend stats for remote write is p(99) ONLY -- the official
     # k6 Prometheus dashboard (grafana.com id 19665) wants p95/min/max/avg too;
     # without them its latency panels sit half empty. Explicit env still wins.
@@ -163,7 +174,7 @@ if [[ -n "${K6_PROMETHEUS_RW_SERVER_URL:-}" ]]; then
     # linger for ~5 minutes in from->now queries after the run -- one of the
     # classic "Grafana disagrees with summary.txt" causes.
     export K6_PROMETHEUS_RW_STALE_MARKERS="${K6_PROMETHEUS_RW_STALE_MARKERS:-true}"
-    echo "▶ prometheus  $K6_PROMETHEUS_RW_SERVER_URL  (trend stats: $K6_PROMETHEUS_RW_TREND_STATS)"
+    echo "▶ prometheus  $PROM_URL  (trend stats: $K6_PROMETHEUS_RW_TREND_STATS)"
     echo ""
 fi
 

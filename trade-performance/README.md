@@ -45,11 +45,16 @@ winget install k6 --source winget      # Windows
 （覆盖项一律裸 `KEY=value`，不加 `-e` —— 与 run.ps1 保持同一副命令行。）
 
 送指标进已有的 Prometheus（需 Prometheus 开 `--web.enable-remote-write-receiver`）：
+地址属于环境，在 `config/<env>.json` 的 `prometheusRwUrl` 里填一次即可，
+此后该环境每轮自动开启 remote-write；单次覆盖用环境变量（优先级更高）：
 
 ```bash
 K6_PROMETHEUS_RW_SERVER_URL=http://<prom-host>:9090/api/v1/write \
   ./run.sh p02-trade-create dev baseline
 ```
+
+⚠ 本仓库公开，config 里提交的 `prometheusRwUrl` / `grafanaDashboard` 保持为空，
+内网地址只在压测机本地填写。
 
 runner 会自动补齐三样与官方看板的对接（显式设置的环境变量仍然优先）：
 

@@ -99,6 +99,11 @@ if (-not (Test-Path $ProfileFile)) { Write-Host "ERROR: profile '$ProfileName' n
 $EnvCfg = Get-Content $EnvFile -Raw | ConvertFrom-Json
 $GrafanaUrl = if ($env:GRAFANA_DASHBOARD_URL) { $env:GRAFANA_DASHBOARD_URL } else { [string]$EnvCfg.grafanaDashboard }
 
+# Prometheus remote-write endpoint: same environment-owned / env-var-wins
+# pattern as grafanaDashboard above. Non-empty (from either source) turns the
+# experimental-prometheus-rw output on for this run.
+$PromUrl = if ($env:K6_PROMETHEUS_RW_SERVER_URL) { $env:K6_PROMETHEUS_RW_SERVER_URL } else { [string]$EnvCfg.prometheusRwUrl }
+
 # ── Override validation: fail early, don't wait for k6 to start before finding the typo ──
 $OverrideArgs = @()
 foreach ($o in $Overrides) {
@@ -155,6 +160,7 @@ $null = $lines.Add("env:          $EnvFile")
 $null = $lines.Add("profile:      $ProfileFile")
 $null = $lines.Add("overrides:    $OverrideS")
 $null = $lines.Add("grafana:      $(if ($GrafanaUrl) { $GrafanaUrl } else { '<none>' })")
+$null = $lines.Add("prometheus:   $(if ($PromUrl) { $PromUrl } else { '<none>' })")
 # Use [Environment] rather than $env:COMPUTERNAME / $env:USERNAME:
 # the latter only have values on Windows, so cross-platform runs (or CI
 # containers) would leave two empty fields — and the entire point of the
@@ -196,8 +202,11 @@ $OutArgs = @('--out', "csv=$RunDirFwd/result.csv")
 # Prometheus remote-write: load metrics go into the backend's existing Prometheus,
 # same panel and same timeline as metrics like hikaricp_connections_pending.
 # ⚠ On some versions the output name is experimental-prometheus-rw; if it errors, use prometheus-rw.
-if ($env:K6_PROMETHEUS_RW_SERVER_URL) {
+if ($PromUrl) {
     $OutArgs += @('--out', 'experimental-prometheus-rw')
+    # k6 reads the endpoint from this env var (the output has no CLI flag for
+    # it) -- when the value came from the config file it must be set here.
+    $env:K6_PROMETHEUS_RW_SERVER_URL = $PromUrl
     # k6's default trend stats for remote write is p(99) ONLY -- the official
     # k6 Prometheus dashboard (grafana.com id 19665) wants p95/min/max/avg too;
     # without them its latency panels sit half empty. Explicit env still wins.
@@ -205,7 +214,7 @@ if ($env:K6_PROMETHEUS_RW_SERVER_URL) {
     # Mark series stale when the test ends -- without this the last values
     # linger ~5 minutes in from->now queries after the run.
     if (-not $env:K6_PROMETHEUS_RW_STALE_MARKERS) { $env:K6_PROMETHEUS_RW_STALE_MARKERS = 'true' }
-    Write-Host "> prometheus  $env:K6_PROMETHEUS_RW_SERVER_URL"
+    Write-Host "> prometheus  $PromUrl  (trend stats: $($env:K6_PROMETHEUS_RW_TREND_STATS))"
     Write-Host ""
 }
 

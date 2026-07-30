@@ -39,7 +39,7 @@
 
 **为什么必须三分**：混在一个"错误率"里的报告没法用——12% 错误率到底该找开发（技术错误）、该修数据（业务拒绝）、还是该修脚本（脚本错误）？三个结论对应三个完全不同的行动。
 
-实现口径见 `qa/trade-performance/k6/lib/errors.js`，分类结果进 `oreo_ok` / `oreo_err_technical` / `oreo_err_business` / `oreo_err_script` 四个指标与结果 csv 的 `errClass` 标签。
+实现口径见 `qa/trade-performance/lib/errors.js`，分类结果进 `oreo_ok` / `oreo_err_technical` / `oreo_err_business` / `oreo_err_script` 四个指标与结果 csv 的 `errClass` 标签。
 
 ### 1.4 容量拐点（Knee Point）
 
@@ -228,7 +228,7 @@ TX_flow_<name>             组合事务，横跨多个原子（如 TX_flow_refda
 - 趋势图纵轴从 0 开始；**延迟图与错误率图必须并排放置**。
 - **低 TPS 场景必须同时呈现资源占用**。OREO 的 0.1 TPS 达标毫无信息量，"0.1 TPS 时堆占用 3.2GB"才是结论。
 - CI 冒烟只报"通过/失败 + 劣化项"，完整分布数据入时序库供趋势查询。
-- 结果按维度切分依赖低基数标签（`runPhase` / `caseId` / `productType` 等），当前口径见 `qa/trade-performance/k6/lib/errors.js` 头注（⚠ 高基数值如 tradeId 绝不进标签）。
+- 结果按维度切分依赖低基数标签（`runPhase` / `row` / `productType` 等），当前口径见 `qa/trade-performance/lib/errors.js` 头注（⚠ 高基数值如 tradeId 绝不进标签）。
 
 ---
 

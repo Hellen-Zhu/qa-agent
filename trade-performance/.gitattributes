@@ -31,6 +31,6 @@
 *.md         text
 *.json       text
 
-# CSV（仅 api-registry.csv 与 k6 --out csv 的产物）：不强制行尾，
+# CSV（k6 --out csv 的产物）：不强制行尾，
 # 强制 LF 反而会让 Windows 记事本打开时挤成一行。
 *.csv  text

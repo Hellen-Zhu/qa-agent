@@ -39,7 +39,7 @@ Three classes, **counted separately and presented side by side**. Any one exceed
 
 **Why three classes are mandatory**: a report with one blended error rate is unusable — does 12% mean call a developer (technical), fix the data (business rejection), or fix the script? Three conclusions, three entirely different actions.
 
-Implementation: `qa/trade-performance/k6/lib/errors.js`; the classification lands in the `oreo_ok` / `oreo_err_technical` / `oreo_err_business` / `oreo_err_script` metrics and the `errClass` tag of the result csv.
+Implementation: `qa/trade-performance/lib/errors.js`; the classification lands in the `oreo_ok` / `oreo_err_technical` / `oreo_err_business` / `oreo_err_script` metrics and the `errClass` tag of the result csv.
 
 ### 1.4 Knee point
 
@@ -228,7 +228,7 @@ Data failing any of these is reference-only and **must not be written into concl
 - Trend charts start the y-axis at 0; **latency and error-rate charts must be placed side by side**.
 - **Low-TPS scenarios must present resource usage alongside.** "0.1 TPS passed" carries no information on OREO; "heap at 3.2 GB while serving 0.1 TPS" is the conclusion.
 - CI smoke reports only "pass/fail + regressions"; full distributions go to a time-series store for trend queries.
-- Slicing results by dimension relies on low-cardinality tags (`runPhase` / `caseId` / `productType`, …); the current set is documented in the `qa/trade-performance/k6/lib/errors.js` header (⚠ high-cardinality values such as tradeId never become tags).
+- Slicing results by dimension relies on low-cardinality tags (`runPhase` / `row` / `productType`, …); the current set is documented in the `qa/trade-performance/lib/errors.js` header (⚠ high-cardinality values such as tradeId never become tags).
 
 ---
 

@@ -1,38 +1,40 @@
 #!/usr/bin/env bash
 #
-# k6/run.sh —— 三维正交的唯一执行入口
+# k6/run.sh — the single entry point for the three orthogonal dimensions
 #
 #   ./k6/run.sh <plan> <env> <profile> [KEY=value ...]
 #
-#   plan     scenarios/ 下的文件名（不含 .js）
-#   env      config/ 下的文件名（不含 .json）
-#   profile  profiles/ 下的文件名（不含 .json）
-#   KEY=value  覆盖项，直接写，**不加 -e 前缀**
+#   plan     file name under scenarios/ (without .js)
+#   env      file name under config/ (without .json)
+#   profile  file name under profiles/ (without .json)
+#   KEY=value  overrides, written as-is, **no -e prefix**
 #
-# 例：
+# Examples:
 #   ./k6/run.sh p02-trade-create dev smoke
 #   ./k6/run.sh p02-trade-create dev baseline
 #   ./k6/run.sh p02-trade-create dev baseline VUS=8 DURATION=300s
 #   ./k6/run.sh p02-trade-create dev arrival  RATE=4
 #   ./k6/run.sh p02-trade-create dev baseline CREATE_DATA_FILE=data/workers/trade-management/create-trade-lock-variant.json
 #
-# 逐笔打印 HTTP 报文（k6 原生 K6_HTTP_DEBUG，**仅 smoke 级核对用**）：
-#   K6_HTTP_DEBUG=headers ./k6/run.sh p02-trade-create dev smoke   # 只打请求/响应头
-#   K6_HTTP_DEBUG=full    ./k6/run.sh p02-trade-create dev smoke   # 连 body 一起打
-# ⚠ 正式压测轮开着它数字作废；full 会把 multipart 的 .dat 二进制整段吐进
-#   日志，且报文含真实 portfolio/counterparty —— 这份 k6.log 用完即清。
+# Print every HTTP message (k6's native K6_HTTP_DEBUG, **smoke-level verification only**):
+#   K6_HTTP_DEBUG=headers ./k6/run.sh p02-trade-create dev smoke   # request/response headers only
+#   K6_HTTP_DEBUG=full    ./k6/run.sh p02-trade-create dev smoke   # bodies included
+# ⚠ Leaving it on during a real load round invalidates the numbers; full dumps the
+#   multipart .dat binary wholesale into the log, and messages contain real
+#   portfolio/counterparty data — delete this k6.log as soon as you're done with it.
 #
-# ⚠ 覆盖项刻意不用 `-e KEY=value`：Windows 侧的 run.ps1 里 PowerShell 会把 `-e`
-#   当参数名前缀去匹配，报 "ambiguous parameter"。两边统一成裸 KEY=value，
-#   **命令行长得一样，笔记才通用**。这是为跨平台一致性付的一点代价。
+# ⚠ Overrides deliberately do NOT use `-e KEY=value`: on the Windows side, in run.ps1
+#   PowerShell matches `-e` as a parameter-name prefix and reports "ambiguous parameter".
+#   Both sides standardize on bare KEY=value — **the command lines look identical,
+#   so notes stay portable**. That's the small price paid for cross-platform consistency.
 #
-# 送指标进 Prometheus（与后端指标同一根时间轴）：
+# Send metrics into Prometheus (same timeline as the backend metrics):
 #   K6_PROMETHEUS_RW_SERVER_URL=http://<prom>:9090/api/v1/write \
 #   ./k6/run.sh p02-trade-create dev baseline
 #
-# k6 的 open() 按**脚本文件**解析相对路径，不按 cwd —— 不 cd 也能跑。
-# 仍然 cd 到 k6/ 目录，是为了让 results/ 落在固定位置，
-# 且从任何 cwd 调用都是同一副行为。
+# k6's open() resolves relative paths against the **script file**, not the cwd —
+# it would run without a cd. We still cd into the k6/ directory so that results/
+# lands in a fixed location, and behavior is identical from any cwd.
 
 set -euo pipefail
 
@@ -52,16 +54,16 @@ usage() {
 
 PLAN="$1"; ENV="$2"; PROFILE="$3"; shift 3
 
-# ── 覆盖项校验：早失败，别等 k6 起来了才发现打错 ──
-# 与 run.ps1 的校验逻辑保持一致（同样的正则、同样的错误文案）
+# ── Override validation: fail early, don't wait for k6 to start before finding the typo ──
+# Kept in sync with run.ps1's validation (same regex, same error wording)
 RAW_OVERRIDES=("$@")
 OVERRIDE_ARGS=()
 for o in "${RAW_OVERRIDES[@]+"${RAW_OVERRIDES[@]}"}"; do
     [[ -z "$o" ]] && continue
-    [[ "$o" == "-e" ]] && continue                 # 手滑写了 -e，忽略掉
+    [[ "$o" == "-e" ]] && continue                 # a stray -e slipped in; ignore it
     if [[ ! "$o" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]]; then
-        echo "ERROR: 覆盖项格式不对: '$o'" >&2
-        echo "       应为 KEY=value（不加 -e 前缀），例如 VUS=8" >&2
+        echo "ERROR: malformed override: '$o'" >&2
+        echo "       expected KEY=value (no -e prefix), e.g. VUS=8" >&2
         exit 1
     fi
     OVERRIDE_ARGS+=(-e "$o")
@@ -88,13 +90,14 @@ RUN_DIR="results/$RUN_ID"
 mkdir -p "$RUN_DIR"
 
 # ── run manifest ──
-# "每次只改一个变量"这条纪律，只有在事后能验证的前提下才成立。
-# 没有 manifest 的压测结果三个月后就是一堆无法解释的数字。
+# The "change only one variable per run" discipline only holds if it can be
+# verified after the fact. Without a manifest, three months from now a load-test
+# result is just a pile of unexplainable numbers.
 MANIFEST="$RUN_DIR/manifest.txt"
 {
     echo "runId:        $RUN_ID"
     echo "timestamp:    $(date -u +%Y-%m-%dT%H:%M:%SZ)"
-    echo "epochMillis:  $(( $(date +%s) * 1000 ))    # ← 贴进 Grafana URL 的 &from="
+    echo "epochMillis:  $(( $(date +%s) * 1000 ))    # ← paste into the Grafana URL's &from="
     echo "plan:         $PLAN_FILE"
     echo "env:          $ENV_FILE"
     echo "profile:      $PROFILE_FILE"
@@ -118,39 +121,43 @@ echo "▶ profile  $PROFILE_FILE"
 echo "▶ results  $RUN_DIR"
 echo ""
 
-# ── 输出 ──
+# ── Outputs ──
 OUT_ARGS=(--out "csv=$RUN_DIR/result.csv")
 
-# Prometheus remote-write：把压测指标送进后端已有的 Prometheus，
-# 这样 TPS/P95 与 hikaricp_connections_pending 等指标在同一个面板、同一根时间轴。
-# ⚠ 输出名在部分版本是 experimental-prometheus-rw，报错就换另一个。
+# Prometheus remote-write: send load metrics into the backend's existing Prometheus,
+# so TPS/P95 sit on the same panel and the same timeline as metrics like
+# hikaricp_connections_pending.
+# ⚠ On some versions the output name is experimental-prometheus-rw; if it errors, try the other one.
 if [[ -n "${K6_PROMETHEUS_RW_SERVER_URL:-}" ]]; then
     OUT_ARGS+=(--out "experimental-prometheus-rw")
     echo "▶ prometheus  $K6_PROMETHEUS_RW_SERVER_URL"
     echo ""
 fi
 
-# ── k6 web dashboard（k6 ≥ v0.49 自带；报 unknown environment variable 就升级 k6）──
-# 跑时 http://127.0.0.1:5665 实时看曲线，跑完导出自包含 HTML ——
-# 拿到 Prometheus remote-write 审批之前，这是唯一的时间序列视图（见 GRAFANA.zh.md §7）。
-# ⚠ 判定不看它：dashboard 的错误率是 http_req_failed（HTTP 层），
-#   本项目业务失败照样返回 HTTP 200 —— 三类错误口径以 summary.txt 为准。
-# 默认开启。并行跑第二个实例会撞端口：K6_WEB_DASHBOARD_PORT=5666 换端口，
-# 或 K6_WEB_DASHBOARD=false 整个关掉。
-# ⚠ 运行太短时 k6 跳过导出（"report generation was skipped, not enough data"，
-#   聚合桶默认 10s）—— smoke 没有 report.html 是正常的，正式轮次才有。
+# ── k6 web dashboard (built into k6 ≥ v0.49; "unknown environment variable" means upgrade k6) ──
+# Live curves at http://127.0.0.1:5665 during the run, self-contained HTML export after —
+# until Prometheus remote-write is approved, this is the only time-series view.
+# ⚠ Do not use it for pass/fail: the dashboard's error rate is http_req_failed (HTTP layer),
+#   and in this project business failures still return HTTP 200 — the three error
+#   categories in summary.txt are authoritative.
+# On by default. A second parallel instance collides on the port: K6_WEB_DASHBOARD_PORT=5666
+# to change it, or K6_WEB_DASHBOARD=false to turn it off entirely.
+# ⚠ For very short runs k6 skips the export ("report generation was skipped, not enough
+#   data"; the aggregation bucket defaults to 10s) — no report.html for smoke is normal,
+#   only real rounds get one.
 if [[ "${K6_WEB_DASHBOARD:-true}" != "false" ]]; then
     export K6_WEB_DASHBOARD=true
     export K6_WEB_DASHBOARD_EXPORT="$RUN_DIR/report.html"
-    echo "▶ dashboard  http://127.0.0.1:${K6_WEB_DASHBOARD_PORT:-5665} → 导出 $RUN_DIR/report.html"
+    echo "▶ dashboard  http://127.0.0.1:${K6_WEB_DASHBOARD_PORT:-5665} → exports $RUN_DIR/report.html"
     echo ""
 fi
 
-# 逐笔报文调试走 k6 原生的 K6_HTTP_DEBUG 环境变量直接透传（同
-# K6_WEB_DASHBOARD / K6_PROMETHEUS_RW_SERVER_URL 的惯例），runner 不做翻译。
+# Per-message debugging is passed straight through via k6's native K6_HTTP_DEBUG
+# environment variable (same convention as K6_WEB_DASHBOARD /
+# K6_PROMETHEUS_RW_SERVER_URL); the runner does no translation.
 if [[ -n "${K6_HTTP_DEBUG:-}" ]]; then
-    echo "⚠ K6_HTTP_DEBUG=$K6_HTTP_DEBUG —— 逐笔打印 HTTP 报文，仅用于 smoke 级核对；"
-    echo "  报文含真实 refdata，full 还会吐 .dat 二进制 —— 这份 k6.log 用完即清。"
+    echo "⚠ K6_HTTP_DEBUG=$K6_HTTP_DEBUG — printing every HTTP message, smoke-level verification only;"
+    echo "  messages contain real refdata, and full also dumps .dat binaries — delete this k6.log when done."
     echo ""
 fi
 
@@ -166,15 +173,15 @@ RESULT_DIR="$RUN_DIR" k6 run \
 K6_RC=${PIPESTATUS[0]}
 set -e
 
-# 结束时间戳 —— 与 epochMillis 配对贴进 Grafana 的 &from= &to=
+# End timestamp — pairs with epochMillis for pasting into Grafana's &from= &to=
 echo "endEpochMillis: $(( $(date +%s) * 1000 ))" >> "$MANIFEST"
 
 echo ""
-echo "── 结果 ──────────────────────────────────────────"
+echo "── Results ──────────────────────────────────────────"
 echo "summary:  $RUN_DIR/summary.txt"
 echo "raw:      $RUN_DIR/summary.json"
 echo "csv:      $RUN_DIR/result.csv"
-[[ -f "$RUN_DIR/report.html" ]] && echo "report:   $RUN_DIR/report.html   ← 时间序列曲线（判定以 summary 为准）"
+[[ -f "$RUN_DIR/report.html" ]] && echo "report:   $RUN_DIR/report.html   ← time-series curves (summary is authoritative for pass/fail)"
 echo "manifest: $MANIFEST"
 echo ""
 if [[ -n "${GRAFANA_DASHBOARD_URL:-}" ]]; then
@@ -183,16 +190,16 @@ if [[ -n "${GRAFANA_DASHBOARD_URL:-}" ]]; then
     END_MS=$(grep -oE 'endEpochMillis: *[0-9]+' "$MANIFEST" | grep -oE '[0-9]+')
     echo "Grafana:  ${GRAFANA_DASHBOARD_URL}${sep}from=${START_MS}&to=${END_MS}"
 else
-    echo "Grafana 时间范围（替换 URL 里的 from=now-1h&to=now）："
+    echo "Grafana time range (replace from=now-1h&to=now in the URL):"
     grep -E 'epochMillis' "$MANIFEST" | sed 's/^/  /'
-    echo "  想直接打印完整链接：export GRAFANA_DASHBOARD_URL='<看板 URL，含 var-host 等参数>'"
+    echo "  To print the full link directly: export GRAFANA_DASHBOARD_URL='<dashboard URL, including var-host etc.>'"
 fi
 
 if grep -q 'PREFLIGHT FAILED' "$RUN_DIR/k6.log" 2>/dev/null; then
     echo ""
-    echo "⚠ PREFLIGHT FAILED —— 参考数据业务上不可用。"
+    echo "⚠ PREFLIGHT FAILED — reference data is unusable at the business level."
     grep 'PREFLIGHT' "$RUN_DIR/k6.log" | tail -5
-    echo "  这份结果不可作为性能结论。先修数据，见 data/workers/trade-management/README.md。"
+    echo "  This result must not be used as a performance conclusion. Fix the data first; see data/workers/trade-management/README.md."
 fi
 
 exit $K6_RC

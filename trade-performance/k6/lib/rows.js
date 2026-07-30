@@ -1,36 +1,43 @@
 /*
- * lib/rows.js —— JSON 数据文件解析（k6 主格式）
+ * lib/rows.js — JSON data-file parsing (the k6 primary format)
  *
- * ══ 为什么从 CSV 换 JSON ═══════════════════════════════════════
- * 1. JSON 是 k6 的原生路径：open() + JSON.parse 进 SharedArray 是官方
- *    文档的标准写法，不需要自带解析器（CSV 时代曾手写过一个 30 行的）。
- * 2. 真实 counterparty 名字里已出现 `*`，出现逗号只是时间问题 ——
- *    CSV 里那意味着引号与列错位问题，JSON 里这个问题类别不存在。
- * 3. 注释：数据为什么是这个值、什么时候采的，可以写在 `_comment` 键里
- *    （沿用 config/profiles 的约定：下划线开头的键是注释，加载时剥掉）。
+ * ══ Why we switched from CSV to JSON ═══════════════════════════
+ * 1. JSON is k6's native path: open() + JSON.parse into a SharedArray is
+ *    the standard pattern from the official docs — no parser of our own
+ *    (the CSV era once carried a hand-written 30-line one).
+ * 2. Real counterparty names already contain `*`; commas are only a matter
+ *    of time — in CSV that means quoting and column-shift problems, a
+ *    problem class that simply does not exist in JSON.
+ * 3. Comments: why a value is what it is and when it was captured can go in
+ *    a `_comment` key (same convention as config/profiles: keys starting
+ *    with an underscore are comments, stripped at load time).
  *
- * ══ 文件契约 ═══════════════════════════════════════════════════
- * 顶层是数组，或含 `rows` 数组的对象（顶层其余 `_` 开头键为注释）：
+ * ══ File contract ══════════════════════════════════════════════
+ * Top level is an array, or an object containing a `rows` array (any other
+ * top-level `_`-prefixed keys are comments):
  *
- *   { "_comment": "为什么是这些值……",
- *     "rows": [ { "portfolioId": "...", "_note": "行内注释也行" } ] }
+ *   { "_comment": "why these values…",
+ *     "rows": [ { "portfolioId": "...", "_note": "inline comments work too" } ] }
  *
- * 行内以 `_` 开头的键同样剥掉。**注意 `note` 不带下划线** —— 那是真实数据列
- * （采集时间与来源），会进 CSV 生成物，别写成 `_note`。
+ * Row-level keys starting with `_` are likewise stripped. **Note that `note`
+ * has no underscore** — that is a real data column (capture time and
+ * source) that flows into the generated CSV; don't write it as `_note`.
  *
- * ══ 与 CSV 语义的刻意对齐 ══════════════════════════════════════
- * 所有标量值转成**去首尾空白的字符串**（null/undefined → ''）。
- * CSV 里一切都是字符串，下游（payload 拼装、占位值检测）按字符串写的；
- * 换格式不换语义 —— 想在 payload 里发数字类型，是 buildTradePayload 的
- * 决策，不是数据文件的。
+ * ══ Deliberate alignment with CSV semantics ════════════════════
+ * Every scalar value becomes a **whitespace-trimmed string** (null/undefined
+ * → ''). In CSV everything is a string, and downstream code (payload
+ * assembly, placeholder detection) was written for strings; changing the
+ * format must not change the semantics — sending numeric types in a payload
+ * is buildTradePayload's decision, not the data file's.
  *
- * 本文件**不依赖任何 k6 模块**，node 可直接测：node k6/tests/rows.test.mjs
+ * This file **depends on no k6 module**, so it can be imported and tested
+ * directly under plain node.
  */
 
 /**
- * @param {string} text        JSON 全文
- * @param {string} sourceName  报错时标明来源（文件路径）
- * @returns {Array<Object>} 每条一个对象，附 __row（第几条，1 起）
+ * @param {string} text        full JSON text
+ * @param {string} sourceName  identifies the source (file path) in errors
+ * @returns {Array<Object>} one object per row, with __row (1-based row number)
  */
 export function rowsFromJson(text, sourceName) {
   let doc;
@@ -38,8 +45,8 @@ export function rowsFromJson(text, sourceName) {
     doc = JSON.parse(text);
   } catch (e) {
     throw new Error(
-      `${sourceName} 不是合法 JSON — ${e.message}。` +
-      `常见原因：JSON 不支持注释和尾逗号 —— 注释写成以 _ 开头的键`
+      `${sourceName} is not valid JSON — ${e.message}. ` +
+      `Common cause: JSON allows no comments or trailing commas — write comments as keys starting with _`
     );
   }
 
@@ -48,20 +55,20 @@ export function rowsFromJson(text, sourceName) {
   else if (doc && Array.isArray(doc.rows)) rows = doc.rows;
   else {
     throw new Error(
-      `${sourceName} 结构不对：顶层应为数组，或含 rows 数组的对象` +
-      `（其余 _ 开头的键是注释）`
+      `${sourceName} has the wrong structure: top level should be an array, or an object with a rows array` +
+      ` (other keys starting with _ are comments)`
     );
   }
 
   return rows.map((r, idx) => {
     if (r === null || typeof r !== 'object' || Array.isArray(r)) {
       throw new Error(
-        `${sourceName} 第 ${idx + 1} 条不是对象 — 每条应为 {"字段": "值"} 形式`
+        `${sourceName} row ${idx + 1} is not an object — each row should have the form {"field": "value"}`
       );
     }
     const out = { __row: idx + 1 };
     Object.keys(r).forEach((k) => {
-      if (k.startsWith('_')) return; // 行内注释键
+      if (k.startsWith('_')) return; // row-level comment key
       const v = r[k];
       out[k] = v === null || v === undefined ? '' : String(v).trim();
     });

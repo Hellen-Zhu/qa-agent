@@ -1,19 +1,22 @@
 /*
- * setup/trades-list-preflight.js —— **trades-list 路径**的开跑前守卫
+ * setup/trades-list-preflight.js -- pre-run guard for the **trades-list path**
  *
- * 命名约定见 setup/create-trade-preflight.js 头注。
- * 谁在用：scenarios/p05-trades-list.js
+ * Naming convention: see the header comment in setup/create-trade-preflight.js.
+ * Used by: scenarios/p05-trades-list.js
  *
- * ── 与 create-trade 守卫的本质差别 ──
- * 读接口没有"静态数据会失效"这个问题类别，所以**不建 trade**。
- * 它要证明的是另外两件事：
- *   1. 这个查询真的查得到行（连不上/不是 JSON → 整轮无意义，立即中止）
- *   2. 库内总量是多少 —— **进入准则 #3 的数据量声明**：
- *      空库或小库的列表结论只能作趋势，不能当容量结论；
- *      不写明总量，P95 和别轮根本没法比。
+ * ── Essential difference from the create-trade guard ──
+ * A read endpoint has no "static data can go stale" problem class, so it
+ * **creates no trade**. It has to prove two other things:
+ *   1. This query actually returns rows (unreachable / not JSON → the whole
+ *      run is pointless, abort immediately)
+ *   2. How much data is in the DB -- **the data-volume declaration of entry
+ *      criterion #3**: list conclusions from an empty or tiny DB can only
+ *      serve as trends, never capacity conclusions; without the total stated,
+ *      P95 cannot be compared across runs at all.
  *
- * ⚠ 本模块**不 import create-trade 的供数模块** —— 读接口不需要用例池和
- *   .dat，import 了反而会在 init 阶段把 .dat 全读进内存（那个模块是急加载的）。
+ * ⚠ This module **does not import create-trade's data module** -- a read
+ *   endpoint needs no case pool or .dat; importing it would load all .dat
+ *   into memory at init (that module is eagerly loaded).
  */
 
 import exec from 'k6/execution';
@@ -22,40 +25,43 @@ import { tradesList } from '../steps/workers/trade-management/trades-list.js';
 import { ERR } from '../lib/errors.js';
 
 /**
- * @param {Object} opts  {pageSize, page, status} —— 与主循环用同一组查询参数，
- *                       否则 preflight 验证的不是将要压的那个查询
- * @returns {{startedAt, totalTrades}}  传给每个 VU 的元信息
+ * @param {Object} opts  {pageSize, page, status} -- same query parameters as
+ *                       the main loop; otherwise preflight validates a
+ *                       different query than the one about to be loaded
+ * @returns {{startedAt, totalTrades}}  metadata passed to every VU
  */
 export function tradesListPreflight(opts) {
   const { pageSize, page, status } = opts;
 
-  console.log(`── preflight: trades-list（读接口）───────────`);
+  console.log(`── preflight: trades-list (read endpoint) ────`);
   console.log(`env=${cfg.envName} profile=${cfg.profileName}`);
   console.log(`target=${cfg.workersUrl}/trades  pageSize=${pageSize}`);
 
   const r = tradesList({ runPhase: 'setup', pageSize, page, status });
 
   if (r.errClass !== ERR.OK) {
-    // 连不上/不是 JSON：压测毫无意义，且跑下去只会产出一份 100% 错误的报告
+    // Unreachable / not JSON: load testing is pointless, and continuing would
+    // only produce a 100%-error report
     exec.test.abort(`PREFLIGHT FAILED — ${r.detail}`);
   }
 
   if (r.rowCount === 0) {
     console.warn(
-      '⚠ 库里查不到任何 trade —— 空库的列表结论无效（进入准则 #3 / A16）。' +
-      '本轮只能作脚本验证，不能当性能结论。'
+      '⚠ No trades found in the DB — list conclusions from an empty DB are invalid (entry criterion #3 / A16). ' +
+      'This run can only serve as script verification, not a performance conclusion.'
     );
   } else if (r.rowCount < 0) {
-    console.warn('⚠ 无法从响应里提取行数 —— 分页包装形态未知，先人工看一眼 body 再压');
+    console.warn('⚠ Could not extract row count from the response — pagination wrapper shape unknown; inspect the body manually before loading');
   } else {
-    console.log(`✓ preflight：返回 ${r.rowCount} 行（${Math.round(r.res.timings.duration)}ms）`);
+    console.log(`✓ preflight: ${r.rowCount} rows returned (${Math.round(r.res.timings.duration)}ms)`);
   }
 
-  // 数据量声明：报告必须写明库内总量，否则 P95 无法和别轮对比
+  // Data-volume declaration: the report must state the DB total, otherwise
+  // P95 cannot be compared with other runs
   if (r.total >= 0) {
-    console.log(`ℹ 库内 trade 总量 ≈ ${r.total} —— 写进报告（S-10 的数据量档位口径）`);
+    console.log(`ℹ Total trades in DB ≈ ${r.total} — put this in the report (the data-volume tier metric for S-10)`);
   } else {
-    console.log('ℹ 响应里没有总量元数据 —— 数据量请向 DBA 确认后写进报告');
+    console.log('ℹ No total metadata in the response — confirm the data volume with the DBA and put it in the report');
   }
 
   return { startedAt: new Date().toISOString(), totalTrades: r.total };

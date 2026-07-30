@@ -1,13 +1,15 @@
 /*
  * steps/workers/trade-management/trade-detail.js
  *
- * 【层级】原子步骤 —— 一个 API 一个文件
- * 【API】  workers.trade-management.detail  ·  GET /trades/{id}
+ * [Layer] Atomic step -- one API per file
+ * [API]   workers.trade-management.detail  ·  GET /trades/{id}
  *
- * ⚠ 本接口走 **UC gRPC**（依赖影响面第一：9 个接口共用）——
- *   E2E 把它放进 journey，正是为了覆盖 create 本身碰不到的这条下游。
+ * ⚠ This endpoint goes through **UC gRPC** (the #1 dependency blast radius:
+ *   shared by 9 endpoints) -- E2E puts it in the journey precisely to cover
+ *   this downstream leg that create itself never touches.
  *
- * ⚠ tradeId 是高基数值，**只进 URL，绝不进 tag**（见 lib/errors.js 头注）。
+ * ⚠ tradeId is a high-cardinality value: **URL only, never a tag**
+ *   (see the header comment in lib/errors.js).
  */
 
 import http from 'k6/http';

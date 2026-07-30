@@ -1,28 +1,31 @@
 /*
  * steps/workers/trade-management/create-trade.js
  *
- * 【层级】原子步骤 —— 一个 API 一个文件
- * 【API】  workers.trade-management.create  ·  POST /trades/create
+ * [Layer] Atomic step -- one API per file
+ * [API]   workers.trade-management.create  ·  POST /trades/create
  *
- * ══ 唯一真相来源 ═══════════════════════════════════════════════
- * create 的请求构造、响应判定、结果提取只在这里定义一次。
- * **setUp 的前置校验也调用本函数** —— 两个调用方共用同一份契约，
- * `import` 天然保证没有第二份。
+ * ══ Single source of truth ═══════════════════════════════════════
+ * create's request construction, response classification, and result
+ * extraction are defined here exactly once.
+ * **setUp's preflight check calls this same function** -- both callers share
+ * one contract, and `import` naturally guarantees there is no second copy.
  *
- * 调用方的差异**不在请求上**，只在于：
- *   - 传入的 runPhase 标签（setup / main）
- *   - 拿到返回值后各自套用什么策略（preflight 会中止测试，主循环只记录）
+ * The callers differ **not in the request**, only in:
+ *   - the runPhase tag they pass (setup / main)
+ *   - the policy they apply to the return value (preflight aborts the test,
+ *     the main loop only records)
  * ═══════════════════════════════════════════════════════════════
  *
- * ── multipart 要点（依据真实 curl 校准，勿改）──
- * 只要请求体里有 http.file()，k6 就自动按 multipart/form-data 编码，
- * 并**自己生成 boundary**。
+ * ── multipart essentials (calibrated against the real curl, do not change) ──
+ * As soon as the request body contains http.file(), k6 automatically encodes
+ * it as multipart/form-data and **generates the boundary itself**.
  *
- * ⚠ 绝不能在 headers 里手写 Content-Type —— 手写值不带 boundary，
- *   且会覆盖生成值，服务端无法分段。
+ * ⚠ Never hand-write Content-Type in headers -- a hand-written value has no
+ *   boundary and overrides the generated one, so the server can't split parts.
  *
- * `trade` 是**普通表单字段**（真实 curl 用 -F 'trade={...}'，不是 -F 'trade=@file'），
- * 所以直接传字符串即可，不需要写临时文件。
+ * `trade` is a **plain form field** (the real curl uses -F 'trade={...}',
+ * not -F 'trade=@file'), so passing a string directly is enough; no temp
+ * file needed.
  */
 
 import http from 'k6/http';
@@ -33,19 +36,27 @@ import { classifyResponse, reasonFrom, ERR } from '../../../lib/errors.js';
 const URL = `${cfg.workersUrl}/trades/create`;
 
 /*
- * ── create 的响应契约（业务判定属于本文件，公共 errors.js 只有引擎）──
- * 成功形态：HTTP 200 + code=200 + status='PENDING APPROVAL'
- *          + data.trade.id 形如 TRD-\d+
- * taskId 只存在于 msg 的自然语言里：
+ * ── create's response contract (business classification belongs to this
+ *    file; the shared errors.js is engine only) ──
+ * Success shape: HTTP 200 + code=200 + status='PENDING APPROVAL'
+ *          + data.trade.id matching TRD-\d+
+ * taskId only exists inside the natural-language msg:
  *   "Submitted for checker approval. TaskId: CHK-98C0DF19"
- * 只能正则捞，文案一改就断（已作为 improvement 提给开发）。
+ * Regex scraping is the only option; any wording change breaks it (already
+ * raised to the developers as an improvement).
  */
 
-// 业务拒绝的归因模式表：按真实观测的 msg 校准、逐条补充。
-// 现场原文靠 errors.js 限流日志采集 → 回填到这里收紧正则。
+// Attribution patterns for business rejections: calibrated against actually
+// observed msg values, extended entry by entry.
+// Raw texts are collected via the rate-limited logging in errors.js → fed
+// back here to tighten the regexes.
 const REJECT_PATTERNS = [
-  // 服务端临时文件竞态：并发同刻上传、时间戳撞名后文件被先完成方删除
-  // （缺陷论证与绕行开关 DAT_NAME_MODE 见 data/dat/README.md）
+  // Server temp-file race: concurrent same-instant uploads get timestamp
+  // temp names that collide; whichever request finishes first deletes the
+  // shared temp file and the other fails with "dat not found".
+  // (DAT_NAME_MODE in ./create-trade-data.js is the bypass switch.)
+  // The regex matches real server error messages, which may be Chinese --
+  // do not translate it.
   { reason: 'dat-missing', re: /(dat|file).*(not\s*found|missing|不存在)|找不到/i },
 ];
 
@@ -55,11 +66,14 @@ function classifyCreate(res, tags) {
       body.code !== 200 || body.status !== 'PENDING APPROVAL'
         ? {
             reason: reasonFrom(body, REJECT_PATTERNS),
-            // msg 截断：响应文案可能整段堆栈，定位只要开头
+            // Truncate msg: the response text can be a whole stack trace;
+            // the beginning is enough for triage
             detail: `business: code=${body.code} status=${body.status} msg=${String(body.msg || '').slice(0, 160)}`,
           }
         : null,
-    // 校验格式而不只是非空：提取失败的兜底值也是非空字符串，弱断言放得过去
+    // Validate the format, not just non-emptiness: extraction-failure
+    // fallback values are also non-empty strings, and a weak assertion
+    // would let them through
     shape: (body) => {
       const id = body.data && body.data.trade ? String(body.data.trade.id || '') : '';
       return /^TRD-\d+$/.test(id) ? null : `unexpected tradeId format — '${id}'`;
@@ -80,11 +94,13 @@ function classifyCreate(res, tags) {
 }
 
 /**
- * 拼 multipart 里 `trade` 字段的值。
+ * Build the value of the `trade` field in the multipart body.
  *
- * 用 JSON.stringify 而非字符串拼接：真实 counterparty 名字里有 `*`
- * （PRINTINGINT10LTD*HKG），还可能出现引号、反斜杠、非 ASCII。
- * 手拼字符串迟早拼出非法 JSON，而那种失败表现为"某些行偶发 400"，极难定位。
+ * Use JSON.stringify rather than string concatenation: real counterparty
+ * names contain `*` (PRINTINGINT10LTD*HKG), and quotes, backslashes, and
+ * non-ASCII can also appear. Hand-built strings will sooner or later produce
+ * invalid JSON, and that failure shows up as "occasional 400s on some rows"
+ * -- extremely hard to track down.
  */
 export function buildTradePayload(refdata, caseRow) {
   return JSON.stringify({
@@ -98,11 +114,13 @@ export function buildTradePayload(refdata, caseRow) {
 }
 
 /**
- * 校验入参是否真的取到了值。
+ * Verify the inputs were actually resolved.
  *
- * 静态数据模式下这一步不能省：数据文件路径写错或字段名对不上时，字段会是
- * undefined / 空串 / 占位符，请求照发，服务端返回业务拒绝 ——
- * 报告里表现为"错误率升高"而不是"脚本错了"，是最难定位的一类失败。
+ * In static-data mode this step cannot be skipped: with a wrong data file
+ * path or mismatched field names, fields end up undefined / empty / a
+ * placeholder, the request goes out anyway, and the server returns a
+ * business rejection -- the report shows "error rate went up" instead of
+ * "the script is wrong", one of the hardest failure classes to diagnose.
  */
 const PLACEHOLDER = /^\s*(tbc|todo|xxx+|n\/a|待定|placeholder)\s*$/i;
 
@@ -111,26 +129,27 @@ export function validateInputs(caseRow) {
 
   ['portfolioId', 'counterpartyFmId', 'counterpartyName'].forEach((k) => {
     const v = caseRow[k];
-    if (!v || !String(v).trim()) problems.push(`${k} 未取到（检查数据文件路径与字段名，见 ./create-trade-data.js）`);
-    else if (PLACEHOLDER.test(v)) problems.push(`${k}='${v}' 仍是占位值（见 data/workers/trade-management/README.md）`);
+    if (!v || !String(v).trim()) problems.push(`${k} not resolved (check the data file path and field names, see ./create-trade-data.js)`);
+    else if (PLACEHOLDER.test(v)) problems.push(`${k}='${v}' is still a placeholder (see data/workers/trade-management/README.md)`);
   });
 
   if (!caseRow.datFile || !String(caseRow.datFile).trim()) {
-    problems.push('datFile 未取到（检查数据文件路径与字段名，见 ./create-trade-data.js）');
+    problems.push('datFile not resolved (check the data file path and field names, see ./create-trade-data.js)');
   }
 
   return problems;
 }
 
 /**
- * 发一笔 create。**唯一的请求出口。**
+ * Send one create. **The only request exit point.**
  *
  * @param {Object}  opts
- * @param {Object}  opts.caseRow    一条 create-trade.json 数据（含内嵌归属字段）
- * @param {Object}  [opts.refdata]  覆盖归属字段（E2E live 模式现场绑定时传入）；
- *                                  不传则取用例内嵌的 portfolioId / counterpartyFmId / counterpartyName
+ * @param {Object}  opts.caseRow    one create-trade.json row (with embedded ownership fields)
+ * @param {Object}  [opts.refdata]  overrides the ownership fields (passed in E2E live-mode
+ *                                  on-the-fly binding); if omitted, the case's embedded
+ *                                  portfolioId / counterpartyFmId / counterpartyName are used
  * @param {string}  opts.runPhase   'setup' | 'main'
- * @param {string}  [opts.userId]   身份，默认 maker
+ * @param {string}  [opts.userId]   identity, defaults to maker
  * @returns {{res, errClass, detail, tradeId, taskId, tags, tradeReference}}
  */
 export function createTrade(opts) {
@@ -138,21 +157,23 @@ export function createTrade(opts) {
   const refdata = opts.refdata || caseRow;
   const userId = opts.userId || cfg.makerUserId;
 
-  // ── 低基数标签：会成为指标的维度，用来切分结果 ──
-  // ⚠ 不要往这里加 tradeId / tradeReference 之类每次都不同的值（见 lib/errors.js）
+  // ── Low-cardinality tags: they become metric dimensions used to slice results ──
+  // ⚠ Never add per-request values like tradeId / tradeReference here (see lib/errors.js)
   const tags = {
-    name: 'workers_trademgmt_create',   // k6 按 name 标签聚合各步骤的指标
+    name: 'workers_trademgmt_create',   // k6 aggregates each step's metrics by the name tag
     runPhase: runPhase,
-    // row = 数据文件行号（rows.js 自动注入的 __row）—— "哪行数据坏了"
-    // 从指标就能切出来。不是测试用例 id：一行只是一个数据变体
+    // row = data file row number (the __row auto-injected by rows.js) --
+    // "which data row is broken" can be sliced straight from the metrics.
+    // Not a test case id: a row is just one data variant
     row: String(caseRow.__row || 0),
     productType: caseRow.productType || 'NA',
   };
 
   const body = {
     trade: buildTradePayload(refdata, caseRow),
-    // filename 由 uploadName 决定：默认原名；DAT_NAME_MODE=unique 时加唯一
-    // 后缀绕服务端临时文件竞态（偏差开关，见 ./create-trade-data.js）
+    // filename comes from uploadName: original name by default; with
+    // DAT_NAME_MODE=unique a unique suffix is added to bypass the server
+    // temp-file race (deviation switch, see ./create-trade-data.js)
     datFile: http.file(
       getDat(caseRow.datFile),
       uploadName(caseRow.datFile),
@@ -163,11 +184,14 @@ export function createTrade(opts) {
   const res = http.post(URL, body, {
     headers: {
       accept: '*/*',
-      // 真实 curl 里同时存在 X-User-ID 和 X-User-Id，仅大小写不同。
-      // 按 RFC 7230 §3.2 header 名大小写不敏感 —— 两者是同一个 header。
-      // ⚠ JS 对象的键**区分**大小写，写两个会产生两个条目；
-      //   两个都取同一个值，无论服务端读哪个都是对的。
-      //   确认服务端只认 X-User-Id 后，删掉上面那行。
+      // The real curl contains both X-User-ID and X-User-Id, differing only
+      // in case. Per RFC 7230 §3.2 header names are case-insensitive --
+      // they are the same header.
+      // ⚠ JS object keys ARE case-sensitive, so writing both produces two
+      //   entries; both carry the same value, so whichever the server reads
+      //   is correct.
+      //   Once the server is confirmed to only read X-User-Id, delete the
+      //   line above.
       'X-User-ID': userId,
       'X-User-Id': userId,
       'X-Dyn-Run': cfg.dynRun,
@@ -179,9 +203,11 @@ export function createTrade(opts) {
   const outcome = classifyCreate(res, tags);
 
   return Object.assign({ res, tags }, outcome, {
-    // 业务唯一标识：仅存在于结果文件，未写入被测系统
-    // （payload 目前不接受额外字段 —— 这正是清理策略只能靠
-    //   "专用 PERF Portfolio + 状态 + 时间窗口" 兜底的原因）
+    // Business-unique identifier: exists only in the results file, never
+    // written to the system under test
+    // (the payload currently accepts no extra fields -- which is exactly why
+    //  the cleanup strategy can only fall back on
+    //  "dedicated PERF Portfolio + status + time window")
     tradeReference: `PERF-r${caseRow.__row || 0}-${runPhase}`,
   });
 }

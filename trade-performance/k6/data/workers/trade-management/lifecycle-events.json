@@ -1,6 +1,6 @@
 {
-  "_comment": "生命周期事件用例池 —— 供 p06-trigger-event（迁移清单 ④，尚未实现）。字段：eventType 事件类型；needsApproval 是否走四眼审批（true 的事件会产生 checker task）；partialPct 部分事件的百分比，非部分事件留空；notes 自由文本。",
-  "_format": "契约见 lib/rows.js：rows 数组，_ 开头的键是注释，值一律按字符串处理。",
+  "_comment": "Lifecycle event case pool -- for p06-trigger-event (migration list item 4, not yet implemented). Fields: eventType = event type; needsApproval = whether it goes through four-eyes approval (true events produce a checker task); partialPct = percentage for partial events, empty for non-partial events; notes = free text.",
+  "_format": "Contract: see lib/rows.js: a rows array, keys starting with _ are comments, all values are treated as strings.",
   "rows": [
     { "eventCaseId": "E001", "eventType": "Cancellation",             "needsApproval": "true",  "partialPct": "",   "notes": "requires checker approval" },
     { "eventCaseId": "E002", "eventType": "EarlyTermination",         "needsApproval": "false", "partialPct": "",   "notes": "rises with market volatility" },

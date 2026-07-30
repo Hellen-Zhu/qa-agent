@@ -1,39 +1,48 @@
 /*
- * lib/errors.js —— 三类错误分离
+ * lib/errors.js — three-way error separation
  *
- * ══ 为什么不能只看 HTTP 状态码 ═══════════════════════════════
- * 这个接口**业务失败时照样返回 HTTP 200**，业务状态在 body 的 code / status 里。
- * 只看状态码的报告会显示"错误率 0%"，而实际一条 trade 都没建成。
- * 这是本项目最容易产出误导性报告的地方。
+ * ══ Why HTTP status codes alone are not enough ═══════════════
+ * This API **returns HTTP 200 even on business failure** — the business
+ * status lives in the body's code / status fields. A report that only looks
+ * at status codes shows "0% errors" while not a single trade was actually
+ * created. This is the single easiest place in this project to produce a
+ * misleading report.
  *
- * ══ 三类必须分开，因为处置方式完全不同 ═══════════════════════
- *   technical  连接失败 / 超时 / 5xx      → 系统扛不住，**这才是性能结论**
- *   business   HTTP 200 但业务拒绝         → 多半是测试数据失效，不是性能问题
- *   script     提取不到值 / 响应不是 JSON  → 脚本 bug，**整轮结果作废**
- * 混在一个"错误率"里的报告没法用：12% 错误率到底该找开发还是该修数据？
+ * ══ The three classes must stay separate — the responses differ ═══
+ *   technical  connection failure / timeout / 5xx → the system can't cope;
+ *              **this is the performance conclusion**
+ *   business   HTTP 200 but business rejection    → usually stale test data,
+ *              not a performance problem
+ *   script     extraction failed / non-JSON body  → script bug; **the whole
+ *              run is void**
+ * A report that lumps them into one "error rate" is unusable: is a 12%
+ * error rate a dev problem or a data problem?
  * ═══════════════════════════════════════════════════════════
  *
- * ⚠ 标签基数（cardinality）：
- *   k6 的 tag 是 **指标的维度**，高基数标签会让内存和 Prometheus 存储爆炸。
+ * ⚠ Tag cardinality:
+ *   k6 tags are **metric dimensions**; high-cardinality tags blow up memory
+ *   and Prometheus storage.
  *
- *   → 可以打标签：runPhase / row（数据行号）/ productType / errClass / reason（各几个有界值）
- *   → **绝对不要**打标签：tradeId / taskId / tradeReference（每次请求都不同）
- *   需要逐笔明细时用 --out csv 或结构化日志，不要塞进 tag。
+ *   → OK to tag: runPhase / row (data row number) / productType / errClass /
+ *     reason (each a small bounded set)
+ *   → **NEVER** tag: tradeId / taskId / tradeReference (unique per request)
+ *   For per-request detail use --out csv or structured logs, not tags.
  */
 
 import { Counter, Rate, Trend } from 'k6/metrics';
 
-// ── 计数器：四个互斥类别，加起来等于总请求数 ────────────────
+// ── Counters: four mutually exclusive classes summing to total requests ──
 export const cOk = new Counter('oreo_ok');
 export const cTechnical = new Counter('oreo_err_technical');
 export const cBusiness = new Counter('oreo_err_business');
 export const cScript = new Counter('oreo_err_script');
 
-// ── 业务成功率：这才是"错误率"该看的那个数，不是 http_req_failed ──
+// ── Business success rate: THE "error rate" to watch, not http_req_failed ──
 export const rBusinessSuccess = new Rate('oreo_business_success');
 
-// ── 只统计**业务成功**那些请求的耗时 ──────────────────────────
-// 失败请求（尤其是快速拒绝）会把 P95 拉低，让容量看起来比实际好。
+// ── Duration of **business-successful** requests only ─────────
+// Failed requests (especially fast rejections) drag P95 down and make
+// capacity look better than it is.
 export const tSuccessDuration = new Trend('oreo_success_duration', true);
 
 export const ERR = {
@@ -44,43 +53,53 @@ export const ERR = {
 };
 
 /*
- * ── reason：失败原因维度（低基数）────────────────────────────
- * errClass 回答"该找谁"（开发 / 数据 / 脚本），reason 回答"具体怎么了"。
- * 没有它，一次跑出 40 个 business 只是一个数字 —— dat 竞态、归属字段
- * 失效、重复提交全混在一起，定位还得靠翻 CSV 猜。
+ * ── reason: failure-cause dimension (low cardinality) ─────────
+ * errClass answers "who to call" (dev / data / script); reason answers
+ * "what exactly happened". Without it, 40 business errors in a run is just
+ * a number — dat races, stale ownership fields, and duplicate submissions
+ * all blur together and triage means digging through CSV and guessing.
  *
- * ⚠ reason 会成为指标维度，只允许**有界**取值：
- *   模式表槽位 + 服务端 code 枚举 + HTTP 状态码，全部有界。
- *   **绝不能把 msg 原文当 reason** —— 自由文本无界，等同把 tradeId 打进 tag。
+ * ⚠ reason becomes a metric dimension, so only **bounded** values are
+ *   allowed: pattern-table slots + server-side code enum + HTTP status
+ *   codes, all bounded.
+ *   **Never use raw msg text as reason** — free text is unbounded, same as
+ *   tagging tradeId.
  */
 
-// 业务拒绝的归因**模式表属于各 API 的契约**，定义在各自的 step 文件里
-// （一个 API 一个文件），这里只提供匹配 + 兜底。现场原文靠下方 logFailure
-// 的限流日志采集 → 回填到各 step 的模式表。
+// The attribution **pattern table for business rejections belongs to each
+// API's contract** and is defined in its own step file (one file per API);
+// this module only provides matching + fallback. Raw samples are collected
+// via the rate-limited logFailure logging below → fed back into each step's
+// pattern table.
 export function reasonFrom(body, patterns) {
   const msg = String((body && body.msg) || '');
   for (let i = 0; i < (patterns || []).length; i++) {
     if (patterns[i].re.test(msg)) return patterns[i].reason;
   }
-  // 兜底用服务端业务 code：统一响应封套 {code, status, msg, data} 的枚举值，天然有界
+  // Fallback: the server-side business code — enum values of the uniform
+  // response envelope {code, status, msg, data}, inherently bounded
   const code = body && body.code;
   return typeof code === 'number' ? 'code-' + code : 'code-unknown';
 }
 
 export function techReason(res) {
-  // status=0 是连接层失败（超时/拒绝/DNS），error_code 是 k6 的有界错误枚举
+  // status=0 means the connection layer itself failed (timeout/refused/DNS);
+  // error_code is k6's bounded error enum
   return res.status > 0 ? 'http-' + res.status : 'net-' + (res.error_code || 0);
 }
 
 /*
- * ── 限流的现场日志 ──────────────────────────────────────────
- * 之前失败只进计数器，k6.log 里一条现场都看不到，出问题只能事后翻 CSV。
- * 但也不能全量打：高并发下大面积失败时 console I/O 本身会挤占压力机，
- * 且几千条相同日志没有信息增量。折中：**每 VU 每种 (errClass, reason)
- * 详打前 3 条**，之后静默 —— 计数在指标里，逐笔明细在 result.csv。
+ * ── Rate-limited on-the-spot logging ────────────────────────
+ * Previously failures only hit counters — not a single sample in k6.log,
+ * so triage meant digging through CSV afterwards. But logging everything is
+ * no good either: under high concurrency with widespread failures, console
+ * I/O itself squeezes the load generator, and thousands of identical lines
+ * add no information. Compromise: **per VU, log the first 3 of each
+ * (errClass, reason) pair in full**, then go silent — counts live in
+ * metrics, per-request detail in result.csv.
  */
 const LOG_CAP = 3;
-const logSeen = {}; // 每个 VU 独立 VM，天然按 VU 隔离
+const logSeen = {}; // each VU has its own VM, so this is naturally per-VU
 
 export function logFailure(errClass, reason, detail, tags) {
   const key = errClass + '|' + reason;
@@ -88,38 +107,45 @@ export function logFailure(errClass, reason, detail, tags) {
   if (n > LOG_CAP) return;
   const t = tags || {};
   const tail = n === LOG_CAP
-    ? ` —— 本 VU 此类日志已达 ${LOG_CAP} 条，后续静默（计数看指标，逐笔看 result.csv）`
+    ? ` — this VU hit the ${LOG_CAP}-line cap for this class; silent from now on (counts in metrics, per-request detail in result.csv)`
     : '';
-  // name = 是哪个 API（E2E 六个接口混跑时必须能分）；__VU 用于对上"每 VU 限流"的口径（setup 阶段为 0）
+  // name = which API (must be distinguishable when the six E2E endpoints run mixed);
+  // __VU maps to the "per-VU rate limit" accounting (0 during setup phase)
   console.warn(`✗ [${errClass}/${reason}] ${t.name || 'NA'} vu=${__VU} row=${t.row || 'NA'} phase=${t.runPhase || 'NA'} ${detail}${tail}`);
 }
 
 /**
- * 通用判定引擎。**公共层不认识任何具体接口** —— 技术失败与 JSON 解析
- * 对所有 API 都一样，在这里统一处理；业务语义通过 spec 回调注入，
- * 契约留在各 step 文件里（一个 API 一个文件）。几十个单接口场景
- * 都走这一个入口，新增 API 不改本文件。
+ * Generic classification engine. **The shared layer knows no specific API** —
+ * technical failures and JSON parsing are identical for every API and are
+ * handled here; business semantics are injected via the spec callbacks,
+ * with the contract staying in each step file (one file per API). Dozens of
+ * single-endpoint scenarios go through this one entry point; adding an API
+ * does not touch this file.
  *
- * 分支顺序即判定优先级（technical → not-json → business → shape），不要调换。
+ * Branch order IS classification priority (technical → not-json → business
+ * → shape) — do not reorder.
  *
- * @param {Object} res   k6 的 Response
- * @param {Object} tags  低基数标签，会附加到所有指标上
- * @param {Object} [spec] 该 API 的响应契约：
+ * @param {Object} res   k6 Response
+ * @param {Object} tags  low-cardinality tags, attached to all metrics
+ * @param {Object} [spec] the API's response contract:
  *   spec.business (body) => null | {reason, detail}
- *                 业务拒绝判定（HTTP 200 且 JSON 合法后调用）。
- *                 不传 = 该接口没有已确认的业务拒绝形态（读接口现状）。
- *   spec.shape    (body) => null | 问题描述
- *                 结构校验（业务通过后调用）。结构不符（列名猜错、
- *                 id 格式不对）是**脚本侧**问题 → script 类。
- * @returns {{errClass, detail, reason, body}}  body 仅在 JSON 解析成功后非 null
+ *                 Business-rejection check (called after HTTP 200 and valid
+ *                 JSON). Omitted = the endpoint has no confirmed business
+ *                 rejection shape (current state of the read endpoints).
+ *   spec.shape    (body) => null | problem description
+ *                 Structural validation (called after business passes).
+ *                 Structure mismatches (wrong column name guess, bad id
+ *                 format) are **script-side** problems → script class.
+ * @returns {{errClass, detail, reason, body}}  body is non-null only after successful JSON parse
  */
 export function classifyResponse(res, tags, spec) {
   const s = spec || {};
   const t = tags || {};
 
-  // ── 类别 1：技术失败 ──
-  // res.status === 0 表示连接层就失败了（超时 / 拒绝 / DNS）——
-  // 这种情况 res.body 是 null，必须先挡住。
+  // ── Class 1: technical failure ──
+  // res.status === 0 means the connection layer failed outright
+  // (timeout / refused / DNS) — res.body is null then, so this must be
+  // caught first.
   if (res.status !== 200) {
     const reason = techReason(res);
     const detail = `technical: HTTP ${res.status}${res.error ? ' ' + res.error : ''}`;
@@ -128,7 +154,7 @@ export function classifyResponse(res, tags, spec) {
     return { errClass: ERR.TECHNICAL, detail, reason, body: null };
   }
 
-  // ── 类别 3：响应不是 JSON ──
+  // ── Class 3: response is not JSON ──
   let body;
   try {
     body = res.json();
@@ -139,7 +165,7 @@ export function classifyResponse(res, tags, spec) {
     return { errClass: ERR.SCRIPT, detail, reason: 'not-json', body: null };
   }
 
-  // ── 类别 2：业务拒绝（契约注入）──
+  // ── Class 2: business rejection (contract-injected) ──
   if (s.business) {
     const rej = s.business(body);
     if (rej) {
@@ -149,7 +175,7 @@ export function classifyResponse(res, tags, spec) {
     }
   }
 
-  // ── 结构完整性（契约注入）──
+  // ── Structural integrity (contract-injected) ──
   if (s.shape) {
     const problem = s.shape(body);
     if (problem) {
@@ -165,11 +191,14 @@ export function classifyResponse(res, tags, spec) {
 }
 
 /**
- * 把一次请求的判定结果记进全部指标。**所有步骤的唯一记账出口** ——
- * 新步骤不要自己 new Counter 重复三类分离，调这里。
+ * Record one request's classification into all metrics. **The single
+ * bookkeeping exit for every step** — new steps must not new up their own
+ * Counters and re-implement the three-way separation; call this.
  *
- * @param {string} [reason] 失败原因（有界值，见上方 reason 段）。
- *                 只挂在错误计数器上 —— 成功没有"原因"，Rate/Trend 不需要该维度。
+ * @param {string} [reason] failure reason (bounded values, see the reason
+ *                 section above). Attached only to the error counters —
+ *                 success has no "reason", and Rate/Trend don't need that
+ *                 dimension.
  */
 export function recordOutcome(errClass, tags, res, reason) {
   const t = Object.assign({}, tags, { errClass });
@@ -186,10 +215,12 @@ export function recordOutcome(errClass, tags, res, reason) {
 }
 
 /**
- * 只读 JSON 接口的简写（trades-list / trade-detail / refdata 列表）：
- * 这些接口没有已确认的"业务拒绝"形态（读接口拿不到 PENDING APPROVAL
- * 这类业务状态可断言），所以契约只有结构校验。哪天确认了读接口的
- * 业务错误码形态，调用方直接改用 classifyResponse 传 spec.business。
+ * Shorthand for read-only JSON endpoints (trades-list / trade-detail /
+ * refdata lists): these have no confirmed "business rejection" shape (read
+ * endpoints expose no assertable business status like PENDING APPROVAL),
+ * so the contract is structural validation only. The day a read endpoint's
+ * business error-code shape is confirmed, callers switch to
+ * classifyResponse with spec.business directly.
  */
 export function classifyRead(res, tags, validate) {
   return classifyResponse(res, tags, { shape: validate });

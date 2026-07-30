@@ -1,13 +1,15 @@
 /*
  * steps/workers/trade-management/trade-risk-metrics.js
  *
- * 【层级】原子步骤 —— 一个 API 一个文件
- * 【API】  workers.trade-management.risk-metrics  ·  GET /trades/{id}/risk-metrics
+ * [Layer] Atomic step -- one API per file
+ * [API]   workers.trade-management.risk-metrics  ·  GET /trades/{id}/risk-metrics
  *
- * ── 软依赖（risk-engine gRPC）──
- * 失败**不中止**本次迭代，只记录 —— 这是该 API 的固有性质（前端行为：
- * 风险块加载失败时 trade 主体仍展示），不是场景的特殊需求。
- * 默认不屏蔽：失败照常进 technical。masking 模式做 S-11 降级实验时再移植。
+ * ── Soft dependency (risk-engine gRPC) ──
+ * Failure does **not abort** the iteration, only gets recorded -- this is an
+ * inherent property of the API (frontend behavior: when the risk block fails
+ * to load, the trade body still renders), not a special need of the scenario.
+ * Not masked by default: failures still count as technical. Port the masking
+ * mode when doing the S-11 degradation experiment.
  */
 
 import http from 'k6/http';
@@ -15,7 +17,8 @@ import { Rate } from 'k6/metrics';
 import { cfg } from '../../../lib/config.js';
 import { recordOutcome, ERR } from '../../../lib/errors.js';
 
-// 与 calc-risk 分开计：一个是提交前预览（workers 内），一个是详情页风险块
+// Counted separately from calc-risk: one is the pre-submit preview (inside
+// workers), the other is the detail page's risk block
 export const rRiskMetrics = new Rate('oreo_risk_metrics_ok');
 
 /**

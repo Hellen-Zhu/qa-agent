@@ -1,13 +1,13 @@
 {
-  "_comment": "维度二：环境。只描述'打哪个环境'，绝不包含 VU 数/时长（那是 profiles/ 的职责）",
+  "_comment": "Dimension two: environment. Only describes 'which environment to hit', never contains VU counts/durations (that is the job of profiles/)",
 
   "services": {
-    "_comment": "5 个 svc 各自独立寻址。刻意不设全局 host —— 忘记指定服务的请求会直接失败，而不是静默打到别的服务上。",
+    "_comment": "The 5 services are addressed independently. Deliberately no global host -- a request that forgets to specify its service fails outright instead of silently hitting another service.",
 
-    "workers":       { "_status": "已确认 2026-07-28 实测 curl",
+    "workers":       { "_status": "Confirmed 2026-07-28 via real curl",
                        "protocol": "http", "host": "10.198.25.56", "port": 9089, "basePath": "/api/v1" },
 
-    "_placeholder":  "以下四组仍是占位值（NFR 待确认 #12）。刻意不跟着 workers 一起填 —— 猜对了没人核实、猜错了表现为 404，会被当成'接口不存在'而不是'地址配错了'。localhost 则是连接拒绝，一眼就知道没配。p02 不受影响。",
+    "_placeholder":  "The four groups below are still placeholders (NFR pending confirmation #12). Deliberately not filled in alongside workers -- a correct guess would go unverified, and a wrong guess shows up as 404, which reads as 'endpoint does not exist' rather than 'address misconfigured'. localhost gives connection refused, instantly recognizable as unconfigured. p02 is unaffected.",
     "uc":            { "protocol": "http", "host": "localhost", "port": 8080, "basePath": "/api/v1" },
     "refdata":       { "protocol": "http", "host": "localhost", "port": 8080, "basePath": "/api/v1" },
     "notifications": { "protocol": "http", "host": "localhost", "port": 8080, "basePath": "/api/v1" },
@@ -15,7 +15,7 @@
   },
 
   "identity": {
-    "_comment": "本项目无 login / 无 token，权限完全由 X-User-Id 决定。角色固定不轮换：四眼原则要求 checker ≠ maker（NFR SEC-02）。",
+    "_comment": "This project has no login / no token; authorization is entirely determined by X-User-Id. Roles are fixed, never rotated: the four-eyes principle requires checker != maker (NFR SEC-02).",
     "makerUserId":   "maker@sc.com",
     "checkerUserId": "checker@sc.com"
   },
@@ -23,9 +23,9 @@
   "timeouts": { "request": "60s" },
 
 
-  "_preflight": "abort | warn（prune 未实现）。dev 数据波动大，默认 warn。",
+  "_preflight": "abort | warn (prune not implemented). dev data fluctuates a lot; default is warn.",
   "preflightPolicy": "warn",
 
-  "_dynRun": "来自真实 curl，语义待确认",
+  "_dynRun": "From a real curl; semantics pending confirmation",
   "dynRun": false
 }

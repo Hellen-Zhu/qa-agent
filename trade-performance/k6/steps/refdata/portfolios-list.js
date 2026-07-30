@@ -1,18 +1,22 @@
 /*
  * steps/refdata/portfolios-list.js
  *
- * 【层级】原子步骤 —— 一个 API 一个文件
- * 【API】  refdata.portfolios.list  ·  GET /refdata/portfolios
+ * [Layer] Atomic step -- one API per file
+ * [API]   refdata.portfolios.list  ·  GET /refdata/portfolios
  *
- * ── 提取（挑哪一条）不在这里做 ──
- * 同一个查询有两种用法：journey 随机挑一条当入参；preflight 取全部建池。
- * 原子步骤只管请求 + 返回列表，怎么挑由调用方决定。
+ * ── Extraction (which row to pick) does NOT happen here ──
+ * The same query has two uses: journeys pick one row at random as an input;
+ * preflight takes the full list to build a pool. The atomic step only does
+ * the request + returns the list; how to pick is up to the caller.
  *
- * ⚠ refdata 服务地址在 config/dev.json 里仍是 localhost 占位（NFR 待确认 #12）。
- *   地址没确认前本步骤必然连接拒绝 —— 这是刻意的显式失败，不是 bug。
- *   E2E 场景据此提供 REFDATA_MODE=static 降级（见 scenarios/s01-create-trade-e2e.js）。
+ * ⚠ The refdata service address in config/dev.json is still a localhost
+ *   placeholder (NFR pending confirmation #12). Until the address is
+ *   confirmed this step will always get connection refused -- that is a
+ *   deliberate explicit failure, not a bug. The E2E scenario provides the
+ *   REFDATA_MODE=static fallback for exactly this reason
+ *   (see scenarios/s01-create-trade-e2e.js).
  *
- * ⚠ 响应结构假设 $.data[*].id，未经真实响应验证。
+ * ⚠ Response shape assumes $.data[*].id, not verified against a real response.
  */
 
 import http from 'k6/http';
@@ -23,7 +27,7 @@ const URL = `${cfg.baseUrl('refdata')}/refdata/portfolios`;
 
 /**
  * @param {Object} [opts]  {runPhase, userId, pageSize}
- * @returns {{res, errClass, detail, list}}  list 仅在 ok 时非空数组
+ * @returns {{res, errClass, detail, list}}  list is a non-empty array only when ok
  */
 export function portfoliosList(opts) {
   const o = opts || {};
@@ -44,7 +48,7 @@ export function portfoliosList(opts) {
   });
 
   const out = classifyRead(res, tags, (body) =>
-    Array.isArray(body && body.data) ? null : 'data 不是数组（JSONPath 假设 $.data[*]，需对真实响应核实）'
+    Array.isArray(body && body.data) ? null : 'data is not an array (JSONPath assumes $.data[*], verify against a real response)'
   );
 
   return Object.assign({ res, tags, list: out.errClass === ERR.OK ? out.body.data : [] }, out);

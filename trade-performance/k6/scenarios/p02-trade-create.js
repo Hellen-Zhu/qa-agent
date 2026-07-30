@@ -1,20 +1,23 @@
 /*
  * scenarios/p02-trade-create.js
  *
- * 【层级】可运行计划 —— 薄壳，自己不定义请求
- * 【测什么】POST /trades/create 的纯服务端能力
- * 【怎么跑】./k6/run.sh p02-trade-create dev smoke
+ * [Layer] Runnable plan -- thin shell, defines no requests itself
+ * [What it tests] Pure server-side capacity of POST /trades/create
+ * [How to run] ./k6/run.sh p02-trade-create dev smoke
  *
- * ── 与 E2E 场景的关键差别 ──
- * 1. **完全不查 refdata** —— portfolio / counterparty 由静态数据直接供数。
- *    E2E 里 refdata 是被测链路的一部分；单接口测试里它是噪音。
- * 2. **不加 think time** —— 测的是"服务端一秒能处理多少"，不是用户体验。
- * 3. **不含 view-trade-details** —— 同理。
+ * ── Key differences from the E2E scenario ──
+ * 1. **No refdata lookups at all** -- portfolio / counterparty come straight
+ *    from static data. In E2E, refdata is part of the path under test;
+ *    in a single-endpoint test it is noise.
+ * 2. **No think time** -- we measure "how much the server handles per second",
+ *    not user experience.
+ * 3. **No view-trade-details** -- same reason.
  *
- * ── 计数口径 ──
- * http_reqs 就是请求数（没有"事务行 + 采样行"双计数）；
- * setup() 不占用 scenario 迭代，preflight 不消耗数据第一行，
- * 也不混进主循环的耗时统计（自带 runPhase=setup 标签，天然可分）。
+ * ── Counting semantics ──
+ * http_reqs equals the number of requests (no "transaction row + sample row"
+ * double counting); setup() does not consume scenario iterations, preflight
+ * does not consume the first data row, and it stays out of the main loop's
+ * timing stats (it carries runPhase=setup, so it is naturally separable).
  */
 
 import exec from 'k6/execution';
@@ -28,57 +31,60 @@ const PLAN = 'p02-trade-create';
 
 export const options = {
   scenarios: {
-    // profile 里的 scenario 直接就是 k6 的 executor 配置，不做二次翻译。
-    // 换负载模型 = 换 -e PROFILE=xxx，脚本一行不改（三维正交）。
+    // The scenario block in the profile IS the k6 executor config, no re-translation.
+    // Switching load model = switching -e PROFILE=xxx, zero script changes
+    // (the three dimensions are orthogonal).
     create: Object.assign({ exec: 'createTradeIteration' }, cfg.scenario),
   },
 
   thresholds: Object.assign(
     {
-      // 这一条是**任何 profile 都必须成立**的底线，不由 profile 决定：
-      // script 错误 = 脚本 bug，本轮结果作废。
-      // technical / business 的容忍度因 profile 而异（smoke 要求 0，
-      // ladder 过了拐点出现 technical 恰恰是要测的结论），所以放 profile 里。
+      // This one is a baseline that **must hold for any profile**, and is not
+      // up to the profile: a script error = a script bug, this run's results
+      // are void. Tolerance for technical / business errors varies by profile
+      // (smoke demands 0; technical errors past the knee are exactly what a
+      // ladder run is meant to find), so those live in the profile.
       oreo_err_script: ['count==0'],
     },
     cfg.thresholds
   ),
 
-  // 默认摘要不含 P50 之外的分位，显式指定
+  // The default summary omits percentiles beyond P50; specify explicitly
   summaryTrendStats: ['avg', 'min', 'med', 'p(90)', 'p(95)', 'p(99)', 'max', 'count'],
 
-  // 我们要解析响应体做业务判定，不能丢
+  // We parse response bodies for business-level verdicts; cannot discard them
   discardResponseBodies: false,
 
-  // 所有指标默认带上环境/profile 标签，便于在 Grafana 里区分不同轮次
+  // All metrics carry env/profile tags by default, so runs are separable in Grafana
   tags: {
     plan: PLAN,
     env: cfg.envName,
     profile: cfg.profileName,
-    datNameMode: DAT_NAME_MODE, // unique = 绕服务端临时文件竞态的偏差跑法，结果必须可区分
+    datNameMode: DAT_NAME_MODE, // unique = deviation run that bypasses the server-side temp-file race; results must be distinguishable
   },
 };
 
-// ── setUp：开跑前守卫 ─────────────────────────────────────────
+// ── setUp: pre-run guard ─────────────────────────────────────
 export function setup() {
   return createTradePreflight();
 }
 
-// ── 主循环：一次迭代 = 一笔 create ────────────────────────────
+// ── Main loop: one iteration = one create ────────────────────
 export function createTradeIteration() {
-  // 跨全部 VU 的全局单调计数器 —— 一个全局数据游标
+  // Globally monotonic counter across all VUs -- a global data cursor
   const i = exec.scenario.iterationInTest;
 
   createTrade({
-    caseRow: pickCase(i),   // 归属字段内嵌在用例行里，refdata 不另传
+    caseRow: pickCase(i),   // ownership fields are embedded in the case row; no separate refdata passed
     runPhase: 'main',
-    // 身份固定 maker，不轮换（NFR SEC-02 见 config/dev.json）。
-    // 需要"分散 maker vs 集中同一 maker"的对照实验时，
-    // 在这里按 exec.vu.idInTest 取不同账号即可 —— 但那是另一个实验。
+    // Identity is fixed to one maker, no rotation (NFR SEC-02, see config/dev.json).
+    // For a "spread across makers vs. same maker" comparison experiment,
+    // pick different accounts here by exec.vu.idInTest -- but that is
+    // a different experiment.
   });
 }
 
-// ── 收尾 ──────────────────────────────────────────────────────
+// ── Wrap-up ──────────────────────────────────────────────────
 export const handleSummary = makeHandleSummary(() => ({
   plan: PLAN,
   env: cfg.envName,

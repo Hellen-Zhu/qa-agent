@@ -1,8 +1,8 @@
 {
   "name": "ladder",
-  "description": "闭合模型阶梯加压 —— 找容量拐点。判据：TPS 不再随 VU 上升，而 P95 开始陡增。",
-  "_closed_model": "⚠ 闭合模型：VU 发请求→等响应→再发下一个。服务端变慢时压力也跟着变慢，会**系统性低估过载后果**。找拐点够用，但要看'过了拐点会怎样'必须用 arrival profile。",
-  "_ramp": "每级 300s，级间不留空档；要在 Grafana 上分辨各级边界，改用逐级单跑：-e PROFILE=baseline -e VUS=N",
+  "description": "Closed-model stepped ramp-up -- finds the capacity knee. Criterion: TPS stops rising with VUs while P95 starts climbing steeply.",
+  "_closed_model": "WARNING: closed model: each VU sends a request, waits for the response, then sends the next. When the server slows down the load slows down with it, which **systematically underestimates the consequences of overload**. Good enough for finding the knee, but to see 'what happens past the knee' you must use the arrival profile.",
+  "_ramp": "300s per step, no gap between steps; to distinguish step boundaries in Grafana, run each step individually instead: -e PROFILE=baseline -e VUS=N",
   "scenario": {
     "executor": "ramping-vus",
     "startVUs": 1,

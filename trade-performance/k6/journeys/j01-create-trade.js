@@ -1,29 +1,33 @@
 /*
  * journeys/j01-create-trade.js
  *
- * 【层级】journey —— 把 steps 组合成一条完整前端用户路径；
- *        自己不含 executor / thresholds（那是 scenarios 的职责）
- * 【被谁引用】scenarios/s01-create-trade-e2e.js
+ * [Layer] journey -- composes steps into one complete frontend user path;
+ *        contains no executor / thresholds itself (that is the scenarios' job)
+ * [Used by] scenarios/s01-create-trade-e2e.js
  *
- * ── 用户路径 ──
- *   1. 打开 create-trade 页面 → 拉两个下拉框          [refdata × 2]
- *      ↓ think：用户选组合、选交易对手、挑 .dat 文件
- *   2. 风险预览（软依赖，失败不阻断）                  [calc-risk-for-new]
- *      ↓ think：用户看预览
- *   3. 提交                                            [create]
- *      ↓ think：用户看提交结果
- *   4. 查看刚建好的这笔（踩 UC gRPC + risk-engine）    [detail + risk-metrics]
+ * ── User path ──
+ *   1. Open the create-trade page → fetch the two dropdowns   [refdata × 2]
+ *      ↓ think: user picks portfolio, picks counterparty, chooses a .dat file
+ *   2. Risk preview (soft dependency, failure does not block)  [calc-risk-for-new]
+ *      ↓ think: user looks at the preview
+ *   3. Submit                                                  [create]
+ *      ↓ think: user looks at the submit result
+ *   4. View the newly created trade (hits UC gRPC + risk-engine) [detail + risk-metrics]
  *
  * ── refdataMode ──
- *   live    真拉下拉框（忠实路径）。refdata 地址未确认前会连接拒绝 ——
- *           那是显式失败，见 scenarios/s01 的 setup 提示。
- *   static  跳过下拉框查询，归属字段取用例行内嵌值
- *           （portfolioId / counterpartyFmId / counterpartyName 就在 create-trade.json 里）。
- *           **已知偏差**：不覆盖 refdata 查询路径，报告必须标注。
+ *   live    Really fetches the dropdowns (the faithful path). Until the
+ *           refdata address is confirmed this gets connection refused --
+ *           an explicit failure, see the setup hint in scenarios/s01.
+ *   static  Skips the dropdown queries; ownership fields come from values
+ *           embedded in the case row
+ *           (portfolioId / counterpartyFmId / counterpartyName are right in create-trade.json).
+ *           **Known deviation**: does not cover the refdata query path;
+ *           the report must flag it.
  *
- * live 模式两个列表都拉成功时才现场绑定；任一失败则降级回用例内嵌值，
- * 并计 oreo_refdata_fallback —— 这个计数非 0 说明"页面打开就失败"
- * 在真实用户那里也会发生，值得单独看。
+ * In live mode we only bind live values when both lists come back; if either
+ * fails we degrade to the embedded case values and count
+ * oreo_refdata_fallback -- a non-zero count means "the page fails on open"
+ * would happen to real users too, worth looking at on its own.
  */
 
 import { Counter } from 'k6/metrics';
@@ -44,20 +48,22 @@ function pickRandom(list) {
 }
 
 /**
- * 一次迭代 = 一个用户从打开页面到看完详情的完整动作。
+ * One iteration = one user's complete action sequence, from opening the page
+ * to reviewing the details.
  *
  * @param {Object} opts
- * @param {number} opts.i            全局迭代号（数据游标）
+ * @param {number} opts.i            global iteration number (data cursor)
  * @param {string} opts.runPhase     'setup' | 'main'
  * @param {string} opts.refdataMode  'live' | 'static'
- * @returns 与 createTrade 相同的结果对象（含 tradeId / errClass）
+ * @returns the same result object as createTrade (with tradeId / errClass)
  */
 export function j01CreateTrade(opts) {
   const { i, runPhase, refdataMode } = opts;
   const caseRow = pickCase(i);
 
-  // ── 1. 打开页面：拉下拉框 ────────────────────────────────
-  // refdata 为 null 时下游步骤自动取用例内嵌归属字段（static 模式与降级共用这条路）
+  // ── 1. Open the page: fetch the dropdowns ────────────────
+  // When refdata is null, downstream steps fall back to the ownership fields
+  // embedded in the case row (static mode and degradation share this path)
   let refdata = null;
   if (refdataMode === 'live') {
     const pf = portfoliosList({ runPhase });
@@ -66,36 +72,39 @@ export function j01CreateTrade(opts) {
     if (pf.errClass === ERR.OK && pf.list.length > 0 &&
         cp.errClass === ERR.OK && cp.list.length > 0) {
       const p = pickRandom(pf.list);
-      // ⚠ fmId 与 name 必须来自**同一条**记录 —— 两次独立随机会偶发拼出
-      //   A 的 fmId 配 B 的 name，表现为"错误率 3%，无规律"（见步骤文件头注）
+      // ⚠ fmId and name must come from **the same** record -- two independent
+      //   random picks would occasionally pair A's fmId with B's name,
+      //   showing up as "3% error rate, no pattern" (see the step file's header comment)
       const c = pickRandom(cp.list);
       refdata = {
         portfolioId: String(p.id || ''),
         counterpartyFmId: String(c.fmId || ''),
         counterpartyName: String(c.name || ''),
       };
-      // 随机而非取模：E2E 要的是真实分布，不是可复现对照实验
-      // （后者是单接口测试的目标，由用例池轮询承担）
+      // Random rather than modulo: E2E wants a realistic distribution, not a
+      // reproducible controlled experiment (the latter is the single-endpoint
+      // tests' goal, handled by case-pool round-robin)
     } else {
-      cRefdataFallback.add(1); // 降级：下游步骤取用例内嵌值
+      cRefdataFallback.add(1); // degrade: downstream steps use the embedded case values
     }
   }
 
-  think(2000, 3000); // 用户填表：选组合、选交易对手、挑文件
+  think(2000, 3000); // user fills the form: picks portfolio, counterparty, file
 
-  // ── 2. 风险预览（软依赖：失败不阻断，前端行为一致）──────
+  // ── 2. Risk preview (soft dependency: failure does not block, matching frontend behavior) ──
   calcRiskForNew({ refdata, caseRow, runPhase });
 
-  think(500, 1500); // 用户看风险预览
+  think(500, 1500); // user looks at the risk preview
 
-  // ── 3. 提交 ─────────────────────────────────────────────
+  // ── 3. Submit ────────────────────────────────────────────
   const created = createTrade({ refdata, caseRow, runPhase });
 
-  think(2000, 3000); // 用户看提交结果
+  think(2000, 3000); // user looks at the submit result
 
-  // ── 4. 查看详情 ─────────────────────────────────────────
-  // create 失败时整段跳过：不加这个守卫会发出 GET /trades/NOT_FOUND，
-  // 制造一批 404 把真正的 create 失败淹没掉
+  // ── 4. View details ──────────────────────────────────────
+  // Skip the whole section when create failed: without this guard we would
+  // send GET /trades/NOT_FOUND, producing a batch of 404s that drowns out
+  // the real create failures
   if (created.errClass === ERR.OK && created.tradeId !== 'NOT_FOUND') {
     tradeDetail({ tradeId: created.tradeId, runPhase });
     tradeRiskMetrics({ tradeId: created.tradeId, runPhase });

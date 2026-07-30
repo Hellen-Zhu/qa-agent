@@ -1,15 +1,17 @@
 /*
  * steps/refdata/counterparties-list.js
  *
- * 【层级】原子步骤 —— 一个 API 一个文件
- * 【API】  refdata.counterparties.list  ·  GET /refdata/counterparties
+ * [Layer] Atomic step -- one API per file
+ * [API]   refdata.counterparties.list  ·  GET /refdata/counterparties
  *
- * ⚠ 挑选时 fmId 与 name 必须**成对**取自同一条记录（配对逻辑在调用方，
- *   见 journeys/j01-create-trade.js）。两处独立随机会偶发拼出
- *   A 的 fmId 配 B 的 name —— 服务端若校验一致性，表现为"错误率 3%，
- *   无规律"，是最难定位的一类脚本 bug。
+ * ⚠ When picking, fmId and name must be taken **as a pair** from the same
+ *   record (pairing logic lives in the caller, see journeys/j01-create-trade.js).
+ *   Two independent random picks will occasionally combine A's fmId with B's
+ *   name -- if the server validates consistency, this shows up as "3% error
+ *   rate, no pattern", one of the hardest script bugs to track down.
  *
- * 其余同 portfolios-list.js：提取在调用方、refdata 地址仍是占位值。
+ * Otherwise same as portfolios-list.js: extraction happens in the caller,
+ * and the refdata address is still a placeholder.
  */
 
 import http from 'k6/http';
@@ -20,7 +22,7 @@ const URL = `${cfg.baseUrl('refdata')}/refdata/counterparties`;
 
 /**
  * @param {Object} [opts]  {runPhase, userId, pageSize}
- * @returns {{res, errClass, detail, list}}  list 仅在 ok 时非空数组
+ * @returns {{res, errClass, detail, list}}  list is a non-empty array only when ok
  */
 export function counterpartiesList(opts) {
   const o = opts || {};
@@ -41,7 +43,7 @@ export function counterpartiesList(opts) {
   });
 
   const out = classifyRead(res, tags, (body) =>
-    Array.isArray(body && body.data) ? null : 'data 不是数组（JSONPath 假设 $.data[*]，需对真实响应核实）'
+    Array.isArray(body && body.data) ? null : 'data is not an array (JSONPath assumes $.data[*], verify against a real response)'
   );
 
   return Object.assign({ res, tags, list: out.errClass === ERR.OK ? out.body.data : [] }, out);

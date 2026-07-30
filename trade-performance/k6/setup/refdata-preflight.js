@@ -1,16 +1,19 @@
 /*
- * setup/refdata-preflight.js —— **refdata 查询路径**的开跑前守卫
+ * setup/refdata-preflight.js -- pre-run guard for the **refdata query path**
  *
- * 命名约定见 setup/create-trade-preflight.js 头注。
- * 谁在用：scenarios/s01-create-trade-e2e.js（E2E 才踩 refdata；p02 不踩）
+ * Naming convention: see the header comment in setup/create-trade-preflight.js.
+ * Used by: scenarios/s01-create-trade-e2e.js (only E2E touches refdata; p02 does not)
  *
- * ── 它守的是"降级有没有被悄悄启用" ──
- * refdata 服务地址在 config 里仍是 localhost 占位（NFR 待确认 #12）。
- * live 模式下地址不对 = 每次迭代都静默走 fallback，跑完得到一份
- * "看起来正常但根本没覆盖 refdata 查询"的报告。所以这里**开跑前就断言**，
- * 不可达直接中止，并给出两条明确出路。
+ * ── What it guards: "has the degradation been silently enabled" ──
+ * The refdata service address in config is still a localhost placeholder
+ * (NFR pending confirmation #12). In live mode a wrong address = every
+ * iteration silently taking the fallback, and the run produces a report that
+ * "looks fine but never covered the refdata queries at all". So we **assert
+ * before the run starts**: unreachable means immediate abort, with the two
+ * clear ways out spelled out.
  *
- * static 模式不发请求，只打一条偏差声明 —— 报告里必须写明。
+ * static mode sends no request and only prints a deviation notice -- which
+ * must be stated in the report.
  */
 
 import exec from 'k6/execution';
@@ -22,21 +25,21 @@ import { ERR } from '../lib/errors.js';
  * @param {string} mode  'live' | 'static'
  */
 export function refdataPreflight(mode) {
-  console.log(`── preflight: refdata（mode=${mode}）─────────`);
+  console.log(`── preflight: refdata (mode=${mode}) ─────────`);
 
   if (mode !== 'live') {
-    console.warn('⚠ REFDATA_MODE=static —— 不覆盖 refdata 查询路径，报告必须标注此偏差');
+    console.warn('⚠ REFDATA_MODE=static — does not cover the refdata query path; the report must flag this deviation');
     return;
   }
 
   const probe = portfoliosList({ runPhase: 'setup' });
   if (probe.errClass !== ERR.OK) {
     exec.test.abort(
-      `PREFLIGHT FAILED — refdata 不可达（${probe.detail}）。` +
-      `config/${cfg.envName}.json 的 refdata 地址可能仍是占位值（NFR 待确认 #12）。` +
-      `两条路：① 向架构确认地址后填入 config；② 临时用 REFDATA_MODE=static 跑` +
-      `（降级：不覆盖下拉框查询，报告须标注偏差）`
+      `PREFLIGHT FAILED — refdata unreachable (${probe.detail}). ` +
+      `The refdata address in config/${cfg.envName}.json may still be a placeholder (NFR pending confirmation #12). ` +
+      `Two ways out: (1) confirm the address with architecture and put it in config; (2) run with REFDATA_MODE=static for now ` +
+      `(degraded: dropdown queries not covered, the report must flag the deviation)`
     );
   }
-  console.log(`✓ refdata 可达（${probe.list.length} 个 portfolio）`);
+  console.log(`✓ refdata reachable (${probe.list.length} portfolios)`);
 }

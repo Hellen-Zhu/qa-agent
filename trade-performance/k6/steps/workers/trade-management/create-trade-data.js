@@ -1,60 +1,74 @@
 /*
  * steps/workers/trade-management/create-trade-data.js
- * —— **create-trade 这条被测路径**的供数（用例池实例化 + .dat 预载）
+ * -- Data supply for the **create-trade path under test** (case-pool instantiation + .dat preload)
  *
- * 【层级】路径供数 —— 通用机制在 lib/case-pool.js，这里只做两件路径特有的事：
- *   1. 实例化 create 的用例池（SharedArray 名、覆盖项键、默认数据文件）
- *   2. .dat 二进制预载与上传命名（只有上传类路径才有这一段）
- * 与消费它的步骤（create-trade / calc-risk-for-new）同目录 ——
- * 数据文件（.json）纯放 data/，代码不混进去。
+ * [Layer] Path data supply -- the generic machinery is in lib/case-pool.js;
+ * this file only does the two path-specific things:
+ *   1. Instantiate create's case pool (SharedArray name, override key, default data file)
+ *   2. .dat binary preload and upload naming (only upload-style paths have this part)
+ * Lives in the same directory as the steps that consume it
+ * (create-trade / calc-risk-for-new) -- data files (.json) stay purely in
+ * data/, no code mixed in.
  *
- * ── 为什么默认数据文件路径在这里，不在 config/<env>.json ──
- * 三维正交里 config 是"打哪个环境"（地址、身份、超时、preflight 策略），
- * "用哪个用例池"是**计划维度**的事：p05 压列表接口根本不需要 create 用例，
- * 放在 env config 里等于让每个环境都声明一份与自己无关的配置。
- * 需要临时换池（锁竞争对照等变体池）用 CREATE_DATA_FILE 覆盖。
+ * ── Why the default data file path lives here, not in config/<env>.json ──
+ * In the three orthogonal dimensions, config is "which environment to hit"
+ * (addresses, identities, timeouts, preflight policy); "which case pool to
+ * use" is a **plan-dimension** concern: p05 hammering list endpoints has no
+ * need for create cases at all, and putting it in env config would force
+ * every environment to declare configuration irrelevant to itself.
+ * For an ad-hoc pool swap (lock-contention control pools and other variants)
+ * use the CREATE_DATA_FILE override.
  *
- * ⚠ 数据**内容**是环境相关的（id 不跨环境通用，见 data/workers/trade-management/README.md），
- *   但**路径**不是 —— 换环境时重新采集填进同一个文件，而不是换一个路径。
+ * ⚠ Data **content** is environment-specific (ids do not carry across
+ *   environments, see data/workers/trade-management/README.md), but the
+ *   **path** is not -- when switching environments, re-collect and fill the
+ *   same file, don't switch to a different path.
  *
- * ══ 三个必须理解的 k6 约束 ═══════════════════════════════════
+ * ══ Three k6 constraints you must understand ═══════════════════
  *
- * 1. open() 只能在 **init 上下文** 调用，相对路径以**本文件**为基准。
- *    → 所有 .dat 必须在模块加载时**一次性全部读进内存**，
- *      不能"每次迭代按数据行的 datFile 字段去读盘"。
+ * 1. open() can only be called in the **init context**, and relative paths
+ *    resolve against **this file**.
+ *    → All .dat files must be **fully read into memory once** at module
+ *      load; you cannot "read from disk per iteration based on the row's
+ *      datFile field".
  *
- * 2. SharedArray 只能存 **JSON 可序列化** 的数据。
- *    → 行数据可以放（省内存），**二进制 .dat 放不进去**。
+ * 2. SharedArray can only hold **JSON-serializable** data.
+ *    → Row data fits (saves memory); **binary .dat does not**.
  *
- * 3. 因此 .dat 是 **按 VU 复制** 的：
+ * 3. Therefore .dat is **duplicated per VU**:
  *
- *        内存 ≈ VU 数 × 所有 .dat 的总字节数
+ *        memory ≈ VU count × total bytes of all .dat files
  *
- *    20 VU × 3 个 5MB 的文件 = 300MB。可接受。
- *    20 VU × 3 个 50MB 的文件 = 3GB。**不可接受**。
+ *    20 VUs × 3 files of 5MB = 300MB. Acceptable.
+ *    20 VUs × 3 files of 50MB = 3GB. **Not acceptable.**
  *
- *    这是 k6 的**真实劣势**，不要粉饰。真撞上了有两条路：
- *      a) 用 k6/experimental/fs 做惰性读取（较新版本）
- *      b) 拆成多个 scenario，每个只加载自己那一个 productType
- *    先量再优化 —— 跑起来看 `k6 run` 输出的内存，别提前设计。
+ *    This is a **real weakness** of k6; don't gloss over it. If you actually
+ *    hit it, there are two ways out:
+ *      a) Lazy reads via k6/experimental/fs (newer versions)
+ *      b) Split into multiple scenarios, each loading only its own productType
+ *    Measure first, optimize later -- watch the memory in `k6 run` output,
+ *    don't design ahead of the problem.
  * ═══════════════════════════════════════════════════════════
  */
 
 import { makeCasePool, envOr, normalizePath, baseName } from '../../../lib/case-pool.js';
 
-// import.meta.resolve 锚定本文件（open() 相对路径语义新旧版本都稳定，
-// 见 lib/case-pool.js 头注）
+// import.meta.resolve anchors to this file (open()'s relative-path semantics
+// are stable across old and new versions, see the header comment in
+// lib/case-pool.js)
 const ROOT = '../../../'; // steps/workers/trade-management/ → k6/
 
-// .dat 样本根目录。目前只有 create 路径上传 .dat（create / calc-risk-for-new），
-// 将来若有别的路径也传文件，再把这一段抽成 lib/ 的通用二进制池。
+// Root directory for .dat samples. Currently only the create path uploads
+// .dat (create / calc-risk-for-new); if another path ever uploads files too,
+// extract this section into a generic binary pool in lib/.
 const DAT_DIR = 'data/dat';
 
-// ── 用例池：一条 = 一个完整用例 ──────────────────────────────
-// .dat 引用 + 内嵌归属字段（portfolioId / counterpartyFmId /
-// counterpartyName），没有独立的 refdata 池。行的标识是加载时
-// 自动注入的 __row（第几行，1 起），数据文件不维护 id 列。
-// 换池不改脚本：
+// ── Case pool: one row = one complete case ──────────────────────────────
+// .dat reference + embedded ownership fields (portfolioId /
+// counterpartyFmId / counterpartyName); there is no separate refdata pool.
+// A row's identity is the __row injected automatically at load time
+// (row number, 1-based); the data file maintains no id column.
+// Swap pools without changing scripts:
 //   ./k6/run.sh p02-trade-create dev baseline CREATE_DATA_FILE=data/workers/trade-management/create-trade-lock-variant.json
 const pool = makeCasePool({
   name: 'create-cases',
@@ -65,14 +79,15 @@ const pool = makeCasePool({
 export const DATA_FILE = pool.file;
 export const createCases = pool.rows;
 
-/** 全局游标 roundRobin：i 用 exec.scenario.iterationInTest，覆盖均匀且可复现 */
+/** Global-cursor roundRobin: use exec.scenario.iterationInTest for i -- even coverage and reproducible */
 export function pickCase(i) {
   return pool.pick(i);
 }
 
-// ── .dat：按 VU 复制，无法避免 ───────────────────────────────
-// 只加载数据文件里真正引用到的文件，不扫整个目录 —— 目录里可能躺着
-// synthetic/ 的大文件，全读进来纯属浪费。
+// ── .dat: duplicated per VU, unavoidable ───────────────────────────────
+// Only load the files the data file actually references, don't scan the
+// whole directory -- large synthetic/ files may be sitting there, and
+// reading them all in would be pure waste.
 const datBinaries = {};
 for (let i = 0; i < createCases.length; i++) {
   const rel = normalizePath(createCases[i].datFile);
@@ -83,49 +98,58 @@ for (let i = 0; i < createCases.length; i++) {
 export function getDat(relPath) {
   const b = datBinaries[normalizePath(relPath)];
   if (b === undefined) {
-    // 只会在数据与磁盘不一致时发生，且此时已过了 init —— 只能报错，不能补读
+    // Only happens when data and disk are out of sync, and by then init is
+    // already over -- we can only error out, not read late
     throw new Error(
-      `.dat 未加载：${relPath}。init 阶段只加载数据文件引用到的文件，` +
-      `请检查 ${DATA_FILE} 的 datFile 字段与 ${DAT_DIR}/ 是否一致` +
-      `（跑 ./scripts/index-dat.py 对账）`
+      `.dat not loaded: ${relPath}. The init phase only loads files referenced by the data file; ` +
+      `check that the datFile fields in ${DATA_FILE} match ${DAT_DIR}/ ` +
+      `(run ./scripts/index-dat.py to reconcile)`
     );
   }
   return b;
 }
 
 /*
- * ── DAT_NAME_MODE：上传文件名唯一化（绕服务端缺陷的偏差开关）──
+ * ── DAT_NAME_MODE: unique upload filenames (deviation switch to bypass a server defect) ──
  *
- * 服务端收到上传后按**时间戳**生成临时文件名，处理完删除。并发同刻到达
- * 时两笔请求落到同一个临时文件：先完成的一笔把文件删了，后一笔报
- * "找不到 dat"。缺陷论证与验证协议见 data/dat/README.md「服务端临时文件竞态」。
+ * The server names the temp file for each upload by **timestamp** and deletes
+ * it when done. Two requests arriving in the same instant land on the same
+ * temp file: whichever finishes first deletes it, and the other fails with
+ * "dat not found".
  *
- * unique 模式给 multipart 的 filename 加唯一后缀，**字节内容不变**，
- * 不需要复制物理文件（复制 N 份 = 内存放大 N 倍，见文件头约束 3）。
- * 有效性取决于服务端临时名是否包含客户端文件名：
- *   包含 → 名字唯一则临时路径唯一，碰撞消失；
- *   只有时间戳 → 改名无效，碰撞照旧 —— 跑一轮对照就能判定是哪种。
+ * unique mode appends a unique suffix to the multipart filename; the **byte
+ * content is unchanged**, so no physical file copies are needed (copying N
+ * versions = N× memory amplification, see constraint 3 in the file header).
+ * Whether it works depends on whether the server's temp name includes the
+ * client filename:
+ *   includes it → unique name means unique temp path, collision gone;
+ *   timestamp only → renaming does nothing, collisions persist -- one
+ *   control run is enough to tell which case it is.
  *
- * ⚠ 默认 original：生产用户不会改名上传，unique 跑出的错误率会低估
- *   生产，报告必须标注偏差；缺陷修复后关掉本开关做并发复测，
- *   就是该缺陷的回归验证。
+ * ⚠ Default is original: production users don't rename uploads, so error
+ *   rates measured under unique will understate production -- the report
+ *   must flag the deviation. After the server defect is fixed, turn this
+ *   switch off and rerun the concurrency test; that rerun is the defect's
+ *   regression verification.
  */
 export const DAT_NAME_MODE = envOr('DAT_NAME_MODE', 'original');
 if (DAT_NAME_MODE !== 'original' && DAT_NAME_MODE !== 'unique') {
-  throw new Error(`DAT_NAME_MODE=${DAT_NAME_MODE} 无效，只接受 original | unique`);
+  throw new Error(`DAT_NAME_MODE=${DAT_NAME_MODE} is invalid; only original | unique are accepted`);
 }
 
-// 每个 VU 有独立的 JS VM，模块级计数器天然按 VU 隔离 —— 与 __VU 组合
-// 即本次运行内全局唯一；rand4 防两个 runner 同时在跑（手动 + CI）时跨进程重名
+// Each VU has its own JS VM, so a module-level counter is naturally isolated
+// per VU -- combined with __VU it is globally unique within one run; rand4
+// guards against cross-process name clashes when two runners run at once
+// (manual + CI)
 let uploadSeq = 0;
 
-/** 上传用的 filename：original 用原名；unique 在扩展名前插唯一段 */
+/** Upload filename: original uses the original name; unique inserts a unique segment before the extension */
 export function uploadName(relPath) {
   const base = baseName(relPath);
   if (DAT_NAME_MODE === 'original') return base;
   const dot = base.lastIndexOf('.');
   const stem = dot > 0 ? base.slice(0, dot) : base;
-  const ext = dot > 0 ? base.slice(dot) : '';   // 扩展名保留 —— 服务端可能校验 .dat
+  const ext = dot > 0 ? base.slice(dot) : '';   // keep the extension -- the server may validate .dat
   uploadSeq += 1;
   const rand = Math.random().toString(36).slice(2, 6);
   return `${stem}__u${__VU}-${uploadSeq}-${rand}${ext}`;

@@ -1,28 +1,34 @@
 /*
  * scenarios/s01-create-trade-e2e.js
  *
- * 【层级】可运行计划 —— 薄壳：executor + thresholds + 收尾，路径逻辑在 journey
- * 【测什么】S-03：Create Trade 完整前端链路（PERF-07 / PERF-11 / PERF-19）
- * 【怎么跑】./k6/run.sh s01-create-trade-e2e dev smoke
+ * [Layer] Runnable plan -- thin shell: executor + thresholds + wrap-up; path logic lives in the journey
+ * [What it tests] S-03: the full Create Trade frontend path (PERF-07 / PERF-11 / PERF-19)
+ * [How to run] ./k6/run.sh s01-create-trade-e2e dev smoke
  *          ./k6/run.sh s01-create-trade-e2e dev smoke REFDATA_MODE=static
  *          ./k6/run.sh s01-create-trade-e2e dev arrival RATE=1 DURATION=600s REFDATA_MODE=static
  *
- * ── 与 p02 的本质区别 ──
- * p02 测"服务端一秒能处理多少 create"；本场景测"一个真实用户的完整
- * 动作序列压在系统上是什么样"——含 refdata 查询、风险预览、think time、
- * 详情回看。**两者的数字不可互相替换**：E2E 的 create P95 里混着
- * 同链路其它请求对资源的挤占，那正是它存在的意义。
+ * ── Essential difference from p02 ──
+ * p02 measures "how many creates per second the server handles"; this scenario
+ * measures "what a real user's full action sequence looks like against the
+ * system" -- including refdata lookups, risk preview, think time, and viewing
+ * the details afterwards. **The two sets of numbers are not interchangeable**:
+ * the E2E create P95 includes resource contention from the other requests on
+ * the same path, which is exactly why it exists.
  *
- * ── REFDATA_MODE（默认 live）──
- * refdata 服务地址在 config/dev.json 仍是 localhost 占位（NFR 待确认 #12）。
- * live 模式在地址确认前会在 setup 里显式失败，并提示两条路：
- *   1) 找架构确认 refdata 地址，填进 config/dev.json（正解）
- *   2) REFDATA_MODE=static 先跑（降级：归属字段取用例内嵌值，
- *      不覆盖下拉框查询，报告必须标注偏差）
+ * ── REFDATA_MODE (default live) ──
+ * The refdata service address in config/dev.json is still a localhost
+ * placeholder (NFR pending confirmation #12). Until the address is confirmed,
+ * live mode fails explicitly in setup and points at the two ways out:
+ *   1) Confirm the refdata address with architecture and put it in
+ *      config/dev.json (the proper fix)
+ *   2) Run with REFDATA_MODE=static for now (degraded: ownership fields come
+ *      from values embedded in the case rows, the dropdown queries are not
+ *      covered, and the report must flag the deviation)
  *
- * ── ⚠ 数据副作用 ──
- * 每次迭代真实创建一笔 PENDING APPROVAL trade。长时运行一律用 arrival
- * 到达率形态，禁止 constant-vus 满打（计划 §6.3 门槛 5）。
+ * ── ⚠ Data side effects ──
+ * Every iteration really creates a PENDING APPROVAL trade. Long runs must
+ * always use the arrival-rate shape; constant-vus at full tilt is forbidden
+ * (plan §6.3, gate 5).
  */
 
 import exec from 'k6/execution';
@@ -37,7 +43,7 @@ const PLAN = 's01-create-trade-e2e';
 
 const REFDATA_MODE = __ENV.REFDATA_MODE || 'live';
 if (REFDATA_MODE !== 'live' && REFDATA_MODE !== 'static') {
-  throw new Error(`REFDATA_MODE=${REFDATA_MODE} 无效，只接受 live | static`);
+  throw new Error(`REFDATA_MODE=${REFDATA_MODE} is invalid; only live | static accepted`);
 }
 
 export const options = {
@@ -49,10 +55,12 @@ export const options = {
     {
       oreo_err_script: ['count==0'],
 
-      // ── 分步耗时的哨兵阈值 ──────────────────────────────
-      // 'max>=0' 恒真，存在的唯一意义是让 k6 为这些 tag 组合生成子指标，
-      // summary 才有"分步耗时"段（k6 只为声明过阈值的组合出子指标）。
-      // summary.js 会把它们从阈值判定清单里滤掉。
+      // ── Sentinel thresholds for per-step timings ────────
+      // 'max>=0' is always true; its only purpose is to make k6 emit
+      // sub-metrics for these tag combinations, so the summary gets a
+      // "per-step timings" section (k6 only emits sub-metrics for
+      // combinations with a declared threshold).
+      // summary.js filters them out of the threshold verdict list.
       'oreo_success_duration{name:workers_trademgmt_create}': ['max>=0'],
       'oreo_success_duration{name:workers_trademgmt_calcriskfornew}': ['max>=0'],
       'oreo_success_duration{name:workers_trademgmt_detail}': ['max>=0'],
@@ -69,20 +77,20 @@ export const options = {
     plan: PLAN,
     env: cfg.envName,
     profile: cfg.profileName,
-    refdataMode: REFDATA_MODE, // 结果必须能区分是不是降级跑出来的
-    datNameMode: DAT_NAME_MODE, // 同理：unique = 绕服务端临时文件竞态的偏差跑法
+    refdataMode: REFDATA_MODE, // results must show whether this was a degraded run
+    datNameMode: DAT_NAME_MODE, // likewise: unique = deviation run bypassing the server-side temp-file race
   },
 };
 
-// ── setUp：本场景踩两条路径，两个守卫都要过 ───────────────────
-// 薄壳只做组合，逻辑在 setup/ 各自的模块里。顺序有意义：
-// refdata 不通就没必要再去建 trade。
+// ── setUp: this scenario touches two paths, so both guards must pass ──
+// The thin shell composes only; logic lives in the setup/ modules.
+// Order matters: if refdata is unreachable, there is no point creating a trade.
 export function setup() {
   refdataPreflight(REFDATA_MODE);
   return createTradePreflight();
 }
 
-// ── 主循环：一次迭代 = 一个用户的完整动作 ────────────────────
+// ── Main loop: one iteration = one user's complete action sequence ──
 export function journeyIteration() {
   j01CreateTrade({
     i: exec.scenario.iterationInTest,
@@ -91,7 +99,7 @@ export function journeyIteration() {
   });
 }
 
-// ── 收尾 ──────────────────────────────────────────────────────
+// ── Wrap-up ──────────────────────────────────────────────────
 export const handleSummary = makeHandleSummary(() => ({
   plan: PLAN,
   env: cfg.envName,

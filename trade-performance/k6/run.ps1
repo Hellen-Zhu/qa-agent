@@ -1,15 +1,15 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-    k6 压测统一执行入口（Windows 原生版，与 run.sh 功能一致）
+    Unified k6 load-test entry point (native Windows version, functionally identical to run.sh)
 
 .DESCRIPTION
     .\k6\run.ps1 <plan> <env> <profile> [KEY=value ...]
 
-      plan     scenarios\ 下的文件名（不含 .js）
-      env      config\    下的文件名（不含 .json）
-      profile  profiles\  下的文件名（不含 .json）
-      KEY=value  覆盖项，直接写，**不要加 -e 前缀**（原因见下方 NOTES）
+      plan     file name under scenarios\ (without .js)
+      env      file name under config\    (without .json)
+      profile  file name under profiles\  (without .json)
+      KEY=value  overrides, written as-is, **do NOT add a -e prefix** (see NOTES below)
 
 .EXAMPLE
     .\k6\run.ps1 p02-trade-create dev smoke
@@ -18,27 +18,35 @@
     .\k6\run.ps1 p02-trade-create dev baseline CREATE_DATA_FILE=data/workers/trade-management/create-trade-lock-variant.json
 
 .NOTES
-    ⚠ 为什么覆盖项不用 `-e KEY=value`：
-      PowerShell 会把 `-e` 当成**参数名前缀**去匹配本脚本的参数。
-      `-e` 唯一匹配到 -EnvName，于是 `-e VUS=8` 被绑成 **EnvName='VUS=8'**，
-      报出来的是 `ERROR: env 'VUS=8' not found (config\VUS=8.json)` ——
-      一条完全指向错误方向的信息（2026-07-28 用 pwsh 7.6 实测确认）。
-      所以这里收裸的 KEY=value，由脚本自己补上 -e 交给 k6。
-      run.sh 已同步成同一种写法 —— 两边命令行长得一样，笔记才通用。
+    ⚠ Why overrides do NOT use `-e KEY=value`:
+      PowerShell treats `-e` as a **parameter-name prefix** and matches it against
+      this script's parameters. `-e` uniquely matched -EnvName, so `-e VUS=8` got
+      bound as **EnvName='VUS=8'**, and the reported error was
+      `ERROR: env 'VUS=8' not found (config\VUS=8.json)` —
+      a message pointing in entirely the wrong direction (confirmed empirically
+      on 2026-07-28 with pwsh 7.6).
+      So this script takes bare KEY=value and adds the -e itself before handing off to k6.
+      run.sh has been aligned to the same form — identical command lines on both
+      sides is what keeps notes portable.
 
-    ⚠ 两处刻意的写法，都是为了让 `-e` 这个手滑能被兜住：
-      ① **不写 [CmdletBinding()]** —— 写了就是"高级函数"，未声明的 `-xxx`
-         会被参数绑定器拦下；不写，它们才会原样落进 $args。
-      ② 环境参数命名为 **$TargetEnv 而不是 $EnvName** —— 只要有个参数以 e 开头，
-         `-e` 就会唯一前缀匹配上它，先于 $args 被吃掉，①就白做了。
-      两条缺一不可（2026-07-28 用 pwsh 7.6 逐条实测过）。
+    ⚠ Two deliberate choices, both so that a stray `-e` can be caught:
+      ① **No [CmdletBinding()]** — with it this becomes an "advanced function" and
+         undeclared `-xxx` arguments get intercepted by the parameter binder;
+         without it, they fall through into $args untouched.
+      ② The environment parameter is named **$TargetEnv, not $EnvName** — if any
+         parameter starts with e, `-e` uniquely prefix-matches it and gets consumed
+         before reaching $args, which would defeat ①.
+      Both are required; neither works alone (each verified empirically on
+      2026-07-28 with pwsh 7.6).
 
-    ⚠ $Profile 是 PowerShell 的**自动变量**（指向用户 profile 脚本路径），
-      所以参数名用 ProfileName，不要图省事改回去。
+    ⚠ $Profile is a PowerShell **automatic variable** (the path of the user's
+      profile script), so the parameter is named ProfileName — do not "simplify"
+      it back.
 
-    ⚠ 本文件与 run.sh 是**同一套逻辑的两份实现**。
-      改任何一个，另一个必须同步 —— 否则 Mac 和 Windows 跑出来的结果
-      不可比，而这种不一致在报告里看不出来。
+    ⚠ This file and run.sh are **two implementations of the same logic**.
+      Change either one and the other must be updated in sync — otherwise Mac
+      and Windows runs are not comparable, and that inconsistency is invisible
+      in the reports.
 #>
 
 param(
@@ -46,14 +54,15 @@ param(
     [string]$TargetEnv,
     [string]$ProfileName
 )
-# 其余参数由 $args 接收 —— 见上方 NOTES，这正是不写 [CmdletBinding()] 的原因
+# Remaining arguments are collected via $args — see NOTES above; this is exactly
+# why [CmdletBinding()] is omitted
 $Overrides = $args
 
 $ErrorActionPreference = 'Stop'
 
-# ── 控制台输出 UTF-8 ─────────────────────────────────────────
-# 不设的话 k6 日志里的中文和 ✓ / ⚠ 会变成乱码，
-# 而 preflight 的失败原因恰好全是中文 —— 看不懂等于没有守卫。
+# ── Console output in UTF-8 ──────────────────────────────────
+# Without this, the ✓ / ⚠ symbols in the k6 log come out as mojibake —
+# garbled guard output is as good as no guard.
 try {
     [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
     $OutputEncoding = [System.Text.Encoding]::UTF8
@@ -81,42 +90,44 @@ if (-not (Test-Path $PlanFile))    { Write-Host "ERROR: plan '$Plan' not found (
 if (-not (Test-Path $EnvFile))     { Write-Host "ERROR: env '$TargetEnv' not found ($EnvFile)" -ForegroundColor Red; Show-Usage }
 if (-not (Test-Path $ProfileFile)) { Write-Host "ERROR: profile '$ProfileName' not found ($ProfileFile)" -ForegroundColor Red; Show-Usage }
 
-# ── 覆盖项校验：早失败，别等 k6 起来了才发现打错 ──────────────
+# ── Override validation: fail early, don't wait for k6 to start before finding the typo ──
 $OverrideArgs = @()
 foreach ($o in $Overrides) {
     if ([string]::IsNullOrWhiteSpace($o)) { continue }
-    if ($o -like '-e') { continue }                      # 手滑写了 -e，忽略掉
+    if ($o -like '-e') { continue }                      # a stray -e slipped in; ignore it
     if ($o -notmatch '^[A-Za-z_][A-Za-z0-9_]*=') {
-        Write-Host "ERROR: 覆盖项格式不对: '$o'" -ForegroundColor Red
-        Write-Host "       应为 KEY=value（不要加 -e 前缀），例如 VUS=8" -ForegroundColor Red
+        Write-Host "ERROR: malformed override: '$o'" -ForegroundColor Red
+        Write-Host "       expected KEY=value (no -e prefix), e.g. VUS=8" -ForegroundColor Red
         exit 1
     }
     $OverrideArgs += @('-e', $o)
 }
 
-# ── k6 在不在 ────────────────────────────────────────────────
+# ── Is k6 available ──────────────────────────────────────────
 if (-not (Get-Command k6 -ErrorAction SilentlyContinue)) {
     Write-Host "ERROR: k6 not on PATH" -ForegroundColor Red
     Write-Host "  winget install k6 --source winget"
-    Write-Host "  或 choco install k6"
-    Write-Host "  或 https://github.com/grafana/k6/releases 下载 zip，解压后把目录加进 PATH"
+    Write-Host "  or choco install k6"
+    Write-Host "  or download the zip from https://github.com/grafana/k6/releases, unzip, and add the directory to PATH"
     Write-Host ""
-    Write-Host "  装完必须**重开一个 PowerShell 窗口** —— PATH 不会在已开的窗口里刷新。" -ForegroundColor Yellow
+    Write-Host "  After installing you MUST **open a new PowerShell window** — PATH does not refresh in an already-open one." -ForegroundColor Yellow
     exit 2
 }
 
-# ── 运行标识 ─────────────────────────────────────────────────
+# ── Run identity ─────────────────────────────────────────────
 $Stamp  = Get-Date -Format 'yyyyMMdd-HHmmss'
 $RunId  = "${Plan}_${TargetEnv}_${ProfileName}_$Stamp"
 $RunDir = "results\$RunId"
 New-Item -ItemType Directory -Path $RunDir -Force | Out-Null
 
-# k6 内部路径一律用正斜杠：handleSummary 的输出键和 --out 都交给 Go 处理，
-# Go 在 Windows 上认正斜杠，而反斜杠在 JS 字符串里还得转义。
+# Paths that go into k6 always use forward slashes: handleSummary's output keys
+# and --out are both handled by Go, which accepts forward slashes on Windows,
+# while backslashes would additionally need escaping in JS strings.
 $RunDirFwd = $RunDir -replace '\\', '/'
 
 # ── run manifest ─────────────────────────────────────────────
-# "每次只改一个变量"这条纪律，只有在事后能验证的前提下才成立。
+# The "change only one variable per run" discipline only holds if it can be
+# verified after the fact.
 $Manifest  = "$RunDir\manifest.txt"
 $StartMs   = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
 $OverrideS = if ($Overrides) { $Overrides -join ' ' } else { '<none>' }
@@ -129,9 +140,10 @@ $null = $lines.Add("plan:         $PlanFile")
 $null = $lines.Add("env:          $EnvFile")
 $null = $lines.Add("profile:      $ProfileFile")
 $null = $lines.Add("overrides:    $OverrideS")
-# 用 [Environment] 而不是 $env:COMPUTERNAME / $env:USERNAME：
-# 后者只在 Windows 上有值，跨平台跑（或在 CI 容器里）会留下两个空字段，
-# 而 manifest 的全部意义就是"事后能回答这次是在哪台机器上跑的"。
+# Use [Environment] rather than $env:COMPUTERNAME / $env:USERNAME:
+# the latter only have values on Windows, so cross-platform runs (or CI
+# containers) would leave two empty fields — and the entire point of the
+# manifest is being able to answer "which machine was this run on" afterwards.
 $null = $lines.Add("host:         $([Environment]::MachineName)")
 $null = $lines.Add("user:         $([Environment]::UserName)")
 $null = $lines.Add("k6:           $(k6 version 2>&1 | Select-Object -First 1)")
@@ -163,44 +175,47 @@ if ($Overrides) { Write-Host "> override $OverrideS" }
 Write-Host "> results  $RunDir"
 Write-Host ""
 
-# ── 输出参数 ─────────────────────────────────────────────────
+# ── Output arguments ─────────────────────────────────────────
 $OutArgs = @('--out', "csv=$RunDirFwd/result.csv")
 
-# Prometheus remote-write：压测指标进后端已有的 Prometheus，
-# 与 hikaricp_connections_pending 等指标同一个面板、同一根时间轴。
-# ⚠ 输出名在部分版本是 experimental-prometheus-rw，报错就换成 prometheus-rw。
+# Prometheus remote-write: load metrics go into the backend's existing Prometheus,
+# same panel and same timeline as metrics like hikaricp_connections_pending.
+# ⚠ On some versions the output name is experimental-prometheus-rw; if it errors, use prometheus-rw.
 if ($env:K6_PROMETHEUS_RW_SERVER_URL) {
     $OutArgs += @('--out', 'experimental-prometheus-rw')
     Write-Host "> prometheus  $env:K6_PROMETHEUS_RW_SERVER_URL"
     Write-Host ""
 }
 
-# ── k6 web dashboard（k6 ≥ v0.49 自带；报 unknown environment variable 就升级 k6）──
-# 跑时 http://127.0.0.1:5665 实时看曲线，跑完导出自包含 HTML ——
-# 拿到 Prometheus remote-write 审批之前，这是唯一的时间序列视图（见 GRAFANA.zh.md §7）。
-# ⚠ 判定不看它：dashboard 的错误率是 http_req_failed（HTTP 层），
-#   本项目业务失败照样返回 HTTP 200 —— 三类错误口径以 summary.txt 为准。
-# 默认开启。并行跑第二个实例会撞端口：$env:K6_WEB_DASHBOARD_PORT=5666 换端口，
-# 或 $env:K6_WEB_DASHBOARD='false' 整个关掉。
-# ⚠ 运行太短时 k6 跳过导出（"report generation was skipped, not enough data"，
-#   聚合桶默认 10s）—— smoke 没有 report.html 是正常的，正式轮次才有。
+# ── k6 web dashboard (built into k6 ≥ v0.49; "unknown environment variable" means upgrade k6) ──
+# Live curves at http://127.0.0.1:5665 during the run, self-contained HTML export after —
+# until Prometheus remote-write is approved, this is the only time-series view.
+# ⚠ Do not use it for pass/fail: the dashboard's error rate is http_req_failed (HTTP layer),
+#   and in this project business failures still return HTTP 200 — the three error
+#   categories in summary.txt are authoritative.
+# On by default. A second parallel instance collides on the port: $env:K6_WEB_DASHBOARD_PORT=5666
+# to change it, or $env:K6_WEB_DASHBOARD='false' to turn it off entirely.
+# ⚠ For very short runs k6 skips the export ("report generation was skipped, not enough
+#   data"; the aggregation bucket defaults to 10s) — no report.html for smoke is normal,
+#   only real rounds get one.
 if ($env:K6_WEB_DASHBOARD -ne 'false') {
     $env:K6_WEB_DASHBOARD = 'true'
     $env:K6_WEB_DASHBOARD_EXPORT = "$RunDirFwd/report.html"
     $DashPort = if ($env:K6_WEB_DASHBOARD_PORT) { $env:K6_WEB_DASHBOARD_PORT } else { '5665' }
-    Write-Host "> dashboard  http://127.0.0.1:$DashPort -> 导出 $RunDirFwd/report.html"
+    Write-Host "> dashboard  http://127.0.0.1:$DashPort -> exports $RunDirFwd/report.html"
     Write-Host ""
 }
 
-# ── 执行 ─────────────────────────────────────────────────────
+# ── Execution ────────────────────────────────────────────────
 $env:RESULT_DIR = $RunDirFwd
 
-# 逐笔报文调试走 k6 原生的 K6_HTTP_DEBUG 环境变量直接透传（同
-# K6_WEB_DASHBOARD 的惯例），runner 不做翻译：
+# Per-message debugging is passed straight through via k6's native K6_HTTP_DEBUG
+# environment variable (same convention as K6_WEB_DASHBOARD); the runner does no
+# translation:
 #   $env:K6_HTTP_DEBUG='full'; .\k6\run.ps1 p02-trade-create dev smoke
 if ($env:K6_HTTP_DEBUG) {
-    Write-Host "⚠ K6_HTTP_DEBUG=$($env:K6_HTTP_DEBUG) —— 逐笔打印 HTTP 报文，仅用于 smoke 级核对；" -ForegroundColor Yellow
-    Write-Host "  报文含真实 refdata，full 还会吐 .dat 二进制 —— 这份 k6.log 用完即清。" -ForegroundColor Yellow
+    Write-Host "⚠ K6_HTTP_DEBUG=$($env:K6_HTTP_DEBUG) — printing every HTTP message, smoke-level verification only;" -ForegroundColor Yellow
+    Write-Host "  messages contain real refdata, and full also dumps .dat binaries — delete this k6.log when done." -ForegroundColor Yellow
     Write-Host ""
 }
 
@@ -210,11 +225,12 @@ $k6Args += $OutArgs
 $k6Args += @('--summary-trend-stats', 'avg,min,med,p(90),p(95),p(99),max,count')
 $k6Args += $PlanFile
 
-# ⚠⚠ 这里必须把 ErrorActionPreference 降回 Continue。
-#   k6 把进度条和日志写到 **stderr**，而 `$ErrorActionPreference='Stop'` + `2>&1`
-#   会让 PowerShell 把第一行 stderr 当成终止性错误抛出 NativeCommandError ——
-#   表现是"k6 刚启动就崩，且错误信息是 PowerShell 的不是 k6 的"。
-#   这是 PS 5.1 最坑的行为之一，必须显式规避。
+# ⚠⚠ ErrorActionPreference MUST be dropped back to Continue here.
+#   k6 writes its progress bar and logs to **stderr**, and `$ErrorActionPreference='Stop'`
+#   + `2>&1` makes PowerShell throw the first stderr line as a terminating
+#   NativeCommandError — the symptom is "k6 crashes right at startup, and the
+#   error message is PowerShell's, not k6's".
+#   One of PS 5.1's nastiest behaviors; it must be explicitly worked around.
 $prevEAP = $ErrorActionPreference
 $ErrorActionPreference = 'Continue'
 & k6 @k6Args 2>&1 | Tee-Object -FilePath "$RunDir\k6.log"
@@ -225,12 +241,12 @@ $EndMs = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
 Add-Content -Path $Manifest -Value "endEpochMillis: $EndMs" -Encoding UTF8
 
 Write-Host ""
-Write-Host "-- 结果 ------------------------------------------"
+Write-Host "-- Results ---------------------------------------"
 Write-Host "summary:  $RunDir\summary.txt"
 Write-Host "raw:      $RunDir\summary.json"
 Write-Host "csv:      $RunDir\result.csv"
 if (Test-Path "$RunDir\report.html") {
-    Write-Host "report:   $RunDir\report.html   <- 时间序列曲线（判定以 summary 为准）"
+    Write-Host "report:   $RunDir\report.html   <- time-series curves (summary is authoritative for pass/fail)"
 }
 Write-Host "manifest: $Manifest"
 Write-Host ""
@@ -238,17 +254,17 @@ if ($env:GRAFANA_DASHBOARD_URL) {
     $sep = if ($env:GRAFANA_DASHBOARD_URL -like '*?*') { '&' } else { '?' }
     Write-Host "Grafana:  $($env:GRAFANA_DASHBOARD_URL)${sep}from=$StartMs&to=$EndMs"
 } else {
-    Write-Host "Grafana 时间范围（替换 URL 里的 from=now-1h&to=now）:"
+    Write-Host "Grafana time range (replace from=now-1h&to=now in the URL):"
     Write-Host "  &from=$StartMs&to=$EndMs"
-    Write-Host "  想直接打印完整链接：`$env:GRAFANA_DASHBOARD_URL='<看板 URL，含 var-host 等参数>'"
+    Write-Host "  To print the full link directly: `$env:GRAFANA_DASHBOARD_URL='<dashboard URL, including var-host etc.>'"
 }
 
 if (Select-String -Path "$RunDir\k6.log" -Pattern 'PREFLIGHT FAILED' -Quiet -ErrorAction SilentlyContinue) {
     Write-Host ""
-    Write-Host "! PREFLIGHT FAILED -- 参考数据业务上不可用。" -ForegroundColor Red
+    Write-Host "! PREFLIGHT FAILED -- reference data is unusable at the business level." -ForegroundColor Red
     Select-String -Path "$RunDir\k6.log" -Pattern 'PREFLIGHT' |
         Select-Object -Last 5 | ForEach-Object { Write-Host "  $($_.Line)" }
-    Write-Host "  这份结果不可作为性能结论。先修数据，见 data\create-trade\README.md。" -ForegroundColor Red
+    Write-Host "  This result must not be used as a performance conclusion. Fix the data first; see data\workers\trade-management\README.md." -ForegroundColor Red
 }
 
 exit $K6Rc

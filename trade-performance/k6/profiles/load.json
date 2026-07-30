@@ -1,6 +1,6 @@
 {
   "name": "load",
-  "description": "峰值负载 30 分钟 —— 验收用，不是找上限。VU 数应取自 ladder 找到的拐点以内，不要拍脑袋。",
+  "description": "Peak load for 30 minutes -- for acceptance, not for finding the limit. VU count should come from within the knee found by ladder, not be picked out of thin air.",
   "scenario": {
     "executor": "constant-vus",
     "vus": 8,

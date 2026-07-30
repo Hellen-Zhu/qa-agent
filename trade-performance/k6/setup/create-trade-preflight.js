@@ -1,32 +1,39 @@
 /*
- * setup/create-trade-preflight.js —— **create-trade 路径**的开跑前守卫
+ * setup/create-trade-preflight.js -- pre-run guard for the **create-trade path**
  *
- * ── 命名约定 ──
- *   setup/<被测路径>-preflight.js  导出 <被测路径>Preflight()
- *   与 lib/<被测路径>-data.js 成对：数据怎么来、怎么证明它今天还能用。
- * 守卫是**跟着被测路径走的**，不是全局设施 —— p05 压列表接口就不该跑
- * 一个建 trade 的守卫，它有自己的 setup/trades-list-preflight.js。
+ * ── Naming convention ──
+ *   setup/<path-under-test>-preflight.js  exports <pathUnderTest>Preflight()
+ *   Paired with lib/<path-under-test>-data.js: where the data comes from,
+ *   and how we prove it still works today.
+ * Guards **follow the path under test**, they are not global infrastructure --
+ * p05 loading the list endpoint should not run a guard that creates a trade;
+ * it has its own setup/trades-list-preflight.js.
  *
- * 谁在用：scenarios/p02-trade-create.js、scenarios/s01-create-trade-e2e.js
- * —— 两个场景都创建 trade，共用同一个守卫是对的（守卫绑路径，不绑场景）。
+ * Used by: scenarios/p02-trade-create.js, scenarios/s01-create-trade-e2e.js
+ * -- both scenarios create trades, so sharing one guard is correct
+ * (guards bind to paths, not scenarios).
  *
- * 跑在 setup()：**整个测试开始前执行一次**，返回值由运行时序列化后
- * 拷贝给每个 VU。
+ * Runs in setup(): **executed once before the whole test starts**; the return
+ * value is serialized by the runtime and copied to every VU.
  *
- * ══ 为什么静态供数下这一步不能省 ═══════════════════════════
- * live 模式下失效数据在 setup 查 refdata 时**当场暴露**。
- * 静态供数没有那次查询 —— 数据文件里的 id 若已失效（counterparty 被
- * 第三方停用、portfolio 被归档），请求照发，服务端返回业务拒绝。
- * 报告里表现为"错误率升高"而不是"启动失败"，会被误读成性能问题。
+ * ══ Why this step cannot be skipped with static data ═════════
+ * In live mode, stale data is **exposed on the spot** when setup queries
+ * refdata. Static data has no such query -- if an id in the data file has
+ * gone stale (counterparty deactivated by a third party, portfolio archived),
+ * the requests still go out and the server returns business rejections.
+ * In the report that shows up as "elevated error rate" rather than
+ * "startup failure", and gets misread as a performance problem.
  *
- * 所以这不是可选的加固，是静态供数**唯一**的数据有效性证明。
- * 一条静态数据证明不了任何事，只有真发一笔 create 才行。
+ * So this is not optional hardening; it is static data's **only** proof of
+ * validity. A row of static data proves nothing by itself -- only actually
+ * sending one create does.
  * ═══════════════════════════════════════════════════════════
  *
- * ── 两道检查的分工（别合并）──
- *   1. 本地检查   数据文件**填了没**        不发请求，失败即停
- *   2. preflight  填的值**今天还能用吗**    必须真发一笔
- * 前者防 script 错误，后者防数据失效。前者过不了，后者跑了也没意义。
+ * ── Division of labor between the two checks (do not merge) ──
+ *   1. Local check   Is the data file **filled in**?      No request; stop on failure
+ *   2. preflight     Are the values **still usable today**? Must really send one
+ * The former guards against script errors, the latter against stale data.
+ * If the former fails, running the latter is pointless.
  */
 
 import exec from 'k6/execution';
@@ -42,37 +49,40 @@ export function createTradePreflight() {
   console.log(`maker=${cfg.makerUserId}`);
   console.log(`data=${DATA_FILE}  rows=${createCases.length}`);
   if (DAT_NAME_MODE === 'unique') {
-    // 偏差必须在日志和报告里都刺眼：生产用户不会改名上传
+    // The deviation must be loud in both the log and the report: production
+    // users do not rename files before uploading
     console.warn(
-      '⚠ DAT_NAME_MODE=unique — 上传文件名加唯一后缀，绕服务端临时文件竞态缺陷。' +
-      '报告必须标注偏差；缺陷修复后关掉本开关做并发复测（回归验证）'
+      '⚠ DAT_NAME_MODE=unique — upload filenames get a unique suffix, bypassing the server-side temp-file race defect. ' +
+      'The report must flag the deviation; once the defect is fixed, turn this switch off and rerun the concurrency test (regression verification)'
     );
   }
 
-  // ── 数据存在性 ──────────────────────────────────────────
+  // ── Data existence ──────────────────────────────────────
   if (createCases.length === 0) {
-    exec.test.abort(`PREFLIGHT FAILED — 数据文件没有数据行：${DATA_FILE}`);
+    exec.test.abort(`PREFLIGHT FAILED — data file has no data rows: ${DATA_FILE}`);
   }
 
-  // ── 检查 1：本地，不发请求 ──────────────────────────────
-  // 全部行都查，不只是第一行 —— 第 5 行的占位值同样会在跑到时才炸。
+  // ── Check 1: local, no request ──────────────────────────
+  // Check every row, not just the first -- a placeholder value on row 5
+  // blows up just the same when the run reaches it.
   const allProblems = [];
   for (let i = 0; i < createCases.length; i++) {
     const problems = validateInputs(pickCase(i));
-    problems.forEach((p) => allProblems.push(`[第${pickCase(i).__row}行] ${p}`));
-    if (i >= 50) break;   // 大数据集时够采样了
+    problems.forEach((p) => allProblems.push(`[row ${pickCase(i).__row}] ${p}`));
+    if (i >= 50) break;   // enough sampling for large datasets
   }
 
   if (allProblems.length > 0) {
-    // 这里直接停，不走 warn 分支 —— 占位值会让**每一笔**业务失败，
-    // 跑完只会得到一份错误率 100% 的报告。没有"部分可用"可言。
-    console.error('PREFLIGHT FAILED — 静态数据不可用：');
+    // Stop right here, no warn branch -- placeholder values make **every**
+    // request fail business-wise; running on would only produce a report
+    // with a 100% error rate. There is no "partially usable".
+    console.error('PREFLIGHT FAILED — static data unusable:');
     allProblems.slice(0, 10).forEach((p) => console.error('  ' + p));
-    exec.test.abort(`静态数据不可用（${allProblems.length} 处问题，详见上方日志）`);
+    exec.test.abort(`Static data unusable (${allProblems.length} problems, see log above)`);
   }
-  console.log('✓ 检查 1/2：数据字段齐全，无占位值');
+  console.log('✓ check 1/2: data fields complete, no placeholder values');
 
-  // ── 检查 2：远端，真发一笔 ──────────────────────────────
+  // ── Check 2: remote, really send one ────────────────────
   const caseRow = pickCase(0);
   const r = createTrade({ caseRow, runPhase: 'setup' });
 
@@ -80,26 +90,29 @@ export function createTradePreflight() {
 
   if (usable) {
     console.log(
-      `✓ 检查 2/2：数据业务可用 — 第${caseRow.__row}行 ` +
+      `✓ check 2/2: data is business-usable — row ${caseRow.__row} ` +
       `portfolio=${caseRow.portfolioId} → ${r.tradeId} / ${r.taskId} ` +
       `(${Math.round(r.res.timings.duration)}ms)`
     );
   } else {
     const msg = `PREFLIGHT FAILED [${cfg.preflightPolicy}] — ${r.detail}`;
     if (cfg.preflightPolicy === 'abort') {
-      // 数据不可用则整轮无意义。停在这里，避免产出一份"错误率 100%"
-      // 却被当成性能结论的报告。
+      // If the data is unusable the whole run is pointless. Stop here to
+      // avoid producing a "100% error rate" report that gets taken for a
+      // performance conclusion.
       console.error(msg + ' — stopping test');
       exec.test.abort(msg);
     } else {
-      // warn：继续跑，但把状态留给结果分析阶段。
-      // 前提是分析环节真的有人看 —— 如果没人看，这个策略等于没做校验。
+      // warn: keep running, but leave the status to the analysis phase.
+      // This only works if someone actually looks at the analysis --
+      // if nobody does, this policy amounts to no validation at all.
       console.warn(msg + ' — continuing anyway (warn policy)');
     }
   }
 
-  // ── 传给每个 VU 的东西 ───────────────────────────────────
-  // 必须 JSON 可序列化。这里只传元信息，数据本身各 VU 从 SharedArray 读。
+  // ── What gets passed to every VU ─────────────────────────
+  // Must be JSON-serializable. Only metadata goes here; the data itself is
+  // read by each VU from the SharedArray.
   return {
     startedAt: new Date().toISOString(),
     preflightOutcome: usable ? 'ok' : cfg.preflightPolicy,

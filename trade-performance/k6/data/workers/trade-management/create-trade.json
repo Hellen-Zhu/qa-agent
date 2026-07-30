@@ -1,9 +1,9 @@
 {
   "_comment": [
-    "create 用例池。契约见 lib/rows.js。一条 = 一个完整可跑用例：.dat + 归属字段（portfolio / counterparty）。",
-    "datFile 相对本目录 dat/。portfolioId / counterpartyFmId / counterpartyName 必须来自同一份真实 curl（同源配对，理由与采集方式见本目录 README.md）。",
-    "行的标识用加载时自动注入的行号（__row，1 起）—— 指标 tag、日志、预检报错都用它，不手工维护 id 列。",
-    "按 A26 补齐代表产品（最便宜 / 最贵 / 最常见）后，每个 productType 一条以上。"
+    "Create case pool. Contract: see lib/rows.js. One row = one complete runnable case: .dat + ownership fields (portfolio / counterparty).",
+    "datFile is relative to dat/ under this directory. portfolioId / counterpartyFmId / counterpartyName must come from the same real curl (same-origin pairing; rationale and capture method in this directory's README.md).",
+    "Rows are identified by the row number auto-injected at load time (__row, 1-based) -- used for metric tags, logs, and preflight errors; no manually maintained id column.",
+    "After filling in the representative products per A26 (cheapest / most expensive / most common), keep at least one row per productType."
   ],
   "rows": [
     {
@@ -13,7 +13,7 @@
       "portfolioId": "TBC",
       "counterpartyFmId": "TBC",
       "counterpartyName": "TBC",
-      "note": "待真实 curl 采集，见 README.md"
+      "note": "Pending capture from a real curl, see README.md"
     }
   ]
 }

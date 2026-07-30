@@ -1,7 +1,7 @@
 {
   "name": "soak",
-  "description": "长稳 4 小时 —— 找内存泄漏与资源耗尽。看的不是 P95 的绝对值，而是它**随时间的漂移**，以及 Grafana 上 heap 锯齿的谷底有没有持续抬升。",
-  "_data_volume": "⚠ 4 小时会产生大量真实 PENDING APPROVAL 交易。开跑前必须与 DBA/开发谈妥建单与清理。",
+  "description": "4-hour endurance run -- finds memory leaks and resource exhaustion. What matters is not P95's absolute value but its **drift over time**, and whether the troughs of the heap sawtooth in Grafana keep rising.",
+  "_data_volume": "WARNING: 4 hours will produce a large volume of real PENDING APPROVAL trades. Trade creation and cleanup must be agreed with DBA/dev before starting.",
   "scenario": {
     "executor": "constant-vus",
     "vus": 4,

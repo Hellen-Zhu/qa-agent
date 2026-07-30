@@ -1,12 +1,15 @@
 /*
- * lib/summary.js —— 自定义收尾报告
+ * lib/summary.js — custom end-of-run report
  *
- * 为什么不用官方的 textSummary：
- * 它在 https://jslib.k6.io/k6-summary/... 上，需要跑测试时联外网 ——
- * 银行环境多半被墙，而且引入一条无人审计的供应链。自己写反而能打印
- * **本项目真正关心的东西**，而不是一堆通用指标。
+ * Why not the official textSummary:
+ * it lives on https://jslib.k6.io/k6-summary/..., so running a test needs
+ * outbound internet — usually walled off in a bank environment — and it
+ * pulls in an unaudited supply chain. Writing our own also means printing
+ * **what this project actually cares about** instead of a pile of generic
+ * metrics.
  *
- * ⚠ 导出 handleSummary 后 k6 就不再打印默认摘要 —— 本文件负责全部输出。
+ * ⚠ Once handleSummary is exported, k6 stops printing its default summary —
+ *   this file is responsible for ALL output.
  */
 
 function m(data, name) {
@@ -25,8 +28,9 @@ function padL(s, w) {
 }
 
 /**
- * 超过 10 秒改用秒显示：
- * 否则一个 60000 会把整行挤歪，而超时样本恰恰是最该看清的那一行。
+ * Switch to seconds above 10 seconds:
+ * otherwise a 60000 skews the whole row, and timeout samples are exactly
+ * the rows that most need to be readable.
  */
 function fmtMs(v) {
   if (v === undefined || v === null || isNaN(v)) return padL('-', 8);
@@ -34,14 +38,16 @@ function fmtMs(v) {
 }
 
 /*
- * ⚠ 中文字符的 String.length 是 1，但终端里占 2 列。
- *   用 pad() 对齐含中文的表格，表头和数据行必然错位 —— 而且只在有中文的那几行错，
- *   看上去像"某几行数据不对"。这里按**显示宽度**补齐。
+ * ⚠ A CJK character has String.length 1 but occupies 2 terminal columns.
+ *   Aligning a table that contains CJK with pad() guarantees the header and
+ *   data rows drift apart — and only on the rows that contain CJK, which
+ *   looks like "some rows have bad data". Pad by **display width** instead
+ *   (values/labels may still contain CJK).
  */
 function dispWidth(s) {
   let w = 0;
   for (const ch of String(s)) {
-    w += /[ᄀ-ᅟ⺀-꓏가-힣豈-﫿︰-﹯＀-｠￠-￦]/.test(ch)
+    w += /[ᄀ-ᅟ⺀-꓏가-힣豈-﫿︰-﹯＀-｠￠-￦]/.test(ch)
       ? 2 : 1;
   }
   return w;
@@ -52,7 +58,8 @@ function padD(s, w) {
   return d >= w ? String(s) : String(s) + ' '.repeat(w - d);
 }
 
-// 列定义只写一次，表头由它生成 —— 改列时不可能忘了同步表头
+// Column definitions written once; the header is generated from them — a
+// column change cannot forget to update the header
 const PCT_COLS = ['P50', 'P90', 'P95', 'P99', 'max', 'avg'];
 const PCT_INDENT = 14;
 
@@ -60,7 +67,7 @@ function pctHeader() {
   return ' '.repeat(PCT_INDENT) + PCT_COLS.map((c) => padL(c, 8)).join('');
 }
 
-/** 一行分位数 */
+/** One row of percentiles */
 function pctRow(label, vals) {
   return (
     '    ' + padD(label, PCT_INDENT - 4) +
@@ -89,54 +96,56 @@ export function buildTextSummary(data, meta) {
   L.push('══════════════════════════════════════════════════════════');
   L.push('');
 
-  // ── 三类错误分离 ──────────────────────────────────────────
-  L.push('── 结果分类 ────────────────────────────────────────');
-  L.push(`  ${padD('ok', 12)}${padL(ok, 8)}   业务成功`);
-  L.push(`  ${padD('technical', 12)}${padL(tech, 8)}   连接失败/超时/5xx ← 这才是性能结论`);
-  L.push(`  ${padD('business', 12)}${padL(biz, 8)}   HTTP 200 但业务拒绝 ← 按 reason 定位`);
-  L.push(`  ${padD('script', 12)}${padL(scr, 8)}   脚本 bug ← 结果作废`);
-  L.push(`  ${padD('总计', 12)}${padL(total, 8)}`);
+  // ── Three-way error separation ────────────────────────────
+  L.push('── Result classification ──────────────────────────');
+  L.push(`  ${padD('ok', 12)}${padL(ok, 8)}   business success`);
+  L.push(`  ${padD('technical', 12)}${padL(tech, 8)}   connect fail/timeout/5xx ← THE performance conclusion`);
+  L.push(`  ${padD('business', 12)}${padL(biz, 8)}   HTTP 200 but business rejection ← triage by reason`);
+  L.push(`  ${padD('script', 12)}${padL(scr, 8)}   script bug ← run is void`);
+  L.push(`  ${padD('total', 12)}${padL(total, 8)}`);
   L.push('');
 
-  if (tech > 0) L.push('  ⚠ 存在 technical 错误 —— 这是性能结论的一部分，不要当噪音过滤掉');
-  if (scr > 0) L.push('  ✗ 存在 script 错误 —— 本轮结果不可用，先修脚本');
-  if (biz > 0 && tech === 0) L.push('  ⚠ 只有 business 错误 —— 先按 reason 定位：数据失效？已知服务端缺陷（dat 竞态）？');
+  if (tech > 0) L.push('  ⚠ technical errors present — they are part of the performance conclusion, do not filter them out as noise');
+  if (scr > 0) L.push('  ✗ script errors present — this run is unusable, fix the script first');
+  if (biz > 0 && tech === 0) L.push('  ⚠ business errors only — triage by reason first: stale data? known server defect (dat race)?');
   if (tech > 0 || scr > 0 || biz > 0) {
-    L.push('  原因细分：现场样本在 k6.log（每 VU 每种 reason 限流 3 条），');
-    L.push('  逐笔明细在 result.csv 的 reason 标签列（见 lib/errors.js）');
+    L.push('  Reason breakdown: raw samples in k6.log (capped at 3 per reason per VU),');
+    L.push('  per-request detail in the reason tag column of result.csv (see lib/errors.js)');
     L.push('');
   }
 
-  // ── 耗时 ─────────────────────────────────────────────────
-  L.push('── 耗时 (ms) ──────────────────────────────────────');
+  // ── Latency ──────────────────────────────────────────────
+  L.push('── Latency (ms) ───────────────────────────────────');
   if (succ && succ.count > 0) {
     L.push(pctHeader());
-    L.push(pctRow('成功样本', succ));
+    L.push(pctRow('success', succ));
     if (all && all.count > 0 && succ.count !== all.count) {
-      L.push(pctRow('全部样本', all));
-      L.push('    （失败请求通常返回更快，混在一起会让分位数偏乐观）');
+      L.push(pctRow('all', all));
+      L.push('    (failed requests usually return faster; mixing them in makes percentiles look optimistic)');
     }
     L.push('');
-    L.push(`    样本数    ${padL(succ.count, 8)}`);
+    L.push(`    samples   ${padL(succ.count, 8)}`);
     if (succ.med > 0) {
       const ratio = succ['p(95)'] / succ.med;
       L.push(
         `    P95/P50   ${padL(ratio.toFixed(2) + '×', 8)}     ` +
-        (ratio > 3 ? '← 比值大，存在慢路径（.dat 解析？定价？）' : '（分布集中）')
+        (ratio > 3 ? '← large ratio; a slow path exists (.dat parsing? pricing?)' : '(tight distribution)')
       );
     }
   } else {
-    L.push('  （没有业务成功的请求）');
+    L.push('  (no business-successful requests)');
   }
   L.push('');
 
-  // ── 分步耗时（E2E 场景）─────────────────────────────────
-  // 上面的"成功样本"在 E2E 里是**多个 API 混在一起**的分布，单看会误导。
-  // 分步数据靠 k6 的子指标机制取得：scenario 在 thresholds 里声明
+  // ── Per-step latency (E2E scenarios) ─────────────────────
+  // The "success" row above is, in E2E, a distribution of **multiple APIs
+  // mixed together** — misleading on its own. Per-step data comes from k6's
+  // sub-metric mechanism: the scenario declares in thresholds
   //   'oreo_success_duration{name:X}': ['max>=0']
-  // 哨兵阈值恒真，存在的唯一意义是让该子指标出现在 summary 数据里
-  // （k6 只为声明过阈值的 tag 组合生成子指标）。单接口场景没有这些声明，
-  // 本段自动不出现。
+  // The sentinel threshold is always true; its sole purpose is to make that
+  // sub-metric appear in the summary data (k6 only generates sub-metrics
+  // for tag combinations with a declared threshold). Single-endpoint
+  // scenarios have no such declarations, so this section auto-hides.
   const stepRows = Object.keys(data.metrics)
     .filter((k) => k.startsWith('oreo_success_duration{'))
     .map((k) => {
@@ -151,7 +160,7 @@ export function buildTextSummary(data, meta) {
 
   if (stepRows.length > 0) {
     const w = Math.max.apply(null, stepRows.map((r) => dispWidth(r.label)).concat([8])) + 2;
-    L.push('── 分步耗时 (ms，成功样本) ────────────────────────');
+    L.push('── Per-step latency (ms, success samples) ─────────');
     L.push('    ' + ' '.repeat(w) + PCT_COLS.map((c) => padL(c, 8)).join('') + padL('n', 8));
     stepRows.forEach((r) => {
       L.push(
@@ -161,44 +170,48 @@ export function buildTextSummary(data, meta) {
         padL(r.vals.count, 8)
       );
     });
-    L.push('    ⚠ 各步相加不等于"旅程耗时"—— think time 不在其中，且失败的步骤会缺样本');
+    L.push('    ⚠ steps do not sum to "journey time" — think time is excluded, and failed steps are missing samples');
     L.push('');
   }
 
-  // ── 吞吐 ─────────────────────────────────────────────────
-  L.push('── 吞吐 ───────────────────────────────────────────');
-  L.push(`  运行时长      ${padL(num(durSec, 1), 8)} s`);
-  L.push(`  业务成功 TPS  ${padL(durSec > 0 ? (ok / durSec).toFixed(3) : '-', 8)}`);
+  // ── Throughput ───────────────────────────────────────────
+  L.push('── Throughput ─────────────────────────────────────');
+  L.push(`  duration          ${padL(num(durSec, 1), 8)} s`);
+  L.push(`  business-ok TPS   ${padL(durSec > 0 ? (ok / durSec).toFixed(3) : '-', 8)}`);
   const vus = m(data, 'vus_max');
-  if (vus) L.push(`  峰值 VU       ${padL(vus.max, 8)}`);
+  if (vus) L.push(`  peak VU           ${padL(vus.max, 8)}`);
   L.push('');
 
-  // ── 样本量纪律 ────────────────────────────────────────────
-  // 经验规则：一个分位数 p 要可信，至少要有 ~10 个样本落在它之外 → n ≥ 10/(1-p)
-  //     P95 → 200 个     P99 → 1000 个
-  // 低吞吐系统最容易踩的坑：样本不够时分位数就是个随机数，而报告上完全看不出来。
-  // P99 现在参与验收判据（PERF-07 要求 P99 ≤ 8,000ms），所以必须显式提示。
+  // ── Sample-size discipline ────────────────────────────────
+  // Rule of thumb: for percentile p to be trustworthy, ~10 samples must fall
+  // beyond it → n ≥ 10/(1-p)
+  //     P95 → 200 samples    P99 → 1000 samples
+  // The classic low-throughput trap: with too few samples a percentile is a
+  // random number, and the report shows no sign of it.
+  // P99 now feeds the acceptance criteria (PERF-07 requires P99 ≤ 8,000ms),
+  // so this must be flagged explicitly.
   const n = succ ? succ.count : 0;
   if (n > 0 && succ.med > 0) {
     const vuMax = Math.max(1, vus ? vus.max : 1);
     const secFor = (target) => (succ.med * target) / 1000 / vuMax;
     const notes = [];
     if (n < 200) {
-      notes.push(`✗ P95 不可信 —— 需 ≥200 个样本，当前 ${n}。当前 VU 数下需跑约 ${num(secFor(200), 0)} 秒`);
+      notes.push(`✗ P95 not trustworthy — needs ≥200 samples, have ${n}. At current VU count run ~${num(secFor(200), 0)} s`);
     }
     if (n < 1000) {
-      notes.push(`⚠ P99 不可信 —— 需 ≥1000 个样本，当前 ${n}。当前 VU 数下需跑约 ${num(secFor(1000), 0)} 秒`);
+      notes.push(`⚠ P99 not trustworthy — needs ≥1000 samples, have ${n}. At current VU count run ~${num(secFor(1000), 0)} s`);
     }
     if (notes.length > 0) {
-      L.push('── 样本量 ─────────────────────────────────────────');
+      L.push('── Sample size ────────────────────────────────────');
       notes.forEach((x) => L.push('  ' + x));
-      L.push('  精度要求应与余量挂钩：实测值与阈值相差一个数量级时，');
-      L.push('  分位数不精确不影响判定 —— 但报告里必须写明样本量。');
+      L.push('  Precision requirements should track the margin: when measured value and');
+      L.push('  threshold differ by an order of magnitude, imprecise percentiles do not');
+      L.push('  change the verdict — but the report must state the sample size.');
       L.push('');
     }
   }
 
-  // ── 阈值 ─────────────────────────────────────────────────
+  // ── Thresholds ───────────────────────────────────────────
   const thr = Object.keys(data.metrics)
     .filter((k) => data.metrics[k].thresholds)
     .map((k) => {
@@ -210,11 +223,12 @@ export function buildTextSummary(data, meta) {
       }));
     })
     .reduce((a, b) => a.concat(b), [])
-    // 'max>=0' 是分步耗时的哨兵阈值（见上），恒真无信息量，不进判定清单
+    // 'max>=0' is the per-step latency sentinel threshold (see above) —
+    // always true, zero information, excluded from the verdict list
     .filter((t) => t.expr !== 'max>=0');
 
   if (thr.length > 0) {
-    L.push('── 阈值 ───────────────────────────────────────────');
+    L.push('── Thresholds ─────────────────────────────────────');
     thr.forEach((t) => {
       L.push(`  ${t.ok ? '✓' : '✗'} ${t.metric} ${t.expr}`);
     });
@@ -227,29 +241,32 @@ export function buildTextSummary(data, meta) {
 }
 
 /*
- * ── 标准收尾：三个输出一次封装 ───────────────────────────────
- * 场景侧只声明 meta（自己是谁、打的什么目标），输出样板收拢在这里：
- *   stdout                     人读摘要
- *   $RESULT_DIR/summary.txt    同一份摘要落盘（run.sh / run.ps1 传入 RESULT_DIR）
- *   $RESULT_DIR/summary.json   全量原始数据（机器可读，事后再加工）
+ * ── Standard wrap-up: three outputs in one package ────────────
+ * The scenario side only declares meta (who it is, what target it hits);
+ * the output boilerplate is collected here:
+ *   stdout                     human-readable summary
+ *   $RESULT_DIR/summary.txt    same summary on disk (run.sh / run.ps1 pass RESULT_DIR)
+ *   $RESULT_DIR/summary.json   full raw data (machine-readable, for later processing)
  *
- * 用法（场景文件）：
+ * Usage (scenario file):
  *   export const handleSummary = makeHandleSummary(() => ({
  *     plan: PLAN, env: cfg.envName, profile: cfg.profileName,
  *     target: `${cfg.workersUrl}/trades/create`,
  *   }));
  *
- * meta 是回调不是对象：统一在测试结束时求值 —— 三个场景写法完全一致，
- * 不给"有的传值、有的传函数"留缝。
- * ⚠ 本函数引用 k6 全局 __ENV，但只在运行期求值 —— 本文件仍可被 node
- *   直接 import（buildTextSummary 的离线验证依赖这一点）。
+ * meta is a callback, not an object: it is uniformly evaluated at test end —
+ * all three scenarios are written identically, leaving no gap for "some
+ * pass a value, some pass a function".
+ * ⚠ This function references the k6 global __ENV but only evaluates it at
+ *   run time — the file remains importable directly under node
+ *   (buildTextSummary's offline verification depends on this).
  */
 export function makeHandleSummary(metaFn) {
   return function handleSummary(data) {
     const text = buildTextSummary(data, metaFn());
     const out = { stdout: text };
 
-    // runner 会传 RESULT_DIR；直接 k6 run 时只打屏幕
+    // the runner passes RESULT_DIR; a bare k6 run prints to screen only
     const dir = __ENV.RESULT_DIR;
     if (dir) {
       out[`${dir}/summary.txt`] = text;

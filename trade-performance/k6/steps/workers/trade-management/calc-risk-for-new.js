@@ -1,21 +1,27 @@
 /*
  * steps/workers/trade-management/calc-risk-for-new.js
  *
- * 【层级】原子步骤 —— 一个 API 一个文件
- * 【API】  workers.trade-management.calc-risk-for-new  ·  POST /trades/calculate-risk-for-new
+ * [Layer] Atomic step -- one API per file
+ * [API]   workers.trade-management.calc-risk-for-new  ·  POST /trades/calculate-risk-for-new
  *
- * ── 建议性风控（软依赖，v2 §2.3）──
- * 前端在用户填完表单后调用它预览风险，**失败不阻断继续创建** ——
- * journey 里它的返回值只记录、不中止。但它与 create 共用 .dat 上传，
- * 对 DAT 解析 CPU 的占用是真实的：E2E 里省掉这一步会让 create 的
- * 资源画像偏乐观（NFR PERF-11 是它专属的阈值）。
+ * ── Advisory risk check (soft dependency, v2 §2.3) ──
+ * The frontend calls this after the user fills in the form to preview risk;
+ * **failure does not block continuing to create** -- in the journey its
+ * return value is only recorded, never aborts. But it shares the .dat upload
+ * with create, and its DAT-parsing CPU cost is real: skipping this step in
+ * E2E would make create's resource profile look too optimistic
+ * (NFR PERF-11 is its dedicated threshold).
  *
- * ── 判定口径 ──
- * 只判 HTTP 200：该接口的业务响应形态未确认，先不猜。非 200 记 technical ——
- * 默认**不屏蔽**软依赖失败：503 是意料之外的，必须在报告里刺眼地显示。
- * （softDependencyMasking 的降级实验模式暂未实现，做 S-11 时再加。）
+ * ── Pass/fail criteria ──
+ * Only HTTP 200 is checked: this endpoint's business response shape is
+ * unconfirmed, so no guessing yet. Non-200 counts as technical -- soft
+ * dependency failures are **not masked** by default: a 503 is unexpected and
+ * must show up glaringly in the report.
+ * (The softDependencyMasking degradation-experiment mode is not implemented
+ * yet; add it when doing S-11.)
  *
- * payload 与 create 完全同源（import 同一个 buildTradePayload）。
+ * The payload is built from the exact same source as create (imports the
+ * same buildTradePayload).
  */
 
 import http from 'k6/http';
@@ -27,12 +33,14 @@ import { recordOutcome, logFailure, techReason, ERR } from '../../../lib/errors.
 
 const URL = `${cfg.workersUrl}/trades/calculate-risk-for-new`;
 
-// 软依赖健康度单列一个 Rate：错误率里看得到它，按维度切分时也不跟 create 混
+// Soft-dependency health gets its own Rate: visible in the error rate, and
+// stays separate from create when slicing by dimension
 export const rRiskPreview = new Rate('oreo_risk_preview_ok');
 
 /**
  * @param {Object} opts  {caseRow, refdata?, runPhase, userId}
- *   refdata 不传则取用例内嵌归属字段（与 createTrade 同一约定）
+ *   If refdata is omitted, the case row's embedded ownership fields are used
+ *   (same convention as createTrade)
  * @returns {{res, ok, errClass, riskFailCode, tags}}
  */
 export function calcRiskForNew(opts) {
@@ -49,8 +57,10 @@ export function calcRiskForNew(opts) {
 
   const body = {
     trade: buildTradePayload(refdata, caseRow),
-    // 与 create 同用 uploadName：本接口同样解析 .dat，多半走同一套临时文件
-    // 机制，只改 create 会剩下半个碰撞面（DAT_NAME_MODE 说明见数据模块）
+    // Uses the same uploadName as create: this endpoint also parses the .dat
+    // and most likely goes through the same temp-file mechanism; changing
+    // only create would leave half the collision surface (DAT_NAME_MODE is
+    // documented in the data module)
     datFile: http.file(
       getDat(caseRow.datFile),
       uploadName(caseRow.datFile),
@@ -75,7 +85,8 @@ export function calcRiskForNew(opts) {
   } else {
     const reason = techReason(res);
     recordOutcome(ERR.TECHNICAL, tags, res, reason);
-    // 软依赖失败不阻断旅程，但必须留现场 —— 静默的 503 最难事后追
+    // Soft-dependency failure doesn't block the journey, but must leave
+    // evidence -- a silent 503 is the hardest thing to trace afterwards
     logFailure(ERR.TECHNICAL, reason, `technical: HTTP ${res.status}${res.error ? ' ' + res.error : ''}`, tags);
   }
   rRiskPreview.add(ok, tags);
@@ -85,7 +96,8 @@ export function calcRiskForNew(opts) {
     tags,
     ok,
     errClass: ok ? ERR.OK : ERR.TECHNICAL,
-    // 保留原始状态码：503（下游挂了）与 504（超时）的处置完全不同
+    // Keep the raw status code: a 503 (downstream down) and a 504 (timeout)
+    // call for completely different handling
     riskFailCode: ok ? '' : String(res.status),
   };
 }

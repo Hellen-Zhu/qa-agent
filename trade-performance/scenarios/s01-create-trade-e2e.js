@@ -17,13 +17,15 @@
  *
  * ── REFDATA_MODE (default live) ──
  * The refdata service address in config/dev.json is still a localhost
- * placeholder (NFR pending confirmation #12). Until the address is confirmed,
- * live mode fails explicitly in setup and points at the two ways out:
- *   1) Confirm the refdata address with architecture and put it in
- *      config/dev.json (the proper fix)
- *   2) Run with REFDATA_MODE=static for now (degraded: ownership fields come
- *      from values embedded in the case rows, the dropdown queries are not
- *      covered, and the report must flag the deviation)
+ * placeholder (NFR pending confirmation #12).
+ *   live    every iteration queries the dropdowns for real; if a query fails,
+ *           the journey falls back to the embedded ownership fields and
+ *           counts oreo_refdata_fallback -- and the threshold below
+ *           (count==0) fails the run, because a "live" run that silently
+ *           took the fallback never covered the refdata path it claims to.
+ *   static  skips the dropdown queries entirely (known deviation, the report
+ *           must flag it); the fallback counter never fires, so the
+ *           threshold passes trivially.
  *
  * ── ⚠ Data side effects ──
  * Every iteration really creates a PENDING APPROVAL trade. Long runs must
@@ -35,7 +37,6 @@ import exec from 'k6/execution';
 import { cfg } from '../lib/config.js';
 import { j01CreateTrade } from '../journeys/j01-create-trade.js';
 import { DAT_NAME_MODE } from '../steps/workers/trade-management/create-trade-data.js';
-import { refdataPreflight } from '../setup/refdata-preflight.js';
 import { createTradePreflight } from '../setup/create-trade-preflight.js';
 import { makeHandleSummary } from '../lib/summary.js';
 
@@ -54,6 +55,13 @@ export const options = {
   thresholds: Object.assign(
     {
       oreo_err_script: ['count==0'],
+
+      // live mode must actually be live: any silent fallback to embedded
+      // ownership fields means the refdata path was not covered -- the run
+      // completes (a mid-soak refdata blip is itself an E2E finding, not a
+      // reason to kill the run) but is marked failed as a deviation.
+      // In static mode the counter never fires and this passes trivially.
+      oreo_refdata_fallback: ['count==0'],
 
       // ── Sentinel thresholds for per-step timings ────────
       // 'max>=0' is always true; its only purpose is to make k6 emit
@@ -82,11 +90,14 @@ export const options = {
   },
 };
 
-// ── setUp: this scenario touches two paths, so both guards must pass ──
-// The thin shell composes only; logic lives in the setup/ modules.
-// Order matters: if refdata is unreachable, there is no point creating a trade.
+// ── setUp: local data validation only (sends nothing) ────────
+// Refdata reachability is no longer probed here -- the per-iteration
+// fallback counter + the oreo_refdata_fallback threshold above own that,
+// for the whole run instead of one instant before it.
 export function setup() {
-  refdataPreflight(REFDATA_MODE);
+  if (REFDATA_MODE === 'static') {
+    console.warn('⚠ REFDATA_MODE=static — dropdown queries not covered; the report must flag this deviation');
+  }
   return createTradePreflight();
 }
 

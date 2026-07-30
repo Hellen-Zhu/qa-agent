@@ -91,8 +91,6 @@ export const cfg = {
 
   requestTimeout: pick('REQUEST_TIMEOUT', envCfg.timeouts.request),
 
-  // abort | warn (prune not implemented)
-  preflightPolicy: pick('PREFLIGHT_POLICY', envCfg.preflightPolicy || 'warn'),
 
   scenario,
   thresholds: stripComments(profileCfg.thresholds),

@@ -155,7 +155,15 @@ OUT_ARGS=(--out "csv=$RUN_DIR/result.csv")
 # ⚠ On some versions the output name is experimental-prometheus-rw; if it errors, try the other one.
 if [[ -n "${K6_PROMETHEUS_RW_SERVER_URL:-}" ]]; then
     OUT_ARGS+=(--out "experimental-prometheus-rw")
-    echo "▶ prometheus  $K6_PROMETHEUS_RW_SERVER_URL"
+    # k6's default trend stats for remote write is p(99) ONLY -- the official
+    # k6 Prometheus dashboard (grafana.com id 19665) wants p95/min/max/avg too;
+    # without them its latency panels sit half empty. Explicit env still wins.
+    export K6_PROMETHEUS_RW_TREND_STATS="${K6_PROMETHEUS_RW_TREND_STATS:-p(95),p(99),min,max,avg}"
+    # Mark series stale when the test ends. Without this, the last values
+    # linger for ~5 minutes in from->now queries after the run -- one of the
+    # classic "Grafana disagrees with summary.txt" causes.
+    export K6_PROMETHEUS_RW_STALE_MARKERS="${K6_PROMETHEUS_RW_STALE_MARKERS:-true}"
+    echo "▶ prometheus  $K6_PROMETHEUS_RW_SERVER_URL  (trend stats: $K6_PROMETHEUS_RW_TREND_STATS)"
     echo ""
 fi
 
@@ -193,6 +201,7 @@ RESULT_DIR="$RUN_DIR" k6 run \
     -e RESULT_DIR="$RUN_DIR" \
     "${OVERRIDE_ARGS[@]+"${OVERRIDE_ARGS[@]}"}" \
     "${OUT_ARGS[@]}" \
+    --tag "testid=$RUN_ID" \
     --summary-trend-stats "avg,min,med,p(90),p(95),p(99),max,count" \
     "$PLAN_FILE" 2>&1 | tee "$RUN_DIR/k6.log"
 K6_RC=${PIPESTATUS[0]}
@@ -213,7 +222,9 @@ if [[ -n "$GRAFANA_URL" ]]; then
     sep='?'; [[ "$GRAFANA_URL" == *\?* ]] && sep='&'
     START_MS=$(grep -oE 'epochMillis: *[0-9]+' "$MANIFEST" | head -1 | grep -oE '[0-9]+')
     END_MS=$(grep -oE 'endEpochMillis: *[0-9]+' "$MANIFEST" | grep -oE '[0-9]+')
-    echo "Grafana:  ${GRAFANA_URL}${sep}from=${START_MS}&to=${END_MS}"
+    # var-testid: both the official k6 dashboard (19665) and grafana/oreo-k6-verdicts.json
+    # key their run selector on the testid label -- the link lands on exactly this run.
+    echo "Grafana:  ${GRAFANA_URL}${sep}from=${START_MS}&to=${END_MS}&var-testid=${RUN_ID}"
 else
     echo "Grafana time range (replace from=now-1h&to=now in the URL):"
     grep -E 'epochMillis' "$MANIFEST" | sed 's/^/  /'
@@ -222,9 +233,9 @@ fi
 
 if grep -q 'PREFLIGHT FAILED' "$RUN_DIR/k6.log" 2>/dev/null; then
     echo ""
-    echo "⚠ PREFLIGHT FAILED — reference data is unusable at the business level."
+    echo "⚠ PREFLIGHT FAILED — the data file failed local validation (placeholders / missing fields / empty pool)."
     grep 'PREFLIGHT' "$RUN_DIR/k6.log" | tail -5
-    echo "  This result must not be used as a performance conclusion. Fix the data first; see data/workers/trade-management/README.md."
+    echo "  Nothing was sent. Fill in the data first; see data/workers/trade-management/README.md."
 fi
 
 exit $K6_RC

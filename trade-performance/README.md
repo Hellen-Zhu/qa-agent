@@ -44,12 +44,28 @@ winget install k6 --source winget      # Windows
 
 （覆盖项一律裸 `KEY=value`，不加 `-e` —— 与 run.ps1 保持同一副命令行。）
 
-送指标进已有的 Prometheus：
+送指标进已有的 Prometheus（需 Prometheus 开 `--web.enable-remote-write-receiver`）：
 
 ```bash
 K6_PROMETHEUS_RW_SERVER_URL=http://<prom-host>:9090/api/v1/write \
   ./run.sh p02-trade-create dev baseline
 ```
+
+runner 会自动补齐三样与官方看板的对接（显式设置的环境变量仍然优先）：
+
+- `--tag testid=<runId>`——官方 k6 看板（grafana.com id **19665**）与本仓库
+  `grafana/oreo-k6-verdicts.json` 都以 testid 作运行选择器，看板下拉框按轮次选，
+  不再靠时间窗对账；跑完打印的 Grafana 链接也带上 `&var-testid=<runId>` 直达本轮
+- `K6_PROMETHEUS_RW_TREND_STATS=p(95),p(99),min,max,avg`——k6 默认只送 p(99)，
+  19665 的延迟面板会残缺
+- `K6_PROMETHEUS_RW_STALE_MARKERS=true`——结束即标 stale，否则末值在
+  from→now 查询里拖尾约 5 分钟（"Grafana 和 summary 对不上"的经典来源之一）
+
+看板导入两块：**19665**（通用视图：请求量/VU/延迟）+
+**`grafana/oreo-k6-verdicts.json`**（业务判定视图）。后者必须有：19665 的错误率
+基于 `http_req_failed`（HTTP 层口径），而本系统业务失败照样返回 HTTP 200——
+业务拒绝在 19665 上是隐形的。verdicts 看板把三类错误、按 reason 的归因、
+业务成功 TPS、成功样本延迟投到 Grafana 上，判定口径仍以 summary.txt 为准。
 
 时间序列曲线（k6 web dashboard）**默认开启**：跑时 `http://127.0.0.1:5665`
 实时看，跑完导出 `results/<YYYYMMDD>/<runId>/report.html`（短运行如 smoke 会跳过导出；
@@ -69,12 +85,13 @@ trade-performance/
 ├── journeys/*.js                   用户路径：把 steps 串成一次完整动作
 ├── steps/<svc>/<domain>/*.js       原子步骤：一个 API 一个文件（唯一契约）
 │   └── <路径>-data.js              路径供数：实例化用例池 + 路径特有装载，与步骤同目录
-├── setup/<路径>-preflight.js       开跑前守卫：一条被测路径一个（见下方约定）
+├── setup/create-trade-preflight.js 开跑前**本地**数据校验（不发请求；服务端守卫是熔断阈值，见约定）
 ├── lib/                            框架设施：config / errors / rows / summary / case-pool
 ├── data/                           测试数据：纯 .json + 采集 README，代码不混进去
 │   ├── <svc>/<domain>/             用例池，分区镜像 steps/（现有 workers/trade-management/）
 │   └── dat/                        共用 .dat 样本，按 productType 分目录（datFile 相对此目录）
 ├── scripts/index-dat.py            .dat 与数据文件的对账（引用完整性检查）
+├── grafana/oreo-k6-verdicts.json   业务判定看板（补官方 19665 看不见的三类错误层）
 └── results/<YYYYMMDD>/<runId>/     每次运行：manifest + 摘要 + 明细 csv + report.html
                                     （按日期分层，一天的跑批归一个文件夹）
 ```
@@ -90,7 +107,7 @@ steps 不定义负载（executor 在 profiles），环境地址只在 config。
 
 | 文件 | 职责 | 现有 |
 |---|---|---|
-| `setup/<路径>-preflight.js` 导出 `<路径>Preflight()` | 这条路径开跑前必须成立的前提 | `create-trade` · `trades-list` · `refdata` |
+| `setup/<路径>-preflight.js` 导出 `<路径>Preflight()` | 这条路径开跑前的**本地**数据校验：占位值/漏字段/空池，**不发任何请求** | `create-trade`（读接口无本地数据可校，不设守卫） |
 | `steps/<svc>/<domain>/<路径>-data.js` | 这条路径的供数：用 `lib/case-pool.js` 实例化用例池（**默认数据文件路径在这里**）+ 路径特有装载（如 .dat 预载） | `create-trade-data.js` |
 
 两者成对：数据怎么来、怎么证明它今天还能用，是同一件事。
@@ -103,7 +120,7 @@ data/ 只放 .json，代码不混进去，且分区镜像 steps/（`data/<svc>/<
 都用它）—— 一行是**数据变体**不是测试用例，不维护手工 id 列。
 
 **为什么数据文件路径不在 `config/<env>.json` 里**：config 回答"打哪个环境"
-（地址、身份、超时、preflight 策略）；"用哪个用例池"是**计划维度**的事——
+（地址、身份、超时）；"用哪个用例池"是**计划维度**的事——
 p05 压列表接口根本不需要 create 用例，放进 env config 等于让每个环境
 都声明一份与自己无关的配置。需要临时换池用覆盖项：
 
@@ -114,16 +131,20 @@ p05 压列表接口根本不需要 create 用例，放进 env config 等于让�
 > ⚠ 数据**内容**是环境相关的（id 不跨环境通用），但**路径**不是——
 > 换环境时重新采集填进同一个文件，而不是换一个路径。
 
-**守卫绑路径，不绑场景**：p02 和 s01 都创建 trade，共用
-`createTradePreflight()`；s01 还踩 refdata，就再叠一个 `refdataPreflight()`。
-场景的 `setup()` 因此只做组合，保持薄壳：
+**守卫的分工（2026-07-30 重构）**：`setup()` 只做**本地**校验，不发任何
+请求——所以 setup 阶段零指标污染，summary 与 Grafana 的请求数/迭代数
+严格相等。"服务端此刻还接受这些数据吗"由两个更强的机制负责：
 
-```js
-export function setup() {
-  refdataPreflight(REFDATA_MODE);   // 不通就没必要再去建 trade
-  return createTradePreflight();
-}
-```
+1. **会话纪律**：大轮次开跑前同一会话先跑一次 `smoke`（真实建一笔并
+   走完全链路判定）；
+2. **运行内熔断**：长时 profile（load / soak / arrival / ladder）带两级
+   阈值——严格线 `rate>0.99` 跑完判 PASS/FAIL，宽松线 `rate>0.50` +
+   `abortOnFail`（延迟 3 分钟起判）只负责杀掉整体性拒绝的轮次。数据
+   无论是开跑前就坏还是中途变坏，都在几分钟内止损，而不是烧完 4 小时。
+
+早期版本曾在 setup() 里真实建一笔做"数据业务可用"探针——已删：它只验
+池子第一行（抽样冒充证明）、覆盖不了中途失效、还让每轮多一笔污染
+trade 和一次请求计数偏差。
 
 ---
 

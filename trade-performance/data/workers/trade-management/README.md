@@ -45,8 +45,14 @@ Counterparty / Portfolio 由 sync batch job 从第三方同步，变更频率以
 - `live` 模式：数据失效 → setup 当场查不到 → 立刻暴露
 - 静态供数：id 已在库中不存在 → **请求照发，服务端业务拒绝** → 报告里只是错误率升高
 
-所以 `setup/create-trade-preflight.js` 的检查 2（真发一笔 create）是唯一能证明
-"这条用例今天仍然可用"的东西，不能跳过。
+所以"数据今天还有效吗"必须有人回答。回答者不是跑前探针（曾有过：setup 里
+真发一笔——只验第一行，抽样冒充证明，2026-07-30 移除），而是两层机制：
+
+- **开跑前**：大轮次同一会话先跑 `smoke`——真实建一笔、走完三类判定，
+  这才是"API 此刻接受这份数据"的验证；
+- **跑起来后**：长时 profile 的熔断阈值（`oreo_business_success` 宽松线
+  `rate>0.50` + abortOnFail）——数据失效表现为整体性业务拒绝，无论发生在
+  启动时还是第 3 小时，几分钟内自动止损。
 
 ## 怎么填（当前全是 TBC）
 
@@ -60,7 +66,7 @@ Counterparty / Portfolio 由 sync batch job 从第三方同步，变更频率以
 
 每换一个 productType / counterparty 重复一次，一行一行填进 `rows`。
 
-⚠ preflight 的本地检查会因为 `TBC` 中止测试，这是刻意的：带着 TBC 能跑，
+⚠ setup 的本地校验会因为 `TBC` 中止测试（PREFLIGHT FAILED），这是刻意的：带着 TBC 能跑，
 但每一行都会被服务端拒绝，整轮数据白跑。
 
 ⚠ 采集来的 curl / 响应样本放本目录 `_samples/`（已 gitignore）——
@@ -77,7 +83,7 @@ DevTools 导出带着会话 cookie、真实 counterparty 名称，**不能进版
 不需要定期刷新，但下列情况必须重新采集：
 
 - 换环境（dev → sit → perf）——id 不跨环境通用
-- preflight create 开始失败
+- smoke 的 create 开始失败，或长时轮次被业务成功率熔断线中止
 - 压测错误率里出现大量"counterparty not found / not entitled"类业务拒绝
 
 采集时间与来源记在 `note` 字段，事后才能回答"这批数据是什么时候的"。

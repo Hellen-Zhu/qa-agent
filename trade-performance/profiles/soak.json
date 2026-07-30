@@ -8,6 +8,11 @@
     "duration": "4h"
   },
   "thresholds": {
-    "oreo_err_script": ["count==0"]
+    "oreo_err_script": ["count==0"],
+    "_circuitBreaker": "Two-tier design: the strict rate>0.99 line is the end-of-run VERDICT; the loose rate>0.50 line with abortOnFail is a CIRCUIT BREAKER that only kills clearly doomed runs (wholesale business rejection = stale data, whether stale at launch or gone stale mid-run). Loose on purpose: at low throughput a couple of legitimate transient failures must not abort a long run. delayAbortEval lets the sample size build up first. This replaces the removed setup() probe request, covering the whole run instead of one instant before it.",
+    "oreo_business_success": [
+      { "threshold": "rate>0.99" },
+      { "threshold": "rate>0.50", "abortOnFail": true, "delayAbortEval": "3m" }
+    ]
   }
 }

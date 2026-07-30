@@ -1,0 +1,584 @@
+{
+  "title": "OREO k6 — verdicts",
+  "uid": "oreo-k6-verdicts",
+  "tags": [
+    "k6",
+    "oreo"
+  ],
+  "description": "Companion to the official k6 Prometheus dashboard (grafana.com id 19665). 19665's error panels are http_req_failed-based (HTTP layer) and this system returns HTTP 200 on business failures — business rejection is invisible there. This board projects the three-class verdict accounting (see lib/errors.js) into Grafana. Import both; they share the testid run selector, and the runner prints a link carrying var-testid.",
+  "editable": true,
+  "schemaVersion": 39,
+  "time": {
+    "from": "now-3h",
+    "to": "now"
+  },
+  "timezone": "",
+  "refresh": "10s",
+  "annotations": {
+    "list": []
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "DS_PROMETHEUS",
+        "label": "Datasource",
+        "type": "datasource",
+        "query": "prometheus",
+        "current": {},
+        "hide": 0
+      },
+      {
+        "name": "testid",
+        "label": "Run (testid)",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${DS_PROMETHEUS}"
+        },
+        "query": {
+          "query": "label_values(k6_oreo_ok_total, testid)",
+          "refId": "var-testid"
+        },
+        "refresh": 2,
+        "sort": 0,
+        "includeAll": false,
+        "multi": false,
+        "current": {},
+        "hide": 0
+      }
+    ]
+  },
+  "panels": [
+    {
+      "type": "stat",
+      "title": "Verdicts — this run (runPhase=main)",
+      "gridPos": {
+        "h": 6,
+        "w": 12,
+        "x": 0,
+        "y": 0
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "description": "The four mutually exclusive verdicts; they sum to total main-loop requests. Authoritative pass/fail lives in summary.txt / thresholds — this is the same accounting projected into Prometheus.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "noValue": "0",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "technical"
+            },
+            "properties": [
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "red",
+                      "value": 1
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "business"
+            },
+            "properties": [
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "orange",
+                      "value": 1
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "script"
+            },
+            "properties": [
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "red",
+                      "value": 1
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "textMode": "value_and_name",
+        "colorMode": "value"
+      },
+      "targets": [
+        {
+          "expr": "sum(max_over_time(k6_oreo_ok_total{testid=\"$testid\",runPhase=\"main\"}[$__range]))",
+          "legendFormat": "ok",
+          "refId": "A",
+          "instant": true,
+          "range": false,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        },
+        {
+          "expr": "sum(max_over_time(k6_oreo_err_technical_total{testid=\"$testid\",runPhase=\"main\"}[$__range]))",
+          "legendFormat": "technical",
+          "refId": "B",
+          "instant": true,
+          "range": false,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        },
+        {
+          "expr": "sum(max_over_time(k6_oreo_err_business_total{testid=\"$testid\",runPhase=\"main\"}[$__range]))",
+          "legendFormat": "business",
+          "refId": "C",
+          "instant": true,
+          "range": false,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        },
+        {
+          "expr": "sum(max_over_time(k6_oreo_err_script_total{testid=\"$testid\",runPhase=\"main\"}[$__range]))",
+          "legendFormat": "script",
+          "refId": "D",
+          "instant": true,
+          "range": false,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "dropped_iterations",
+      "gridPos": {
+        "h": 6,
+        "w": 6,
+        "x": 12,
+        "y": 0
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "description": "Open-model poison signal: >0 means maxVUs was insufficient and the arrival rate was NOT fully applied — the run's results are unusable (this is not 'the system held up').",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "noValue": "0",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "textMode": "value",
+        "colorMode": "background"
+      },
+      "targets": [
+        {
+          "expr": "sum(max_over_time(k6_dropped_iterations_total{testid=\"$testid\"}[$__range]))",
+          "legendFormat": "dropped",
+          "refId": "A",
+          "instant": true,
+          "range": false,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "refdata fallback (s01 live)",
+      "gridPos": {
+        "h": 6,
+        "w": 6,
+        "x": 18,
+        "y": 0
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "description": ">0 in live mode means iterations silently fell back to embedded ownership fields — the run never covered the refdata path it claims to (deviation; the s01 threshold also fails it).",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "noValue": "0",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "textMode": "value",
+        "colorMode": "background"
+      },
+      "targets": [
+        {
+          "expr": "sum(max_over_time(k6_oreo_refdata_fallback_total{testid=\"$testid\"}[$__range]))",
+          "legendFormat": "fallback",
+          "refId": "A",
+          "instant": true,
+          "range": false,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Error share of all verdicts",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 6
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "description": "Denominator is the sum of all four verdicts, NOT http_reqs (in E2E one iteration carries six requests). At production-like low arrival rates use range windows >= 1m — most buckets hold zero samples and short windows draw misleading spikes.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "spanNulls": true
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "expr": "(sum(rate(k6_oreo_err_technical_total{testid=\"$testid\",runPhase=\"main\"}[$__rate_interval])) or vector(0)) / ((sum(rate(k6_oreo_ok_total{testid=\"$testid\",runPhase=\"main\"}[$__rate_interval])) or vector(0)) + (sum(rate(k6_oreo_err_technical_total{testid=\"$testid\",runPhase=\"main\"}[$__rate_interval])) or vector(0)) + (sum(rate(k6_oreo_err_business_total{testid=\"$testid\",runPhase=\"main\"}[$__rate_interval])) or vector(0)) + (sum(rate(k6_oreo_err_script_total{testid=\"$testid\",runPhase=\"main\"}[$__rate_interval])) or vector(0)))",
+          "legendFormat": "technical",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        },
+        {
+          "expr": "(sum(rate(k6_oreo_err_business_total{testid=\"$testid\",runPhase=\"main\"}[$__rate_interval])) or vector(0)) / ((sum(rate(k6_oreo_ok_total{testid=\"$testid\",runPhase=\"main\"}[$__rate_interval])) or vector(0)) + (sum(rate(k6_oreo_err_technical_total{testid=\"$testid\",runPhase=\"main\"}[$__rate_interval])) or vector(0)) + (sum(rate(k6_oreo_err_business_total{testid=\"$testid\",runPhase=\"main\"}[$__rate_interval])) or vector(0)) + (sum(rate(k6_oreo_err_script_total{testid=\"$testid\",runPhase=\"main\"}[$__rate_interval])) or vector(0)))",
+          "legendFormat": "business",
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Business-OK throughput (TPS)",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 6
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "description": "The throughput number that matters: business successes per second, not HTTP 200s per second.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "min": 0,
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "spanNulls": true
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(k6_oreo_ok_total{testid=\"$testid\",runPhase=\"main\"}[$__rate_interval]))",
+          "legendFormat": "business-ok TPS",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Business errors by reason",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 14
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "description": "reason is a bounded attribution dimension (pattern slots like dat-missing + code-N fallback). Wholesale single-reason rejection = stale data or a known server defect, not a load problem.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "min": 0,
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "spanNulls": true
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum by (reason) (rate(k6_oreo_err_business_total{testid=\"$testid\",runPhase=\"main\"}[$__rate_interval]))",
+          "legendFormat": "{{reason}}",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Technical errors by reason",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 14
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "description": "http-5xx vs net-* (timeout/refused) separate here — their remediations are entirely different.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "min": 0,
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "spanNulls": true
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum by (reason) (rate(k6_oreo_err_technical_total{testid=\"$testid\",runPhase=\"main\"}[$__rate_interval]))",
+          "legendFormat": "{{reason}}",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Success-only latency (ms)",
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 22
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "description": "Only business-successful requests (failures usually return faster and flatter the percentiles). Series names follow K6_PROMETHEUS_RW_TREND_STATS (the runner defaults to p(95),p(99),min,max,avg); if this panel is empty on first use, check the actual series names in the metric browser (k6_oreo_success_duration_*).",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "min": 0,
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "spanNulls": true
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "expr": "max(k6_oreo_success_duration_p95{testid=\"$testid\",runPhase=\"main\"})",
+          "legendFormat": "p95",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        },
+        {
+          "expr": "max(k6_oreo_success_duration_p99{testid=\"$testid\",runPhase=\"main\"})",
+          "legendFormat": "p99",
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        }
+      ]
+    }
+  ]
+}

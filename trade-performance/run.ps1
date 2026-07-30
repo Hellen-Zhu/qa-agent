@@ -198,6 +198,13 @@ $OutArgs = @('--out', "csv=$RunDirFwd/result.csv")
 # ⚠ On some versions the output name is experimental-prometheus-rw; if it errors, use prometheus-rw.
 if ($env:K6_PROMETHEUS_RW_SERVER_URL) {
     $OutArgs += @('--out', 'experimental-prometheus-rw')
+    # k6's default trend stats for remote write is p(99) ONLY -- the official
+    # k6 Prometheus dashboard (grafana.com id 19665) wants p95/min/max/avg too;
+    # without them its latency panels sit half empty. Explicit env still wins.
+    if (-not $env:K6_PROMETHEUS_RW_TREND_STATS) { $env:K6_PROMETHEUS_RW_TREND_STATS = 'p(95),p(99),min,max,avg' }
+    # Mark series stale when the test ends -- without this the last values
+    # linger ~5 minutes in from->now queries after the run.
+    if (-not $env:K6_PROMETHEUS_RW_STALE_MARKERS) { $env:K6_PROMETHEUS_RW_STALE_MARKERS = 'true' }
     Write-Host "> prometheus  $env:K6_PROMETHEUS_RW_SERVER_URL"
     Write-Host ""
 }
@@ -235,6 +242,7 @@ if ($env:K6_HTTP_DEBUG) {
 }
 
 $k6Args = @('run', '-e', "ENV=$TargetEnv", '-e', "PROFILE=$ProfileName", '-e', "RESULT_DIR=$RunDirFwd")
+$k6Args += @('--tag', "testid=$RunId")
 $k6Args += $OverrideArgs
 $k6Args += $OutArgs
 $k6Args += @('--summary-trend-stats', 'avg,min,med,p(90),p(95),p(99),max,count')
@@ -267,7 +275,9 @@ Write-Host "manifest: $Manifest"
 Write-Host ""
 if ($GrafanaUrl) {
     $sep = if ($GrafanaUrl -like '*?*') { '&' } else { '?' }
-    Write-Host "Grafana:  ${GrafanaUrl}${sep}from=$StartMs&to=$EndMs"
+    # var-testid: both the official k6 dashboard (19665) and grafana/oreo-k6-verdicts.json
+    # key their run selector on the testid label -- the link lands on exactly this run.
+    Write-Host "Grafana:  ${GrafanaUrl}${sep}from=$StartMs&to=$EndMs&var-testid=$RunId"
 } else {
     Write-Host "Grafana time range (replace from=now-1h&to=now in the URL):"
     Write-Host "  &from=$StartMs&to=$EndMs"
@@ -276,10 +286,10 @@ if ($GrafanaUrl) {
 
 if (Select-String -Path "$RunDir\k6.log" -Pattern 'PREFLIGHT FAILED' -Quiet -ErrorAction SilentlyContinue) {
     Write-Host ""
-    Write-Host "! PREFLIGHT FAILED -- reference data is unusable at the business level." -ForegroundColor Red
+    Write-Host "! PREFLIGHT FAILED -- the data file failed local validation (placeholders / missing fields / empty pool)." -ForegroundColor Red
     Select-String -Path "$RunDir\k6.log" -Pattern 'PREFLIGHT' |
         Select-Object -Last 5 | ForEach-Object { Write-Host "  $($_.Line)" }
-    Write-Host "  This result must not be used as a performance conclusion. Fix the data first; see data\workers\trade-management\README.md." -ForegroundColor Red
+    Write-Host "  Nothing was sent. Fill in the data first; see data\workers\trade-management\README.md." -ForegroundColor Red
 }
 
 exit $K6Rc

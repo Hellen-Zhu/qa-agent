@@ -29,14 +29,15 @@
  * 1. Does not import create-trade's data module -- a read endpoint needs no
  *    case pool or .dat files; importing it would load all .dat into memory
  *    at init (that module is eagerly loaded).
- * 2. The guard is this path's own setup/trades-list-preflight.js -- a read
- *    endpoint creates no trade; it verifies "rows are actually returned"
- *    and declares the data volume in the DB (entry criterion #3).
+ * 2. No setup() guard at all -- a read endpoint has nothing to validate
+ *    locally, and the old pre-run probe request was removed (it polluted
+ *    request counts by exactly 1 vs. iteration counts). "The DB actually
+ *    has rows" is asserted by the oreo_trades_rows threshold below, for
+ *    every response of the whole run instead of one probe before it.
  */
 
 import { cfg } from '../lib/config.js';
 import { tradesList } from '../steps/workers/trade-management/trades-list.js';
-import { tradesListPreflight } from '../setup/trades-list-preflight.js';
 import { makeHandleSummary } from '../lib/summary.js';
 
 const PLAN = 'p05-trades-list';
@@ -63,6 +64,13 @@ export const options = {
   thresholds: Object.assign(
     {
       oreo_err_script: ['count==0'],
+
+      // Empty-DB guard (entry criterion #3 / A16): list numbers measured
+      // against an empty DB are meaningless. avg>0 fails when every response
+      // carries 0 rows -- and also when the row count could not be extracted
+      // at all (no samples → avg 0), which likewise means the run proves
+      // nothing (pagination param names are guessed; see the step's header).
+      oreo_trades_rows: ['avg>0'],
     },
     cfg.thresholds
   ),
@@ -75,13 +83,6 @@ export const options = {
     profile: cfg.profileName,
   },
 };
-
-// ── setUp: this path's own guard (thin shell composes only, logic lives in setup/) ──
-export function setup() {
-  // Use the same query parameters as the main loop -- otherwise preflight
-  // validates a different query than the one about to be loaded
-  return tradesListPreflight({ pageSize: PAGE_SIZE, page: PAGE, status: STATUS });
-}
 
 // ── Main loop: one iteration = one list query ────────────────
 export function tradesListIteration() {

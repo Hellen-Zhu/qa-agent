@@ -23,6 +23,10 @@
     ]
   },
   "thresholds": {
-    "oreo_err_script": ["count==0"]
+    "oreo_err_script": ["count==0"],
+    "_circuitBreaker": "Circuit breaker ONLY, no strict verdict line: a ladder's pass/fail is about finding the knee, not acceptance. Business rejection is a data problem at any load level, so wholesale rejection aborts; technical errors past the knee are exactly what this profile exists to measure -- deliberately NOT abortable.",
+    "oreo_business_success": [
+      { "threshold": "rate>0.50", "abortOnFail": true, "delayAbortEval": "3m" }
+    ]
   }
 }

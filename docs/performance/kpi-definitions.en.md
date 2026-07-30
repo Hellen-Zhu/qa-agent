@@ -144,7 +144,7 @@ Filtering results by the `name` tag prefix `workers_` answers "how slow is the w
 | Rule | Reason |
 |---|---|
 | **TX_flow_\* and its inner TX_\<svc\>_\* must never be summed** | A composite **contains** its atomics. Summing counts the same work twice and doubles TPS. Pick one level when computing throughput |
-| **Filter to `runPhase=main` first** | setUp preflight includes the *same* fragment as the main path, so its transaction names are identical. Without filtering, preflight samples enter capacity statistics — at OREO's single-digit TPS, one extra sample is a several-percent error |
+| **Reconcile on `runPhase=main`** | setup() currently sends no requests, so main-loop samples are all samples; keeping the filter is defensive discipline — no future change that sends setup-phase requests should silently shift capacity statistics (at OREO's single-digit TPS, one extra sample is a several-percent error) |
 
 ### 2.7 Data-volume scaling
 
@@ -209,7 +209,7 @@ Data failing any of these is reference-only and **must not be written into concl
 2. **One variable**: only one difference from the comparison data set.
 3. **Repeatable**: re-run key conclusions; a >10% P95 difference is noise and must be investigated (load-generator capacity? noisy neighbour? data skew?) before concluding.
 4. **Data volume met**: seeded data reaches the scale assumed in [Workload Modeling](workload-modeling.en.md) A16. **Empty-database results are invalid** — OREO's blotter is a range query, so empty-DB P95 has no reference value.
-5. **Reference data verified usable**: counterparty / portfolio must be validated in setUp by actually creating a trade. A query returning 200 does not prove the data is usable in business terms (a counterparty deactivated by the third party still returns from a query). Runs where preflight failed are void.
+5. **Reference data verified usable**: run a same-session `smoke` before big rounds — it really creates one trade through the full three-class verdicts. A query returning 200 does not prove the data is usable in business terms (a counterparty deactivated by the third party still returns from a query). Long runs are backstopped by the business-success circuit breaker; aborted runs are void.
 6. **Script error rate is 0**: non-zero voids the round; passing "after deducting script errors" is not permitted.
 7. **Declare the environment**: state the scale-down ratio for non-proportional environments; conclusions are trend and relative comparison only.
 8. **Batch endpoints state batch size**, **upload endpoints state file-size tier**, **list endpoints state data volume and returned row count** — a figure missing any of these cannot be interpreted.

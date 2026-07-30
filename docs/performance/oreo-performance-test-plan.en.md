@@ -332,7 +332,7 @@ that genuinely occurs; it is not headroom that can be filed as "extreme scenario
 | **User identity pool** | N makers, M checkers | `data/shared/accounts.csv` | ✅ Implemented (needs real accounts) |
 | **Run-generated data** (each round's by-product) | Trades created = VUs × duration ÷ per-request time. **The faster the API, the more data**: at 0.3 s, 1 VU × 300 s ≈ 1,000 real `PENDING APPROVAL` trades; 4 VUs flat-out for 4 h ≈ **190k**, whereas the design-capacity arrival rate (0.11 TPS) over 4 h is ≈ 1,600 | ① Agree a cleanup protocol with DBA / dev (bulk reject / archival / dedicated marker); ② long data-creating runs always use the `arrival` rate shape, never flat-out constant-vus | ⬜ **Phase-1 item**; left uncleaned it drifts S-10's data tiers |
 
-**Reference data is the one class the test cannot control**: counterparty / portfolio arrive via a sync batch job from a third party. Hard-coding them goes stale, and staleness manifests as **HTTP 200 + wholesale business rejection** — reporting as a 0% error rate. Handling is described in [v2 plan](../trade-api-perf-test-plan-v2-jmeter.md) §4.4 and implemented in `setup/create-trade-preflight.js`.
+**Reference data is the one class the test cannot control**: counterparty / portfolio arrive via a sync batch job from a third party. Hard-coding them goes stale, and staleness manifests as **HTTP 200 + wholesale business rejection** — reporting as a 0% error rate. Handling: setup() performs local validation only (placeholders / missing fields, no request sent); server-side validity is owned by a same-session smoke before big rounds plus the business-success circuit breaker in long-run profiles (loose rate>0.50 + abortOnFail) — wholesale rejection aborts within minutes, whether the data was stale at launch or went stale mid-run.
 
 ---
 
@@ -402,7 +402,7 @@ Exit criteria (§7) govern "when we are done"; entry criteria govern "whether th
 
 | # | Gate | Consequence if unmet |
 |---|---|---|
-| 1 | Refdata preflight passed (setup creates one real trade to validate) | Stale reference data → HTTP 200 + wholesale business rejection, yet the report shows 0% errors |
+| 1 | Same-session `smoke` passed (really creates one trade through full three-class verdicts); long runs carry the business-success circuit breaker | Stale reference data → HTTP 200 + wholesale business rejection, yet the report shows 0% errors |
 | 2 | `smoke` shows zero errors in all three classes (the profile's thresholds are this gate; exit-code verdict) | Script bugs contaminate the results; the round is void |
 | 3 | The gap between actual data volume and the A16 assumption is declared | Empty-database numbers get misread as capacity conclusions |
 | 4 | Monitoring reachable, clocks in sync (manifest auto-records the epoch window) | Server metrics cannot be aligned to the time axis; no attribution |
@@ -418,7 +418,7 @@ A full performance round may be declared "passed" only when all of the following
 | # | Criterion |
 |---|---|
 | 1 | **Script error rate = 0** (PERF-21). Non-zero voids the round; passing after deduction is not permitted. In k6 this is hard-gated by the `oreo_err_script` threshold — failure makes the process exit non-zero; the verdict is mechanical, not a matter of discipline |
-| 2 | **Reference-data preflight passed.** Runs where it failed are void |
+| 2 | **Business-success circuit breaker not tripped** (an aborted run = stale data, results void) |
 | 3 | **Data volume reaches the A16 assumption.** Empty-database results are invalid |
 | 4 | PERF-01–18 met **simultaneously** in the S-16 full-capacity mixed scenario |
 | 5 | **S-18 audit reconciliation difference is 0** (AUDIT-02) |

@@ -23,8 +23,6 @@
   "timeouts": { "request": "60s" },
 
 
-  "_preflight": "abort | warn (prune not implemented). dev data fluctuates a lot; default is warn.",
-  "preflightPolicy": "warn",
-  "_grafanaDashboard": "Read by the runners (run.sh / run.ps1), not by the k6 scripts: dashboard URL including any var-host parameters. The runner appends this run's epoch window as &from=/&to= and prints a click-through link; empty means it prints the raw epoch window instead. GRAFANA_DASHBOARD_URL overrides this for a single run, so CI and one-off runs never need a file edit.",
+  "_grafanaDashboard": "Read by the runners (run.sh / run.ps1), not by the k6 scripts: dashboard URL including any var-host parameters. The runner appends this run's epoch window as &from=/&to= plus &var-testid=<runId> (the run selector used by k6 dashboard 19665 and grafana/oreo-k6-verdicts.json) and prints a click-through link; empty means it prints the raw epoch window instead. GRAFANA_DASHBOARD_URL overrides this for a single run, so CI and one-off runs never need a file edit.",
   "grafanaDashboard": ""
 }

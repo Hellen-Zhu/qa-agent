@@ -9,7 +9,8 @@ run.sh dry-run（tag 筛选、Job manifest 渲染）。
 - [ ] SLA 目标值与业务方确认，替换 `config/slas/` 占位水位（遗留问题 #2）
 - [ ] 压测数据标记与开发确认：当前用 portfolioId=PERF_TEST + basic.clientRef 承载唯一标记，需确认字段有效且对下游无副作用（遗留问题 #3）
 - [ ] 用真实 FX_TRF.dat 替换 `data/datfiles/` 占位文件；验证同一 dat 高频重复提交是否触发幂等/去重/日期校验，若需参数化做模板替换（遗留问题 #4）
-- [ ] create 响应结构核对：`bizCheck` 假设响应含 `tradeId` 字段，首跑时确认
+- [ ] create/query 响应结构核对：create 的 `bizCheck` 假设响应含 `tradeId` 字段，`queryTrades` 的 `bizCheck` 假设响应含 `trades` 数组字段，首跑时确认
+- [ ] 镜像内 k6 版本 ≥ 0.55（与本地验证版本行为一致：空 K6_OUT 容忍、experimental-prometheus-rw 输出名、K6_PROMETHEUS_RW_TREND_STATS 支持）
 - [ ] 5 个微服务清单（服务名/地址/模块）补入 `config/environments/` 与 `src/api/`（遗留问题 #6）
 - [ ] X-User-Id 身份（maker/checker 真实账号）填入环境文件并确认在目标环境有效
 - [ ] k8s 脚本注入方式（本仓库不交付 Dockerfile）：公司镜像流程内置 k6 + `/perf` 内容（workingDir 与 job.yaml 一致），或 ConfigMap 挂载——二选一实施，镜像地址经 `K6_IMAGE` 传入；`K6_NAMESPACE` 建立并有 Job 创建权限

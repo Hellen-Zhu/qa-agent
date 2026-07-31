@@ -23,7 +23,7 @@ k6 inspect -e ENV=local src/scenarios/trades-query.js
 
 - `config/environments/` 环境（服务地址映射、白名单、promRwUrl、身份池）；**仓库内全部为 localhost/示例占位，真实值仅在内网填写；没有也不允许有 prod**
 - `config/slas/` 按 服务/模块 组织的 SLA 阈值（当前为占位水位，见环境清单）
-- `src/lib` 框架层（纯逻辑模块不依赖 k6）；`src/api/<service>/<module>.js` API 客户端层
+- `src/lib` 框架层：纯逻辑模块（config/users/data/sla/report，Node 可加载）+ k6 侧模块（http.js、metrics.js、bootstrap.js——场景装配层，集中 cfg/参数池加载与 options/handleSummary 组装，场景文件只写业务编排）；`src/api/<service>/<module>.js` API 客户端层
 - `src/payloads` multipart 组装工厂；`data/datfiles/` 产品 dat 模板（占位，须替换）
 - `src/profiles` smoke/load/stress/spike/soak；`src/scenarios` 场景入口
 - `deploy/` run.sh 与 Job 模板（镜像/脚本注入由公司侧机制提供）；`dashboards/` Grafana JSON

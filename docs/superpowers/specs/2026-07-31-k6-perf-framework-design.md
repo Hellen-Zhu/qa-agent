@@ -49,7 +49,8 @@ perf/
 │   ├── environments/       # dev.json / uat.json：各微服务 baseUrl 映射、Prometheus RW 地址（不存在 prod 配置）
 │   └── slas/               # SLA 阈值，按 服务/模块/API 三级组织，集中管理
 ├── src/                    # 只存放会被 k6 引擎加载执行的 JavaScript 代码
-│   ├── lib/                # 框架层：users.js（身份池）、http.js、data.js、metrics.js、checks.js
+│   ├── lib/                # 框架层：纯逻辑模块（config/users/data/sla/report，Node 可加载）
+│   │                       #   + k6 侧：http.js、metrics.js、bootstrap.js（场景装配：cfg/参数池/options/handleSummary）
 │   ├── api/                # API 客户端层，按 微服务/模块 分目录（见 3.1）
 │   │   └── trade-svc/
 │   │       └── trades.js   # queryTrades / createTrade / triggerEvent

@@ -22,20 +22,15 @@ export function loadData(path) {
   return JSON.parse(open(import.meta.resolve(`../../data/${path}.json`)));
 }
 
-// data/datfiles/<file> 二进制 dat 模板（仅 init 阶段可调用）
-export function loadDat(file) {
-  return open(import.meta.resolve(`../../data/datfiles/${file}`), 'b');
-}
-
 // 标准 options 组装：负载 profile（PROFILE/RATE/DURATION/MAX_VUS 经 __ENV 覆盖）
 // + config/slas/<slaFile>.json 中指定条目的 thresholds + 统一分位数配置
-export function buildOptions(slaFile, slaKey) {
+export function buildOptions(slaFile, slaKey, extraThresholds) {
   const sla = JSON.parse(open(import.meta.resolve(`../../config/slas/${slaFile}.json`)));
   const entry = sla[slaKey];
   if (!entry) throw new Error(`unknown SLA key: ${slaKey} in ${slaFile}`);
   return {
     scenarios: { main: buildProfile(__ENV.PROFILE || 'smoke', __ENV) },
-    thresholds: buildThresholds(entry),
+    thresholds: Object.assign({}, buildThresholds(entry), extraThresholds || {}),
     summaryTrendStats: ['avg', 'med', 'p(95)', 'p(99)'],
   };
 }

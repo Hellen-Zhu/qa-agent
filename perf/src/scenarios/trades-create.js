@@ -1,21 +1,22 @@
-import { cfg, TESTID, loadData, loadDat, buildOptions } from '../lib/bootstrap.js';
+import exec from 'k6/execution';
+import { cfg, buildOptions } from '../lib/bootstrap.js';
 import { pickUser } from '../lib/users.js';
-import { buildTradePart, datFileFor } from '../payloads/factory.js';
+import { pickCase } from '../api/trade-svc/trades-data.js';
 import { createTrade } from '../api/trade-svc/trades.js';
+import { createTradePreflight } from '../setup/create-trade-preflight.js';
 
 export const meta = { tags: ['P0', 'trade-svc', 'write'] };
 
-const PRODUCT = __ENV.PRODUCT || 'TRF';
-const DATA = loadData('trade-svc/trades-create');
-const DAT_NAME = datFileFor(PRODUCT);
-const DAT_BIN = loadDat(DAT_NAME);
-
 export const options = buildOptions('trade-svc/trades', 'create');
 
+export function setup() {
+  return createTradePreflight();
+}
+
 export default function () {
+  const i = exec.scenario.iterationInTest;
   const user = pickUser(cfg, 'maker', __VU);
-  const trade = buildTradePart(DATA, __VU, __ITER, TESTID);
-  createTrade(cfg, trade, DAT_BIN, DAT_NAME, user);
+  createTrade(cfg, pickCase(i), user, 'main');
 }
 
 export { stdHandleSummary as handleSummary } from '../lib/bootstrap.js';

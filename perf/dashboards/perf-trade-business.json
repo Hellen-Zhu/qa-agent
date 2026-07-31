@@ -1,0 +1,38 @@
+{
+  "title": "Perf - Trade Business Metrics",
+  "uid": "perf-trade-biz",
+  "schemaVersion": 39,
+  "tags": ["perf", "k6"],
+  "time": { "from": "now-1h", "to": "now" },
+  "templating": {
+    "list": [
+      {
+        "name": "testid",
+        "type": "query",
+        "query": "label_values(k6_http_reqs_total, testid)",
+        "refresh": 2,
+        "sort": 2
+      }
+    ]
+  },
+  "panels": [
+    {
+      "title": "trade_booking_duration p95/p99 (ms)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "targets": [
+        { "expr": "k6_trade_booking_duration_p95{testid=\"$testid\"}", "legendFormat": "p95" },
+        { "expr": "k6_trade_booking_duration_p99{testid=\"$testid\"}", "legendFormat": "p99" }
+      ]
+    },
+    {
+      "title": "business / booking errors per second",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "targets": [
+        { "expr": "rate(k6_business_errors_total{testid=\"$testid\"}[1m])", "legendFormat": "business errors" },
+        { "expr": "rate(k6_trade_booking_errors_total{testid=\"$testid\"}[1m])", "legendFormat": "booking errors" }
+      ]
+    }
+  ]
+}

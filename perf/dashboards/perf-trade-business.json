@@ -1,9 +1,25 @@
 {
+  "__inputs": [
+    {
+      "name": "DS_PROMETHEUS",
+      "label": "Prometheus",
+      "description": "k6 remote write 写入的那个 Prometheus 实例",
+      "type": "datasource",
+      "pluginId": "prometheus",
+      "pluginName": "Prometheus"
+    }
+  ],
   "title": "Perf - Trade Overview",
   "uid": "perf-trade-biz",
   "schemaVersion": 39,
-  "tags": ["perf", "k6"],
-  "time": { "from": "now-1h", "to": "now" },
+  "tags": [
+    "perf",
+    "k6"
+  ],
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
   "links": [
     {
       "type": "link",
@@ -20,7 +36,11 @@
         "type": "query",
         "query": "label_values(k6_http_reqs_total, testid)",
         "refresh": 2,
-        "sort": 2
+        "sort": 2,
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${DS_PROMETHEUS}"
+        }
       }
     ]
   },
@@ -28,70 +48,226 @@
     {
       "title": "requests per second (RPS)",
       "type": "timeseries",
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 0
+      },
       "targets": [
-        { "expr": "sum(rate(k6_http_reqs_total{testid=\"$testid\"}[1m]))", "legendFormat": "RPS" }
-      ]
+        {
+          "expr": "sum(rate(k6_http_reqs_total{testid=\"$testid\"}[1m]))",
+          "legendFormat": "RPS",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        }
+      ],
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      }
     },
     {
       "title": "virtual users (VUs)",
       "type": "timeseries",
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 0
+      },
       "targets": [
-        { "expr": "k6_vus{testid=\"$testid\"}", "legendFormat": "VUs" }
-      ]
+        {
+          "expr": "k6_vus{testid=\"$testid\"}",
+          "legendFormat": "VUs",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        }
+      ],
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      }
     },
     {
       "title": "HTTP duration p95/p99 (ms) — 全请求含失败",
       "type": "timeseries",
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 8
+      },
       "targets": [
-        { "expr": "k6_http_req_duration_p95{testid=\"$testid\"}", "legendFormat": "p95" },
-        { "expr": "k6_http_req_duration_p99{testid=\"$testid\"}", "legendFormat": "p99" }
-      ]
+        {
+          "expr": "k6_http_req_duration_p95{testid=\"$testid\"}",
+          "legendFormat": "p95",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        },
+        {
+          "expr": "k6_http_req_duration_p99{testid=\"$testid\"}",
+          "legendFormat": "p99",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        }
+      ],
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      }
     },
     {
       "title": "HTTP failed rate",
       "type": "timeseries",
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 8
+      },
       "targets": [
-        { "expr": "k6_http_req_failed_rate{testid=\"$testid\"}", "legendFormat": "failed rate" }
-      ]
+        {
+          "expr": "k6_http_req_failed_rate{testid=\"$testid\"}",
+          "legendFormat": "failed rate",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        }
+      ],
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      }
     },
     {
       "title": "success-only duration p95/p99 (ms) — SLA 观测对象",
       "type": "timeseries",
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 16
+      },
       "targets": [
-        { "expr": "k6_perf_success_duration_p95{testid=\"$testid\"}", "legendFormat": "p95" },
-        { "expr": "k6_perf_success_duration_p99{testid=\"$testid\"}", "legendFormat": "p99" }
-      ]
+        {
+          "expr": "k6_perf_success_duration_p95{testid=\"$testid\"}",
+          "legendFormat": "p95",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        },
+        {
+          "expr": "k6_perf_success_duration_p99{testid=\"$testid\"}",
+          "legendFormat": "p99",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        }
+      ],
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      }
     },
     {
       "title": "errors per second by class",
       "type": "timeseries",
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 16
+      },
       "targets": [
-        { "expr": "rate(k6_perf_err_technical_total{testid=\"$testid\"}[1m])", "legendFormat": "technical" },
-        { "expr": "rate(k6_perf_err_business_total{testid=\"$testid\"}[1m])", "legendFormat": "business" },
-        { "expr": "rate(k6_perf_err_script_total{testid=\"$testid\"}[1m])", "legendFormat": "script" }
-      ]
+        {
+          "expr": "rate(k6_perf_err_technical_total{testid=\"$testid\"}[1m])",
+          "legendFormat": "technical",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        },
+        {
+          "expr": "rate(k6_perf_err_business_total{testid=\"$testid\"}[1m])",
+          "legendFormat": "business",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        },
+        {
+          "expr": "rate(k6_perf_err_script_total{testid=\"$testid\"}[1m])",
+          "legendFormat": "script",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        }
+      ],
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      }
     },
     {
       "title": "business success rate",
       "type": "timeseries",
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 24 },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 24
+      },
       "targets": [
-        { "expr": "k6_perf_business_success_rate{testid=\"$testid\"}", "legendFormat": "success rate" }
-      ]
+        {
+          "expr": "k6_perf_business_success_rate{testid=\"$testid\"}",
+          "legendFormat": "success rate",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        }
+      ],
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      }
     },
     {
       "title": "business errors by data row (数据坏行定位)",
       "type": "timeseries",
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 24 },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 24
+      },
       "targets": [
-        { "expr": "sum by (row, reason) (rate(k6_perf_err_business_total{testid=\"$testid\"}[1m]))", "legendFormat": "row {{row}} {{reason}}" }
-      ]
+        {
+          "expr": "sum by (row, reason) (rate(k6_perf_err_business_total{testid=\"$testid\"}[1m]))",
+          "legendFormat": "row {{row}} {{reason}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        }
+      ],
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      }
     }
   ]
 }

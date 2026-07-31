@@ -29,6 +29,9 @@ export function rowsFromJson(text, sourceName) {
     Object.keys(r).forEach((k) => {
       if (k.startsWith('_')) return;
       const v = r[k];
+      if (v !== null && typeof v === 'object') {
+        throw new Error(`${sourceName} 第 ${idx + 1} 行字段 ${k} 是对象/数组——行内值必须是标量`);
+      }
       out[k] = v === null || v === undefined ? '' : String(v).trim();
     });
     return out;

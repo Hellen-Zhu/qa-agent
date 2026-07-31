@@ -11,7 +11,7 @@ usage() {
 用法: deploy/run.sh (-s <scenario> | --tags <t1,t2>) [-p profile] [-e env] [-r rate] [-d duration] [--local] [--dry-run]
   -s        单场景名（src/scenarios/<name>.js）
   --tags    按场景 meta.tags 过滤批量执行（逗号=与）
-  -p        负载 profile: smoke|load|stress|spike|soak（默认 smoke）
+  -p        负载 profile: smoke|baseline|load|ladder|stress|spike|soak（默认 smoke）
   -e        环境名（config/environments/<env>.json，默认 local）
   -r / -d   覆盖目标速率 / 稳态时长
   --local   本机 k6 直跑（默认提交 k8s Job）

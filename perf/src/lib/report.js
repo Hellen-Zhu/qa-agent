@@ -33,10 +33,20 @@ export function summarize(data, testid) {
       p99: val(data, 'perf_success_duration', 'p(99)', null),
     },
     errorRate: val(data, 'http_req_failed', 'rate', 0),
-    thresholdFailures: Object.entries(data.metrics)
-      .filter(([, m]) => m.thresholds && Object.values(m.thresholds).some((t) => !t.ok))
-      .map(([name]) => name),
+    thresholdFailures: buildThresholdFailures(data, val(data, 'http_reqs', 'count', 0)),
   };
+}
+
+// thresholdFailures 驱动 run.sh 的 PASS/FAIL（长度是否为 0）。0 请求（如 preflight
+// abort：exec.test.abort 后仍会跑 handleSummary）时没有任何指标越过阈值——数组天然
+// 为空，会被判 PASS，假绿放行本该失败的一轮。合成一条 'no-samples(0-requests)'
+// 标记，让"0 样本"本身成为一种 FAIL。
+function buildThresholdFailures(data, requests) {
+  const failures = Object.entries(data.metrics)
+    .filter(([, m]) => m.thresholds && Object.values(m.thresholds).some((t) => !t.ok))
+    .map(([name]) => name);
+  if (requests === 0) failures.push('no-samples(0-requests)');
+  return failures;
 }
 
 export function toMarkers(summary) {
@@ -53,7 +63,8 @@ export function fromLogs(text) {
 export function toHtml(s) {
   const verdict = s.thresholdFailures.length === 0 ? 'PASS' : 'FAIL';
   const row = (k, v) => `<tr><th>${k}</th><td>${v}</td></tr>`;
-  const lat = (o) => (o ? `p50=${o.p50} / p95=${o.p95} / p99=${o.p99}` : '-');
+  const f = (x) => (x === null || x === undefined ? '-' : x);
+  const lat = (o) => (o ? `p50=${f(o.p50)} / p95=${f(o.p95)} / p99=${f(o.p99)}` : '-');
   return `<!doctype html><meta charset="utf-8"><title>${s.testid}</title>
 <h1>${s.testid} &mdash; ${verdict}</h1><table border="1" cellpadding="6">
 ${row('requests', s.requests)}${row('rps', Number(s.rps).toFixed(1))}

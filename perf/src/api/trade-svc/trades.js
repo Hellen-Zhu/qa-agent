@@ -1,26 +1,13 @@
 import http from 'k6/http';
-import { Trend } from 'k6/metrics';
 import * as client from '../../lib/http.js';
-import { classifyResponse, classifyRead, reasonFrom, ERR } from '../../lib/errors.js';
+import { classifyResponse, reasonFrom } from '../../lib/errors.js';
 import { getDat, datBaseName } from './trades-data.js';
 
 const SVC = 'trade-svc';
 const MOD = 'trades';
 
-// 空库守卫：每个响应的行数进 Trend，场景挂阈值 avg>0——
-// 空库上的查询数字无意义，且行数恒 0 也说明字段名猜错了，本轮同样无证明力
-export const tradesRows = new Trend('perf_trades_rows');
-
-export function queryTrades(cfg, filter, user) {
-  const { res, tags } = client.get(cfg, SVC, '/api/v1/trades', {
-    name: 'GET /api/v1/trades', module: MOD, user, params: filter,
-  });
-  const out = classifyRead(res, tags, (body) =>
-    Array.isArray(body.trades) ? null : `响应缺少 trades 数组 — keys=${Object.keys(body || {}).slice(0, 8).join(',')}`
-  );
-  if (out.errClass === ERR.OK) tradesRows.add(out.body.trades.length, tags);
-  return out;
-}
+// 读路径（queryTrades / perf_trades_rows）已拆分到 ./trades-read.js（终审 #4）：
+// 本文件保留 create + 其 trades-data 数据图，query 场景不再传递性加载用例池与 dat。
 
 /*
  * ── create 的响应契约（trade-performance 实测校准版；业务分类属于本文件，

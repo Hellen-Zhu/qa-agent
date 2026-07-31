@@ -1,7 +1,7 @@
 {
   "name": "load",
   "description": "预期流量下是否满足 SLA。升-稳-降，稳态段为 SLA 观测窗。",
-  "_override": "命令行覆盖仅作用于标量键：本 profile 的 stages 为字面量，换目标速率请编辑本文件或复制变体。速率档位应从生产真实流量推导，推导过程写在这里。",
+  "_override": "命令行覆盖仅作用于标量键：本 profile 的 stages 为字面量，换目标速率请编辑本文件或复制变体。速率档位应从生产真实流量推导，推导过程写在这里。阈值按全程评估（含升降段），非仅稳态段。",
   "scenario": {
     "executor": "ramping-arrival-rate",
     "startRate": 0, "timeUnit": "1s",

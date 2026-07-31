@@ -48,7 +48,7 @@ export function techReason(res) {
 
 /*
  * 限流现场日志：每 VU 每 (errClass, reason) 组合只完整打印前 3 条——
- * 高并发大面积失败时日志 I/O 不反噬压力机；计数看指标，逐请求明细走结果文件。
+ * 高并发大面积失败时日志 I/O 不反噬压力机；计数看指标（逐请求明细导出机制列入 P1b）。
  * 每 VU 一个 JS VM，模块级对象天然按 VU 隔离。
  */
 const LOG_CAP = 3;

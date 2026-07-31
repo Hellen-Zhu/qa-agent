@@ -9,7 +9,7 @@
       {
         "name": "testid",
         "type": "query",
-        "query": "label_values(k6_perf_ok_total, testid)",
+        "query": "label_values(k6_http_reqs_total, testid)",
         "refresh": 2,
         "sort": 2
       }
@@ -40,7 +40,7 @@
       "type": "timeseries",
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
       "targets": [
-        { "expr": "k6_perf_business_success{testid=\"$testid\"}", "legendFormat": "success rate" }
+        { "expr": "k6_perf_business_success_rate{testid=\"$testid\"}", "legendFormat": "success rate" }
       ]
     },
     {

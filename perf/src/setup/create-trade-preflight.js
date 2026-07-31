@@ -18,12 +18,16 @@ export function createTradePreflight() {
 
   const all = [];
   for (let i = 0; i < createCases.length && i < 50; i++) {
-    validateInputs(pickCase(i)).forEach((p) => all.push(`[row ${pickCase(i).__row}] ${p}`));
+    const row = pickCase(i);
+    validateInputs(row).forEach((p) => all.push(`[row ${row.__row}] ${p}`));
   }
   if (all.length > 0) {
     console.error('PREFLIGHT FAILED — 静态数据不可用:');
     all.slice(0, 10).forEach((p) => console.error('  ' + p));
     exec.test.abort(`静态数据不可用（${all.length} 处问题，见上方日志）`);
+  }
+  if (createCases.length > 50) {
+    console.log(`（仅校验前 50/${createCases.length} 行）`);
   }
   console.log('✓ 本地数据校验通过：字段完整、无占位符');
 

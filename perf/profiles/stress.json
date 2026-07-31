@@ -1,7 +1,8 @@
 {
   "name": "stress",
   "description": "open 模型阶梯倍增——拐点之后系统怎么塌（arrival-rate 下队列真实堆积）。",
-  "_verdict": "同 ladder：技术错误是测量对象，只挂业务成功率熔断线。",
+  "_verdict": "宽松熔断线以 perf_business_success（含技术性失败）计——拐点后若整体失败率持续超 50%，运行会在 delayAbortEval 3m 后被熔断（共享环境保护，仍能拿到 ≥3 分钟拐点后数据）；不挂 verdict 线与 API SLA（apiSla:false）。",
+  "apiSla": false,
   "scenario": {
     "executor": "ramping-arrival-rate",
     "startRate": 0, "timeUnit": "1s",

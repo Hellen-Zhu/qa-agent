@@ -53,7 +53,8 @@ perf/
 │   │                       #   + k6 侧：http.js、errors.js（三分类引擎）、bootstrap.js（场景装配）
 │   ├── api/                # API 客户端层，按 微服务/模块 分目录；<module>.js + <module>-data.js
 │   │   └── trade-svc/
-│   │       ├── trades.js           # queryTrades / createTrade / triggerEvent（契约分类）
+│   │       ├── trades.js           # createTrade / triggerEvent（P1b）（契约分类）
+│   │       ├── trades-read.js      # queryTrades：读路径客户端，独立于 create 数据图（不 import trades-data.js）
 │   │       └── trades-data.js      # 用例池实例化 + dat 预载
 │   ├── setup/              # preflight（本地数据闸）
 │   └── scenarios/          # 压测场景入口：trades-query.js、trades-create.js、
@@ -119,7 +120,7 @@ perf/
 
 **阈值归属（两维叠加）**：
 - **profile 级**（写在 profile JSON 的 `thresholds` 块）：业务成功率两级线与脚本零错误线——与被压的是哪个 API 无关，与"这轮想回答什么问题"有关（如 ladder 拐点之后的技术错误恰是要测的东西，刻意不熔断）；
-- **API 级**（config/slas/，见第 7 节）：分位数延迟 SLA——装配时按场景所压 API 叠加进 thresholds。
+- **API 级**（config/slas/，见第 7 节）：分位数延迟 SLA——装配时按场景所压 API 叠加进 thresholds。探索型 profile（ladder/stress/baseline）可在 profile JSON 顶层加 `"apiSla": false` 豁免这一层——拐点/崩塌形态或单用户基准下延迟分位数 SLA 无意义，仍强制校验 slaKey 存在（配错 key 快速失败，不因豁免被掩盖）；
 - 速率档位应从生产真实流量推导（如生产 ~120 笔/天 → rate=1/s 已是生产峰值的数百倍），推导过程写进 profile 的 `_` 注释键，不拍脑袋。
 
 ## 5. 身份与 API 客户端层
@@ -148,14 +149,14 @@ perf/
   - 数据内容随环境失效（id 不跨环境），换环境重新采集同一文件；采集时间与来源记在行的 `note` 字段。
 - **preflight（setup 阶段本地数据闸）**：开跑前逐行校验用例池——占位符（TBC/TODO/N/A 类模式，注意**不含** PERF 前缀——专用 PERF portfolio 是合法真值）、缺字段、空池即 `exec.test.abort`，并报出具体行号。**不发探针请求**（只验第一行是抽样冒充证明，且污染请求计数）；"数据今天是否仍有效"由两层机制回答：大轮次前同会话先跑 smoke + 长跑 profile 的业务成功率宽松熔断线。
 - **读路径：字段池模型（`data/trade-svc/trades-query.json`）**：查询过滤条件组合（日期区间、状态、counterparty），字段间无有效性关联，池内自由轮换即可；覆盖多样条件防缓存热点造成虚假乐观结果。
-- **唯一性与标记**：payload **不接受额外自定义字段**（trade-performance 已实测——原设计的 clientRef 注入字段作废），客户端唯一标识只存在于结果文件（`PERF-r<row>-<phase>` 形式）；压测数据识别与清理依赖"专用 PERF portfolio + 状态 + 时间窗"组合，专用 portfolio 的真实值在环境启用时确认。
+- **唯一性与标记**：payload **不接受额外自定义字段**（trade-performance 已实测——原设计的 clientRef 注入字段作废），客户端唯一标识机制列入 P1b（当前 payload 不接受额外字段，无逐请求标识落盘）；压测数据识别与清理依赖"专用 PERF portfolio + 状态 + 时间窗"组合，专用 portfolio 的真实值在环境启用时确认。
 - **数据铺底（P1，seed/）**：lifecycle 事件需要处于特定状态的 trade。seed 脚本预先 book 一批 trade 并通过 `trigger-event` 推进到目标状态，输出 trade ID 清单文件供压测场景消费。
 - **环境准备 checklist（docs/）**：压测环境 trade 表存量数据需接近生产量级；数据库、下游依赖容量核对项以文档 checklist 形式维护，不写入代码。
 
 ## 7. SLA、熔断与安全防护
 
 - **SLA 集中管理（config/slas/）**：按 API 定义分位数阈值（p95/p99），场景装配时生成 k6 `thresholds` 并与 profile 级阈值叠加（见第 4 节），运行结束自动判 PASS/FAIL（进程退出码体现，为 P2 接 CI 门禁打基础）。**分位数阈值挂在 `perf_success_duration{name:<api>}` 上而非 http_req_duration**——失败请求（尤其快速拒绝）会拉低分位数使容量虚高，SLA 只对业务成功的请求有意义。SLA 具体数值待业务方/现有监控水位确认（见第 11 节遗留问题）。
-- **两级熔断（2026-07-31 融合修订，取代单线设计）**：`perf_business_success` 上两条线各司其职——严格线（如 `rate>0.99`，无 abortOnFail）是**跑完后的 verdict**；宽松线（`rate>0.50` + `abortOnFail` + `delayAbortEval: '3m'`）是**熔断器**，只杀"整体性业务拒绝"的必死之局（数据失效，无论发生在启动时还是第 3 小时）。宽松是刻意的：低吞吐下零星合法瞬时失败不能中止长跑；delayAbortEval 先让样本量积起来。ladder 类探索型 profile 只挂熔断线不挂 verdict 线——拐点之后的技术错误恰是要测量的对象。
+- **两级熔断（2026-07-31 融合修订，取代单线设计）**：`perf_business_success` 上两条线各司其职——严格线（如 `rate>0.99`，无 abortOnFail）是**跑完后的 verdict**；宽松线（`rate>0.50` + `abortOnFail` + `delayAbortEval: '3m'`）是**熔断器**，只杀"整体性业务拒绝"的必死之局（数据失效，无论发生在启动时还是第 3 小时）。宽松是刻意的：低吞吐下零星合法瞬时失败不能中止长跑；delayAbortEval 先让样本量积起来。ladder 类探索型 profile 只挂熔断线不挂 verdict 线——拐点之后的技术错误恰是要测量的对象。**诚实说明**：`perf_business_success` 把技术性失败也计为失败（三分类中只有 `ok` 计入成功），因此宽松线在整体性技术崩塌（而非单纯数据失效）时同样会触发——对 ladder/stress 这类探索型 profile 而言，这条线的作用因此是"共享环境保护"（防止一次探索性压测把环境打死太久），而非验收意义上的 verdict。
 - **环境白名单**：`config/environments/` 中不存在 prod 配置；框架启动时校验目标域名在白名单内，否则拒绝执行。
 - **资源防护**：Job 设置 CPU/内存 limit 与 `ttlSecondsAfterFinished` 自动回收；profile 内置 maxVUs 上限。
 
@@ -165,7 +166,7 @@ perf/
 - **testid 约定**：每次运行生成唯一 `testid`（`<场景>-<YYYYMMDD-HHmmss>`）作为全局标签，Grafana 按 testid 下拉筛选任意一次历史压测（官方 dashboard 自带 testid 变量，`run.sh` 生成的 testid 直接可用）。
 - **dashboards/ 内容**（均为 JSON 进版本库）：
   1. **官方 k6 Prometheus dashboard（ID 19665，已在使用）**——展示 k6 内置指标（RPS、http_req_duration 分位数、错误率、VU 数），继续沿用，导出一份固定版本入库防漂移；
-  2. **业务指标 dashboard（自建）**——官方面板只覆盖内置指标，自定义指标需自建面板：三分类错误计数（`k6_perf_err_technical/business/script_total` 按 `reason` 下钻）、`k6_perf_business_success`、`k6_perf_success_duration_p95/p99`（融合修订后取代原 booking 专属指标，按 `name`/`service`/`module`/`row` 标签切片）。P1a 落地时同步更新 `dashboards/perf-trade-business.json`。
+  2. **业务指标 dashboard（自建）**——官方面板只覆盖内置指标，自定义指标需自建面板：三分类错误计数（`k6_perf_err_technical/business/script_total` 按 `reason` 下钻）、`k6_perf_business_success_rate`、`k6_perf_success_duration_p95/p99`（融合修订后取代原 booking 专属指标，按 `name`/`service`/`module`/`row` 标签切片）。P1a 落地时同步更新 `dashboards/perf-trade-business.json`。
 - **与服务端指标串联**（压测后排障的关键路径，三个机制递进）：
   1. **同源数据**：k6 指标与服务端指标写入同一个 Prometheus，天然可在任意 dashboard 混排——自建业务 dashboard 底部直接加一组服务端资源面板（CPU/内存/GC/线程池/DB 连接池，PromQL 与现有服务端 dashboard 一致，按 service 变量过滤），压测曲线与资源曲线上下对齐一屏看完；
   2. **带时间窗跳转**：压测 dashboard 顶部配置 dashboard link 到各服务端 dashboard，URL 携带 `?from=${__from}&to=${__to}`，点击即以当前压测时间窗打开服务端视图，无需手动对时间；
@@ -240,7 +241,7 @@ k6 run -e ENV=dev -e PROFILE=smoke src/scenarios/trades-query.js
 - **P1b：lifecycle 场景**（trigger-event + seeding + 基线对比，原 P1 内容，在新机制上实现）。
 - **P2 端到端场景**：引入 journey 层（think time、软依赖降级、失败短路防 404 洪水），scenario→journey→step 三层仅在 E2E 场景启用，单 API 场景维持现有两层。
 - **API catalog 治理（延后，规模驱动）**：当 API 数量增长到需要覆盖率治理时启用生成式 catalog——清单由各服务 Swagger/OpenAPI 自动同步（可复用本仓库 `parse_swagger.py` 经验），优先级为唯一人工列（Prometheus QPS 排名输出建议值辅助），覆盖列由场景元数据反向计算；届时场景 `meta` 增加 `covers` 字段声明所覆盖端点。
-- **WebSocket（P2）**：k6 原生支持 ws 协议；在 `api/` 层新增 ws 客户端模块，`lib/metrics.js` 增加消息延迟指标，无架构变更。
+- **WebSocket（P2）**：k6 原生支持 ws 协议；在 `api/` 层新增 ws 客户端模块，`lib/errors.js` 增加消息延迟指标，无架构变更。
 - **CI 集成（P2）**：SLA 判定已体现在退出码，接入 CI 仅需增加流水线配置。
 - **分布式/平台化（远期）**：替换 `deploy/` 为 k6-operator TestRun CRD（`parallelism: N` + 数据分片）；Web 平台后端通过 k8s API 创建 Job/TestRun，脚本层不变。
 

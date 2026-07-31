@@ -58,7 +58,9 @@ function applyOverrides(sc) {
  * 标准 options 组装。thresholds 三层叠加（spec §4/§7）：
  *   1. 底线（任何 profile 都必须成立）：perf_err_script count==0——脚本错误=本轮作废
  *   2. profile 级（profiles/<name>.json 的 thresholds 块）：业务成功率 verdict/熔断两级线
- *   3. API 级（config/slas/）：perf_success_duration 分位数 SLA
+ *   3. API 级（config/slas/）：perf_success_duration 分位数 SLA——探索型 profile（拐点/
+ *      崩塌形态是测量目标本身）可用顶层 "apiSla": false 豁免这一层，仍强制校验 slaKey
+ *      存在（配错 key 必须快速失败，不因豁免而被掩盖）
  *   4. extra：场景专属附加（如 query 的空库守卫）
  */
 export function buildOptions(slaFile, slaKey, extraThresholds) {
@@ -67,12 +69,13 @@ export function buildOptions(slaFile, slaKey, extraThresholds) {
   const sla = JSON.parse(open(import.meta.resolve(`../../config/slas/${slaFile}.json`)));
   const entry = sla[slaKey];
   if (!entry) throw new Error(`unknown SLA key: ${slaKey} in ${slaFile}`);
+  const apiSla = profile.apiSla !== false;
   return {
     scenarios: { main: scenario },
     thresholds: Object.assign(
       { perf_err_script: ['count==0'] },
       stripComments(profile.thresholds || {}),
-      buildThresholds(entry),
+      apiSla ? buildThresholds(entry) : {},
       extraThresholds || {},
     ),
     summaryTrendStats: ['avg', 'med', 'p(95)', 'p(99)'],

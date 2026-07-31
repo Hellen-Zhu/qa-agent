@@ -2,7 +2,7 @@ import exec from 'k6/execution';
 import { cfg, loadData, buildOptions } from '../lib/bootstrap.js';
 import { pickUser } from '../lib/users.js';
 import { pickAt } from '../lib/data.js';
-import { queryTrades } from '../api/trade-svc/trades.js';
+import { queryTrades } from '../api/trade-svc/trades-read.js';
 
 export const meta = { tags: ['P0', 'trade-svc', 'read'] };
 

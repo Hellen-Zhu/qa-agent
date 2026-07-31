@@ -4,6 +4,9 @@
 - `trades-create.json` — create 用例池：一行 = 一个完整可跑用例。行号 `__row` 装载时自动注入，
   作为指标 tag（哪行数据坏了直接从指标切出）；无人工维护的 id 列。
 
+读路径客户端（`src/api/trade-svc/trades-read.js`）与写路径客户端（`trades.js`）代码分离，
+原因是读场景不应加载 create 用例池与 dat 二进制——两者互不 import。
+
 ## 为什么归属字段内嵌一行，且必须同源
 
 静态供数没有 live 查询兜底，**任何手工拼装都可能造出现实中不存在的组合**——

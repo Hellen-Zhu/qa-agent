@@ -43,6 +43,18 @@ set -euo pipefail
 K6_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$K6_ROOT"
 
+# ── One clock everywhere: UTC ────────────────────────────────
+# The servers log in UTC, and half the point of k6.log/manifest is lining
+# them up with server logs -- a +08:00 log against a UTC log means mental
+# arithmetic on every incident. TZ is inherited by the k6 child process
+# (k6 is Go; Go honors TZ on every platform, and "UTC" needs no tzdata),
+# so its time="..." log lines land in UTC, and the date calls below make
+# runId / the results day folder UTC as well. Consequence, deliberate:
+# a run at 07:00 Beijing files under the *previous* UTC day -- one clock
+# across k6.log, manifest, Grafana queries and server logs beats a familiar
+# clock in one place. Epoch fields were always timezone-free.
+export TZ=UTC
+
 usage() {
     echo "usage: $0 <plan> <env> <profile> [KEY=value ...]" >&2
     echo "" >&2
@@ -112,6 +124,7 @@ command -v k6 >/dev/null 2>&1 || {
 
 # Stamp is taken ONCE and the day folder is derived from it -- calling date
 # twice could straddle midnight and put the run under the wrong day.
+# UTC via the TZ export above, matching the k6.log line timestamps exactly.
 STAMP="$(date +%Y%m%d-%H%M%S)"
 RUN_DAY="${STAMP%%-*}"
 RUN_ID="${PLAN}_${ENV}_${PROFILE}_${STAMP}"

@@ -101,6 +101,11 @@ trade-performance/
                                     （按日期分层，一天的跑批归一个文件夹）
 ```
 
+**时区统一 UTC**：runner 会 `export TZ=UTC`，k6.log 行首时间戳、runId、
+日期目录全部按 UTC——服务器日志就是 UTC，对账不用再心算 +8。
+代价（有意为之）：北京时间上午 8 点前的 run 会落在前一个 UTC 日的目录里；
+manifest 里的 `epochMillis` 与时区无关，任何时候都能精确对表。
+
 三维正交的意思：计划 × 环境 × 负载互相独立，任意组合，
 `./run.sh <plan> <env> <profile>` 就是这三维的坐标。
 

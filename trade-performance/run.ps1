@@ -71,6 +71,17 @@ try {
 $K6Root = $PSScriptRoot
 Set-Location $K6Root
 
+# ── One clock everywhere: UTC ────────────────────────────────
+# The servers log in UTC; k6.log must line up with them without +08:00
+# mental arithmetic. k6 is Go, and Go honors the TZ env var on every
+# platform ("UTC" is built into Go's time package -- no tzdata needed on
+# Windows), so this makes its time="..." log lines UTC.
+# ⚠ PowerShell itself IGNORES TZ -- Get-Date stays local -- which is why
+# $Stamp below uses [DateTime]::UtcNow explicitly instead of relying on
+# this variable. Same consequence as run.sh, deliberate: a morning run in
+# Beijing files under the previous UTC day.
+$env:TZ = 'UTC'
+
 function Show-Usage {
     Write-Host "usage: .\run.ps1 <plan> <env> <profile> [KEY=value ...]" -ForegroundColor Yellow
     Write-Host ""
@@ -131,7 +142,9 @@ if (-not (Get-Command k6 -ErrorAction SilentlyContinue)) {
 # ── Run identity ─────────────────────────────────────────────
 # Stamp is taken ONCE and the day folder is derived from it -- asking for the
 # date twice could straddle midnight and put the run under the wrong day.
-$Stamp  = Get-Date -Format 'yyyyMMdd-HHmmss'
+# UtcNow, not Get-Date: PowerShell ignores $env:TZ (see the UTC block above),
+# and the stamp must match the k6.log line timestamps exactly.
+$Stamp  = [DateTime]::UtcNow.ToString('yyyyMMdd-HHmmss')
 $RunDay = $Stamp.Split('-')[0]
 $RunId  = "${Plan}_${TargetEnv}_${ProfileName}_$Stamp"
 # One folder per day: results\<YYYYMMDD>\<runId>\. The runId keeps its own

@@ -13,17 +13,20 @@ export function uniqueRef(vu, iter, runId) {
   return `PERF-${runId}-${vu}-${iter}`;
 }
 
-// trade JSON part。字段集合对齐真实 create 接口；
-// portfolioId=PERF_TEST 是压测数据标记（spec 遗留问题 #3，字段可换）；
-// clientRef 承载唯一标记（真实字段名待确认，spec 遗留问题 #3/#4）。
-export function buildTradePart(counterparties, vu, iter, runId) {
-  const cp = pick(counterparties, vu, iter);
+// trade JSON part。字段集合对齐真实 create 接口，业务取值全部来自该 API 的
+// 专属数据文件 data/trade-svc/trades-create.json（portfolioId/notionalCurrencies/
+// counterparties），工厂只负责组装与唯一性：
+// - portfolioId=PERF_TEST 为压测数据标记默认值（spec 遗留问题 #3，字段可换）；
+// - notionalCurrencies 为币种池（扩多币种前需确认与 dat 产品定义一致，遗留问题 #4）；
+// - clientRef 承载唯一标记（真实字段名待确认，spec 遗留问题 #3/#4）。
+export function buildTradePart(data, vu, iter, runId) {
+  const cp = pick(data.counterparties, vu, iter);
   return {
     basic: {
-      portfolioId: 'PERF_TEST',
+      portfolioId: data.portfolioId,
       counterpartyFmId: cp.counterpartyFmId,
       counterpartyName: cp.counterpartyName,
-      notionalCurrency: '',
+      notionalCurrency: pick(data.notionalCurrencies, vu, iter),
       clientRef: uniqueRef(vu, iter, runId),
     },
   };

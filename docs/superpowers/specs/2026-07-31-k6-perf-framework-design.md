@@ -59,7 +59,9 @@ perf/
 │   └── scenarios/          # 压测场景入口：trades-query.js、trades-create.js、
 │                           #   lifecycle-events.js (P1)、mixed.js (P2)
 ├── data/
-│   ├── params/             # JSON 参数池：counterparties、portfolio、查询条件组合
+│   ├── trade-svc/          # 每个 API 一个专属数据文件：<scenario>.json，压该 API 所需的全部参数
+│   │   ├── trades-query.json    # { filters: [...] } 查询条件组合
+│   │   └── trades-create.json   # { portfolioId, notionalCurrencies, counterparties }
 │   └── datfiles/           # 各产品类型的 dat 模板文件：FX_TRF.dat 等
 ├── seed/                   # P1：数据铺底脚本
 ├── deploy/                 # job.yaml 模板、run.sh（不含 Dockerfile，镜像/脚本注入由公司侧机制提供）
@@ -120,9 +122,9 @@ perf/
 
 ## 6. 测试数据管理
 
-- **Multipart 组装工厂（payloads/）**：`trades/create` 实际为 multipart/form-data 请求，含两个 part：`trade`（JSON 字符串，portfolioId、counterpartyFmId 等字段参数化，取值来自 `data/params/` JSON 参数池）和 `datFile`（产品定义文件，`http.file()` 上传）。工厂函数职责：按产品类型从 `data/datfiles/` 选择 dat 模板（init 阶段 `open(..., 'b')` 预加载）+ 生成参数化的 trade JSON part。不同产品类型（TRF 等）各自维护 dat 模板，扩产品 = 加一个 dat 文件 + 注册到工厂。
+- **Multipart 组装工厂（payloads/）**：`trades/create` 实际为 multipart/form-data 请求，含两个 part：`trade`（JSON 字符串，portfolioId、counterpartyFmId 等字段参数化，取值来自该 API 的专属数据文件 `data/trade-svc/trades-create.json`）和 `datFile`（产品定义文件，`http.file()` 上传）。工厂函数职责：按产品类型从 `data/datfiles/` 选择 dat 模板（init 阶段 `open(..., 'b')` 预加载）+ 生成参数化的 trade JSON part。不同产品类型（TRF 等）各自维护 dat 模板，扩产品 = 加一个 dat 文件 + 注册到工厂。
 - **唯一性**：trade JSON part 中可参数化的标识字段由 `VU编号-迭代号-时间戳` 生成，避免唯一键冲突。
-- **查询多样性**：`/trades` 查询覆盖日期区间、状态、counterparty 等过滤条件组合（组合定义在 `data/params/` JSON），防止缓存热点造成虚假乐观结果。
+- **查询多样性**：`/trades` 查询覆盖日期区间、状态、counterparty 等过滤条件组合（定义在 `data/trade-svc/trades-query.json`），防止缓存热点造成虚假乐观结果。
 - **压测数据标记**：压测产生的 trade 使用专用标识（如 counterparty/book 固定为 `PERF_TEST`，具体字段实现时与开发确认），用于压测后清理及下游系统（风控、结算、报表）排除。
 - **数据铺底（P1，seed/）**：lifecycle 事件需要处于特定状态的 trade。seed 脚本预先 book 一批 trade 并通过 `trigger-event` 推进到目标状态，输出 trade ID 清单文件供压测场景消费。
 - **环境准备 checklist（docs/）**：压测环境 trade 表存量数据需接近生产量级；数据库、下游依赖容量核对项以文档 checklist 形式维护，不写入代码。

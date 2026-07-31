@@ -24,7 +24,7 @@ k6 inspect -e ENV=local src/scenarios/trades-query.js
 - `config/environments/` 环境（服务地址映射、白名单、promRwUrl、身份池）；**仓库内全部为 localhost/示例占位，真实值仅在内网填写；没有也不允许有 prod**
 - `config/slas/` 按 服务/模块 组织的 SLA 阈值（当前为占位水位，见环境清单）
 - `src/lib` 框架层：纯逻辑模块（config/users/data/sla/report，Node 可加载）+ k6 侧模块（http.js、metrics.js、bootstrap.js——场景装配层，集中 cfg/参数池加载与 options/handleSummary 组装，场景文件只写业务编排）；`src/api/<service>/<module>.js` API 客户端层
-- `src/payloads` multipart 组装工厂；`data/datfiles/` 产品 dat 模板（占位，须替换）
+- `data/<service>/<scenario>.json` **每个 API 一个专属数据文件**，压该 API 所需的全部参数池都在这一个文件里；`data/datfiles/` 产品 dat 模板（跨 API 复用的二进制资产，占位，须替换）；`src/payloads` multipart 组装工厂
 - `src/profiles` smoke/load/stress/spike/soak；`src/scenarios` 场景入口
 - `deploy/` run.sh 与 Job 模板（镜像/脚本注入由公司侧机制提供）；`dashboards/` Grafana JSON
 - `tools/` meta 提取、报告提取/渲染
@@ -33,7 +33,7 @@ k6 inspect -e ENV=local src/scenarios/trades-query.js
 
 - 场景文件必须导出静态 `meta = { tags: [...] }`；`P0/P1/P2` tag 表达优先级
 - `run.sh --tags` 是框架参数（用例选择）；k6 的 `--tag` 是指标标签，由 run.sh 注入 testid，用户不手写
-- 新增 API：在 `src/api/<service>/` 加函数（统一走 `lib/http.js` 三动词）；新增产品：`data/datfiles/` 加 dat + `payloads/factory.js` 注册
+- 新增 API：在 `src/api/<service>/` 加函数（统一走 `lib/http.js` 三动词）+ 建 `data/<service>/<scenario>.json` 专属数据文件；新增产品：`data/datfiles/` 加 dat + `payloads/factory.js` 注册
 
 ## 真实环境启用
 

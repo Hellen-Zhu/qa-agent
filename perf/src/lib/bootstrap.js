@@ -16,9 +16,10 @@ export const TESTID = __ENV.TESTID || 'local-run';
 // baseUrl 不在此导出——场景不接触 URL，服务地址由 api 层经 serviceBaseUrl(cfg, svc) 解析。
 export const cfg = parseEnvConfig(open(import.meta.resolve(`../../config/environments/${ENV}.json`)));
 
-// data/params/<name>.json 参数池（仅 init 阶段可调用——open() 在 VU 阶段不可用）
-export function loadParams(name) {
-  return JSON.parse(open(import.meta.resolve(`../../data/params/${name}.json`)));
+// 每个 API 一个专属数据文件：data/<service>/<scenario>.json，
+// 压该 API 所需的全部参数池都在这一个文件里（仅 init 阶段可调用——open() 在 VU 阶段不可用）
+export function loadData(path) {
+  return JSON.parse(open(import.meta.resolve(`../../data/${path}.json`)));
 }
 
 // data/datfiles/<file> 二进制 dat 模板（仅 init 阶段可调用）

@@ -1,5 +1,6 @@
-// 参数池确定性选取：vu*31+iter 让不同 VU/迭代散布到不同参数，避免全场压同一条热点。
-export function pick(pool, vu, iter) {
+// 参数池确定性取数：i 为全局单调游标（exec.scenario.iterationInTest），
+// 均匀覆盖且可复现——取代旧的 vu*31+iter 哈希（有偏斜、arrival 模型下不可复现）。
+export function pickAt(pool, i) {
   if (!Array.isArray(pool) || pool.length === 0) throw new Error('empty param pool');
-  return pool[(Math.abs(vu) * 31 + Math.abs(iter)) % pool.length];
+  return pool[Math.abs(i) % pool.length];
 }

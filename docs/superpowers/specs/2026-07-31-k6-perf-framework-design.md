@@ -175,25 +175,35 @@ API 数量增长后，"哪些先压、哪些后压"靠 `config/api-catalog.yaml`
 
 **方法论默认：单 API 场景 + 套件串行**。多个 API 同时压时共享资源（DB、网关、线程池）互相竞争，任一 API 的劣化都无法归因——"一次只变一个变量"。并行形态用于容量演练，而不是日常 SLA 验证。
 
-### 10.2 套件（suite）运行：按优先级批量执行
+### 10.2 按 tag 筛选批量执行（Cucumber 风格）
 
-"先跑所有 P0"不靠 tag 手工筛，靠 `api-catalog.yaml`：`run.sh --suite P0` 从 catalog 过滤出 `priority: P0` 且已覆盖的场景清单，逐个提交 Job 串行执行（每个场景独立 testid、独立报告），全部结束后汇总一张 PASS/FAIL 总表。`--suite P0,P1` 支持多级。
+k6 没有 Cucumber 式的用例选择 tag（k6 的 "tag" 是指标维度，用于结果分析过滤，不是用例选择；一次 `k6 run` 只认一个入口文件）。框架自行实现同等体验——每个场景文件导出元数据声明 tags，`run.sh` 扫描 `src/scenarios/` 过滤执行：
+
+```js
+// src/scenarios/trades-create.js
+export const meta = { tags: ['P0', 'trade-svc', 'write'] };
+```
 
 ```bash
 # 单场景触发（渲染 job.yaml → kubectl apply → 输出 Grafana 链接与 testid）
 ./run.sh -s trades-query -p load -e uat [-r 50 -d 10m]
 
-# 套件运行：catalog 中全部 P0 场景依次执行，输出汇总表
-./run.sh --suite P0 -p load -e uat
+# tag 筛选：所有标 P0 的场景串行执行，输出 PASS/FAIL 汇总表
+./run.sh --tags P0 -p load -e uat
+./run.sh --tags P0,trade-svc -p smoke -e dev   # 多 tag 取交集
 
 # 本地调试（同一套脚本，行为一致，打印请求/响应细节）
 k6 run -e ENV=dev -e PROFILE=smoke src/scenarios/trades-query.js
 ```
 
+每个命中的场景仍是独立 k6 运行（独立 testid、独立报告），默认串行执行（见 10.1 方法论）。
+
+**场景 tag 与 api-catalog 的分工**：场景 tag 回答"这个脚本属于哪些集合"（选择机制，Cucumber 式贴在代码旁）；catalog 回答"系统有哪些 API、什么优先级、是否已被场景覆盖"（治理机制）。两者可脚本化交叉校验——场景标 P0 但 catalog 中其覆盖的 API 均非 P0 时告警，防止两处口径漂移。
+
 ### 10.3 交付物
 
 - Dockerfile 基于 k6 官方镜像 COPY 脚本与配置；镜像 tag 与 git commit 关联保证可追溯。
-- `run.sh` 负责参数校验、testid 生成、manifest 渲染（envsubst）、提交 Job、tail 日志；suite 模式追加 catalog 解析与汇总表输出。
+- `run.sh` 负责参数校验、testid 生成、manifest 渲染（envsubst）、提交 Job、tail 日志；`--tags` 模式追加场景元数据扫描与 PASS/FAIL 汇总表输出。
 
 ## 11. 遗留问题（实现前需确认）
 

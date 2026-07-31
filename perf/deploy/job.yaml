@@ -1,0 +1,43 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: k6-${TESTID}
+  labels:
+    app: k6-perf
+    testid: "${TESTID}"
+spec:
+  ttlSecondsAfterFinished: 3600
+  backoffLimit: 0
+  template:
+    metadata:
+      labels:
+        app: k6-perf
+        testid: "${TESTID}"
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: k6
+          image: ${IMAGE}
+          workingDir: /perf
+          command: ["k6", "run",
+            "--tag", "testid=${TESTID}",
+            "-e", "ENV=${ENV_NAME}",
+            "-e", "PROFILE=${PROFILE}",
+            "-e", "TESTID=${TESTID}",
+            "-e", "RATE=${RATE_OPT}",
+            "-e", "DURATION=${DURATION_OPT}",
+            "src/scenarios/${SCENARIO}.js"]
+          env:
+            - name: K6_OUT
+              value: "${K6_OUT_VALUE}"
+            - name: K6_PROMETHEUS_RW_SERVER_URL
+              value: "${PROM_RW_URL}"
+            - name: K6_PROMETHEUS_RW_TREND_STATS
+              value: "p(95),p(99)"
+          resources:
+            requests:
+              cpu: "1"
+              memory: "1Gi"
+            limits:
+              cpu: "2"
+              memory: "2Gi"

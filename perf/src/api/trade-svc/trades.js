@@ -1,7 +1,7 @@
 import http from 'k6/http';
 import * as client from '../../lib/http.js';
 import { classifyResponse, reasonFrom } from '../../lib/errors.js';
-import { getDat, datBaseName } from './trades-data.js';
+import { getDat, datName } from './trades-data.js';
 
 const SVC = 'trade-svc';
 const MOD = 'trades';
@@ -46,8 +46,8 @@ export function validateInputs(caseRow) {
     if (!v || !String(v).trim()) problems.push(`${k} 未解析（检查数据文件路径与字段名，见 ./trades-data.js）`);
     else if (PLACEHOLDER.test(v)) problems.push(`${k}='${v}' 仍是占位符（见 data/trade-svc/README.md）`);
   });
-  if (!caseRow.datFile || !String(caseRow.datFile).trim()) {
-    problems.push('datFile 未解析（检查数据文件路径与字段名，见 ./trades-data.js）');
+  if (!caseRow.productType || !String(caseRow.productType).trim()) {
+    problems.push('productType 未解析（dat 按 productType 同名约定定位，见 ./trades-data.js）');
   }
   return problems;
 }
@@ -56,7 +56,7 @@ export function validateInputs(caseRow) {
 export function createTrade(cfg, caseRow, user, runPhase) {
   const body = {
     trade: buildTradePayload(caseRow),
-    datFile: http.file(getDat(caseRow.datFile), datBaseName(caseRow.datFile), 'application/octet-stream'),
+    datFile: http.file(getDat(caseRow.productType), datName(caseRow.productType), 'application/octet-stream'),
   };
   const { res, tags } = client.postMultipart(cfg, SVC, '/api/v1/trades/create', body, {
     name: 'POST /api/v1/trades/create', module: MOD, user,

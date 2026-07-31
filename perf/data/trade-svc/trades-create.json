@@ -1,14 +1,14 @@
 {
   "_comment": [
-    "create 用例池：一行 = 一个完整可跑用例（dat 引用 + 归属字段内嵌同一行）。",
+    "create 用例池：一行 = 一个完整可跑用例（productType + 归属字段内嵌同一行）。",
     "纪律：整行必须同源采集自同一份真实 curl（系统 Web 界面建单 + DevTools Copy as cURL），",
     "禁止跨行/跨文件拼装字段——手工组合可能是现实中不存在的归属关系（见本目录 README.md）。",
-    "datFile 相对 data/datfiles/。当前为本地联调占位假值（形式合法、可过 preflight），",
-    "内网启用时逐行替换为真实采集值，并在 note 记录采集时间与来源。"
+    "dat 按同名约定定位：data/datfiles/products/<productType>/<productType>.dat，行内不写路径。",
+    "当前为本地联调占位假值（形式合法、可过 preflight），内网启用时逐行替换为真实采集值，",
+    "并在 note 记录采集时间与来源。"
   ],
   "rows": [
     {
-      "datFile": "products/FX_TRF/fx_trf_01.dat",
       "productType": "FX_TRF",
       "notionalCurrency": "USD",
       "portfolioId": "PERF-PF-A",
@@ -17,7 +17,6 @@
       "note": "本地占位（2026-07-31），非真实采集"
     },
     {
-      "datFile": "products/FX_TRF/fx_trf_01.dat",
       "productType": "FX_TRF",
       "notionalCurrency": "USD",
       "portfolioId": "PERF-PF-A",

@@ -8,7 +8,7 @@ run.sh dry-run（tag 筛选、Job manifest 渲染）。
 - [ ] Prometheus 开启 `--web.enable-remote-write-receiver`，地址填入 `promRwUrl`（遗留问题 #1）
 - [ ] SLA 目标值与业务方确认，替换 `config/slas/` 占位水位（遗留问题 #2）
 - [ ] 压测数据识别与清理依赖"专用 PERF portfolio + 状态 + 时间窗"（payload 不接受额外字段，clientRef 方案已废除）；专用 portfolio 真实值建立后填入用例池各行 portfolioId（遗留问题 #3）
-- [ ] 用例池同源采集：系统 Web 界面建单 + DevTools 对 POST /trades/create Copy as cURL，逐行填入 `data/trade-svc/trades-create.json`（归属三字段整组同源，勿拼装；真实 .dat 另存 `data/datfiles/products/<productType>/`；每换 productType/counterparty 采一次；采集样本放 `_samples/` 不入库）；验证同一 dat 高频重复提交是否触发幂等/去重/日期校验（遗留问题 #4）
+- [ ] 用例池同源采集：系统 Web 界面建单 + DevTools 对 POST /trades/create Copy as cURL，逐行填入 `data/trade-svc/trades-create.json`（归属三字段整组同源，勿拼装；真实 .dat 按同名约定另存为 `data/datfiles/products/<productType>/<productType>.dat`（行内只写 productType，框架自动定位）；每换 productType/counterparty 采一次；采集样本放 `_samples/` 不入库）；验证同一 dat 高频重复提交是否触发幂等/去重/日期校验（遗留问题 #4）
 - [ ] create/query 响应契约核对：create 成功契约按校准版实现（code=200 + status='PENDING APPROVAL' + data.trade.id ~ TRD-\d+），首跑确认版本未变；query 假设响应含 `trades` 数组且行数>0（perf_trades_rows 空库守卫）
 - [ ] 镜像内 k6 版本 ≥ 0.55（与本地验证版本行为一致：空 K6_OUT 容忍、experimental-prometheus-rw 输出名、K6_PROMETHEUS_RW_TREND_STATS 支持）
 - [ ] 5 个微服务清单（服务名/地址/模块）补入 `config/environments/` 与 `src/api/`（遗留问题 #6）

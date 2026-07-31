@@ -16,7 +16,8 @@ portfolio 属于 A 台、counterparty 未在 A 台开户。服务端业务拒绝
 - `counterpartyFmId` 与 `counterpartyName` 服务端做一致性校验，禁止两处拼凑；
 - 三个归属字段必须**整组来自同一份真实 curl**（系统 Web 界面建单，DevTools 对
   `POST /trades/create` Copy as cURL）——这一份 curl 同时给出：配对的归属真值、
-  真实 .dat 文件（另存到 `../datfiles/products/<productType>/`）、payload 结构与 header 集合。
+  真实 .dat 文件（按同名约定另存为 `../datfiles/products/<productType>/<productType>.dat`——
+  行内不写路径，框架按 productType 自动定位）、payload 结构与 header 集合。
 
 ## 数据有效性由两层机制守护（preflight 不发请求）
 

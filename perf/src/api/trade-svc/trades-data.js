@@ -29,26 +29,37 @@ export function pickCase(i) {
   return createCases[Math.abs(i) % createCases.length];
 }
 
-// ── dat 按行引用预载：只加载数据文件实际引用的文件 ──
-const DAT_ROOT = '../../../data/datfiles/';
+// ── dat 约定预载：productType → data/datfiles/products/<productType>/<productType>.dat ──
+// 约定优于配置：行里只写 productType，dat 按同名约定定位——数据文件无路径字符串可打错，
+// 加产品 = 放一个约定命名的文件 + 加一行数据。同一产品需要多个 dat 样本时，
+// 再为行增加可选 datFile 覆盖列（当前 YAGNI）。只预加载数据文件实际引用的产品。
+const DAT_ROOT = '../../../data/datfiles/products/';
+// productType 会拼进文件路径：先过字符集闸（顺带在装载时就拦住拼写异常）
+const PRODUCT_TYPE_RE = /^[A-Za-z0-9_-]+$/;
 const datBinaries = {};
 for (let i = 0; i < createCases.length; i++) {
-  const rel = String(createCases[i].datFile || '').replace(/\\/g, '/');
-  if (!rel || datBinaries[rel] !== undefined) continue;
-  datBinaries[rel] = open(import.meta.resolve(DAT_ROOT + rel), 'b');
+  const pt = createCases[i].productType || '';
+  if (!pt || datBinaries[pt] !== undefined) continue;
+  if (!PRODUCT_TYPE_RE.test(pt)) {
+    throw new Error(
+      `${DATA_FILE} 第 ${createCases[i].__row} 行 productType='${pt}' 含非法字符（仅允许字母/数字/_/-）`
+    );
+  }
+  datBinaries[pt] = open(import.meta.resolve(`${DAT_ROOT}${pt}/${pt}.dat`), 'b');
 }
 
-export function getDat(relPath) {
-  const b = datBinaries[String(relPath || '').replace(/\\/g, '/')];
+export function getDat(productType) {
+  const b = datBinaries[productType];
   if (b === undefined) {
-    throw new Error(`dat 未预载: ${relPath}——检查 ${DATA_FILE} 的 datFile 字段与 data/datfiles/ 是否一致`);
+    throw new Error(
+      `dat 未预载: ${productType}——确认 data/datfiles/products/${productType}/${productType}.dat 存在` +
+      `且 ${DATA_FILE} 的 productType 拼写一致`
+    );
   }
   return b;
 }
 
-/** multipart 上传文件名取路径末段（路径分隔符统一 /，防 Windows 反斜杠混入文件名） */
-export function datBaseName(relPath) {
-  const p = String(relPath || '').replace(/\\/g, '/');
-  const i = p.lastIndexOf('/');
-  return i < 0 ? p : p.slice(i + 1);
+/** multipart 上传文件名：按约定即 <productType>.dat */
+export function datName(productType) {
+  return `${productType}.dat`;
 }

@@ -63,8 +63,8 @@ perf/
 ├── data/
 │   ├── trade-svc/          # 每个 API 专属数据：<scenario>.json（一行=一个完整同源用例）
 │   │   ├── trades-query.json    # { filters: [...] } 查询字段池
-│   │   └── trades-create.json   # { datFile, productType, notionalCurrency, portfolioId, ... }
-│   └── datfiles/           # 各产品类型的 dat 样本文件（按 products/<productType>/ 组织）
+│   │   └── trades-create.json   # { productType, notionalCurrency, portfolioId, ... }（行内不写 dat 路径）
+│   └── datfiles/           # dat 样本，同名约定：products/<productType>/<productType>.dat
 ├── seed/                   # P1：数据铺底脚本
 ├── deploy/                 # job.yaml 模板、run.sh（不含 Dockerfile，镜像/脚本注入由公司侧机制提供）
 ├── tools/                  # 辅助脚本：meta 提取、报告提取/渲染
@@ -141,11 +141,11 @@ perf/
 
 > 2026-07-31 融合修订：**写路径改用"用例行"模型**（取自 trade-performance，评估见第 13 节），读路径保留字段池模型。分界标准：字段间存在业务有效性关联（portfolio 归属、counterparty 开户关系、dat 产品定义）→ 用例行；字段间无关联约束（查询过滤条件）→ 字段池。
 
-- **写路径：用例行模型（`data/trade-svc/trades-create.json`）**——一行 = 一个完整可跑用例：`datFile` 引用 + `productType` + `notionalCurrency` + 三个归属字段（portfolioId/counterpartyFmId/counterpartyName）内嵌同一行。核心纪律：**整行必须同源采集自同一份真实 curl**（DevTools 复制真实建单请求）——静态供数没有 live 查询兜底，任何手工拼装都可能造出现实中不存在的组合（portfolio 属于 A 台、counterparty 未在 A 台开户），服务端业务拒绝在报告里呈现为"错误率升高"，看起来像性能问题实际是数据问题。配套机制：
+- **写路径：用例行模型（`data/trade-svc/trades-create.json`）**——一行 = 一个完整可跑用例：`productType` + `notionalCurrency` + 三个归属字段（portfolioId/counterpartyFmId/counterpartyName）内嵌同一行。核心纪律：**整行必须同源采集自同一份真实 curl**（DevTools 复制真实建单请求）——静态供数没有 live 查询兜底，任何手工拼装都可能造出现实中不存在的组合（portfolio 属于 A 台、counterparty 未在 A 台开户），服务端业务拒绝在报告里呈现为"错误率升高"，看起来像性能问题实际是数据问题。配套机制：
   - 行号 `__row` 装载时自动注入并作为指标 tag——"哪行数据坏了"直接从指标切出；
   - 数据经 SharedArray 共享（全 VU 一份），**全局游标轮换**（`exec.scenario.iterationInTest % 行数`）——均匀覆盖且可复现，取代 hash 取数；
   - 数据文件可经 `CREATE_DATA_FILE` 覆盖切换**变体池**（如锁竞争对照实验：全部行填同一组归属值），不改脚本；
-  - dat 按 `data/datfiles/products/<productType>/` 目录组织，**每行引用自己的 dat**（同一产品可多个样本）；只预加载数据文件实际引用的 dat；
+  - dat 按**同名约定**定位：`data/datfiles/products/<productType>/<productType>.dat`——行内只写 productType，无路径字符串可打错；只预加载数据文件实际引用的产品；productType 装载时过字符集闸（进路径的值必须先验）。同一产品需多个 dat 样本时再加可选 datFile 覆盖列（当前 YAGNI）；
   - 数据内容随环境失效（id 不跨环境），换环境重新采集同一文件；采集时间与来源记在行的 `note` 字段。
 - **preflight（setup 阶段本地数据闸）**：开跑前逐行校验用例池——占位符（TBC/TODO/N/A 类模式，注意**不含** PERF 前缀——专用 PERF portfolio 是合法真值）、缺字段、空池即 `exec.test.abort`，并报出具体行号。**不发探针请求**（只验第一行是抽样冒充证明，且污染请求计数）；"数据今天是否仍有效"由两层机制回答：大轮次前同会话先跑 smoke + 长跑 profile 的业务成功率宽松熔断线。
 - **读路径：字段池模型（`data/trade-svc/trades-query.json`）**：查询过滤条件组合（日期区间、状态、counterparty），字段间无有效性关联，池内自由轮换即可；覆盖多样条件防缓存热点造成虚假乐观结果。

@@ -46,25 +46,64 @@
 ```
 perf/
 ├── config/
-│   ├── environments/       # dev.json / uat.json：baseUrl、Prometheus RW 地址（不存在 prod 配置）
-│   └── slas/               # 按 API 定义 SLA 阈值，集中管理
-├── src/
-│   ├── lib/                # 框架层：auth.js、http.js、data.js、metrics.js、checks.js
-│   ├── api/                # API 客户端层：trades.js（queryTrades / createTrade / triggerEvent）
-│   ├── payloads/           # FX 产品 payload 工厂（forward、vanilla option、TARF 等）
+│   ├── environments/       # dev.json / uat.json：各微服务 baseUrl 映射、Prometheus RW 地址（不存在 prod 配置）
+│   ├── slas/               # SLA 阈值，按 服务/模块/API 三级组织，集中管理
+│   └── api-catalog.yaml    # API 清单：服务/模块/端点/优先级/SLA引用/场景覆盖状态（见 3.2）
+├── src/                    # 只存放会被 k6 引擎加载执行的 JavaScript 代码
+│   ├── lib/                # 框架层：users.js（身份池）、http.js、data.js、metrics.js、checks.js
+│   ├── api/                # API 客户端层，按 微服务/模块 分目录（见 3.1）
+│   │   └── trade-svc/
+│   │       └── trades.js   # queryTrades / createTrade / triggerEvent
+│   ├── payloads/           # multipart 组装工厂：参数化 trade JSON + 按产品选择 dat 模板
 │   ├── profiles/           # 负载模型：smoke / load / stress / spike / soak
 │   └── scenarios/          # 压测场景入口：trades-query.js、trades-create.js、
 │                           #   lifecycle-events.js (P1)、mixed.js (P2)
-├── data/                   # CSV 参数池：currency pairs、counterparties、查询条件组合
+├── data/
+│   ├── params/             # JSON 参数池：counterparties、portfolio、查询条件组合
+│   └── datfiles/           # 各产品类型的 dat 模板文件：FX_TRF.dat 等
 ├── seed/                   # P1：数据铺底脚本
 ├── deploy/                 # Dockerfile、job.yaml 模板、run.sh
-├── dashboards/             # Grafana dashboard JSON
+├── dashboards/             # Grafana dashboard JSON（见第 8 节）
 ├── baselines/              # 各场景性能基线（JSON）
 ├── reports/                # 报告归档（整目录 gitignore；需长期保留的结果晋升为 baselines/ 基线）
 └── docs/                   # 使用说明、环境准备 checklist
 ```
 
-**分层原则**：场景脚本中不出现 URL、token、阈值。业务动作编排在 `scenarios/`，接口细节在 `api/`，环境在 `config/`，负载形状在 `profiles/`。高频变更（换环境、换负载等级、加 API）各自只动一处。
+**src/ 的收纳规则**：`src/` 只放会被 k6 引擎加载执行的 JS 代码；`config/` 和 `data/` 是静态声明性资源，由代码通过 `open()` 读取。边界即"代码 vs 数据"——改参数池、调 SLA、换环境不需要碰任何逻辑代码，降低误改风险；镜像构建时数据层与代码层也可分层缓存。
+
+**分层原则**：场景脚本中不出现 URL、请求头、阈值。业务动作编排在 `scenarios/`，接口细节在 `api/`，环境在 `config/`，负载形状在 `profiles/`。高频变更（换环境、换负载等级、加 API）各自只动一处。
+
+**参数池格式**：统一用 JSON（k6 原生 `open()` + `JSON.parse` + `SharedArray`，零外部依赖）。k6 v0.53+ 虽有 `k6/experimental/csv` 模块，但仍属实验性；而 papaparse 等 jslib 需远程 import，在无外网的 k8s 集群内不可用。若源数据来自 Excel/CSV 导出，入库前转换为 JSON。
+
+### 3.1 多微服务组织
+
+系统含 5 个微服务，各服务下分模块，模块下多个 API。三级映射规则：
+
+- **服务 → 目录**：`src/api/<service>/`，每个服务一个目录；
+- **模块 → 文件**：`src/api/<service>/<module>.js`，模块内 API 是该文件导出的函数；
+- **服务地址**：`config/environments/<env>.json` 中维护 `services` 映射（每个服务独立 host:port），api 层按服务名取 baseUrl，场景代码不感知地址。
+
+所有指标统一附加 `service`、`module` 标签（与 `tags.name` 并列），Grafana 可按服务/模块下钻聚合。
+
+### 3.2 API 清单与优先级治理
+
+API 数量增长后，"哪些先压、哪些后压"靠 `config/api-catalog.yaml` 治理——每个 API 一条记录：
+
+```yaml
+- service: trade-svc
+  module: trades
+  endpoint: POST /api/v1/trades/create
+  priority: P0          # 见下方定级标准
+  sla: slas/trade-svc/trades.json#create
+  scenario: trades-create    # 覆盖它的场景；空 = 尚未覆盖
+```
+
+**定级标准**（满足任一升级为更高优先级）：
+- **P0**：交易日高频路径、涉及资金/交易状态变更、生产监控 QPS 排名靠前；
+- **P1**：常用查询与生命周期操作、有性能风险特征（复杂查询、大 payload）；
+- **P2**：低频后台/管理类接口。
+
+新 API 上线时先登记进 catalog 再排期写场景；catalog 中 `priority: P0` 且 `scenario` 为空的记录即压测覆盖缺口，可脚本化输出覆盖率报告。
 
 ## 4. 负载模型（profiles）
 
@@ -82,17 +121,17 @@ perf/
 - closed model（`ramping-vus`）作为备用，用于模拟固定 trader 人数的行为。
 - 目标 RPS、时长、maxVUs 可通过环境变量在触发时覆盖；profile 内置 maxVUs 上限，防止误配置打挂共享环境。
 
-## 5. 认证与 API 客户端层
+## 5. 身份与 API 客户端层
 
-- **认证模块（lib/auth.js）**：`setup()` 阶段登录获取 token；支持多用户 token 池（多个 trader/sales 身份轮换）；token 按过期时间自动刷新——soak 场景运行超过 token 有效期时必需。
-- **API 封装（api/trades.js）**：每个 API 一个函数，统一设置 `tags.name`（如 `GET /trades`）；URL 中的动态 trade ID 必须归一化进 tag，避免 Prometheus 指标基数爆炸。
+- **身份模块（lib/users.js）**：系统无 token 认证，统一通过 `X-User-Id` 请求头传递身份（如 `maker@sc.com`）。身份池在 `config/` 中按角色维护（maker / checker 各若干），场景按业务动作选择角色——create 用 maker，approve/checker 类事件用 checker（maker-checker 四眼原则下 P1 lifecycle 场景必须双角色协作）。无 token 过期问题，soak 场景无需刷新逻辑。
+- **HTTP 统一封装（lib/http.js）**：对 `k6/http` 的薄封装，所有 API 调用经它发出，集中处理：按服务名解析 baseUrl；注入默认请求头（`X-User-Id`、`Accept`）；强制要求规范化的 `tags.name` 并附加 `service`/`module` 标签（URL 中动态 trade ID 归一化进 tag，避免 Prometheus 指标基数爆炸）；统一记录自定义指标与通用断言。api 层因此保持一行一调用的薄结构。
 - **双层断言**：HTTP 状态码校验 + 业务响应体校验（HTTP 200 但 body 含业务错误码计为失败）。关键业务动作建独立自定义指标：`trade_booking_duration`（Trend）、`trade_booking_errors`（Counter），区分 HTTP 层与业务层健康度。
 
 ## 6. 测试数据管理
 
-- **Payload 工厂（payloads/）**：booking 请求体由工厂函数生成，currency pair、notional、tenor、product type 从 `data/` CSV 参数池随机组合，避免单一 payload 只压中同一代码路径和缓存。
-- **唯一性**：client trade reference 由 `VU编号-迭代号-时间戳` 生成，避免唯一键冲突。
-- **查询多样性**：`/trades` 查询覆盖日期区间、状态、counterparty 等过滤条件组合（组合定义在 `data/` CSV），防止缓存热点造成虚假乐观结果。
+- **Multipart 组装工厂（payloads/）**：`trades/create` 实际为 multipart/form-data 请求，含两个 part：`trade`（JSON 字符串，portfolioId、counterpartyFmId 等字段参数化，取值来自 `data/params/` JSON 参数池）和 `datFile`（产品定义文件，`http.file()` 上传）。工厂函数职责：按产品类型从 `data/datfiles/` 选择 dat 模板（init 阶段 `open(..., 'b')` 预加载）+ 生成参数化的 trade JSON part。不同产品类型（TRF 等）各自维护 dat 模板，扩产品 = 加一个 dat 文件 + 注册到工厂。
+- **唯一性**：trade JSON part 中可参数化的标识字段由 `VU编号-迭代号-时间戳` 生成，避免唯一键冲突。
+- **查询多样性**：`/trades` 查询覆盖日期区间、状态、counterparty 等过滤条件组合（组合定义在 `data/params/` JSON），防止缓存热点造成虚假乐观结果。
 - **压测数据标记**：压测产生的 trade 使用专用标识（如 counterparty/book 固定为 `PERF_TEST`，具体字段实现时与开发确认），用于压测后清理及下游系统（风控、结算、报表）排除。
 - **数据铺底（P1，seed/）**：lifecycle 事件需要处于特定状态的 trade。seed 脚本预先 book 一批 trade 并通过 `trigger-event` 推进到目标状态，输出 trade ID 清单文件供压测场景消费。
 - **环境准备 checklist（docs/）**：压测环境 trade 表存量数据需接近生产量级；数据库、下游依赖容量核对项以文档 checklist 形式维护，不写入代码。
@@ -106,9 +145,12 @@ perf/
 
 ## 8. 可观测性与 Grafana
 
-- k6 通过内置 `experimental-prometheus-rw` 输出指标至现有 Prometheus，Trend 指标配置 p95/p99 统计。
-- **testid 约定**：每次运行生成唯一 `testid`（`<场景>-<YYYYMMDD-HHmmss>`）作为全局标签，Grafana 按 testid 下拉筛选任意一次历史压测。
-- **压测 Dashboard（dashboards/*.json，版本管理）**：RPS、P95/P99 延迟、错误率、VU 数、checks 通过率、业务自定义指标；排障时与现有服务端 Dashboard 使用相同时间窗对照。
+- k6 通过内置 `experimental-prometheus-rw` 输出指标至现有 Prometheus，Trend 指标配置 p95/p99 统计。**所有指标（含自定义业务指标）都会以 `k6_` 前缀写入**——remote write 不区分内置与自定义。
+- **testid 约定**：每次运行生成唯一 `testid`（`<场景>-<YYYYMMDD-HHmmss>`）作为全局标签，Grafana 按 testid 下拉筛选任意一次历史压测（官方 dashboard 自带 testid 变量，`run.sh` 生成的 testid 直接可用）。
+- **dashboards/ 内容**（均为 JSON 进版本库）：
+  1. **官方 k6 Prometheus dashboard（ID 19665，已在使用）**——展示 k6 内置指标（RPS、http_req_duration 分位数、错误率、VU 数），继续沿用，导出一份固定版本入库防漂移；
+  2. **业务指标 dashboard（自建）**——官方面板只覆盖内置指标，`k6_trade_booking_duration` 等自定义业务指标需要自建面板，并按 `service`/`module` 标签下钻；
+  3. 排障时与现有服务端 Dashboard 使用相同时间窗对照。
 
 ## 9. 报告与基线对比
 
@@ -133,9 +175,10 @@ k6 run -e ENV=dev -e PROFILE=smoke src/scenarios/trades-query.js
 
 1. **Prometheus remote-write receiver 是否开启**——方案唯一外部依赖，实现计划第一步验证；不通则用 Pushgateway 备选。
 2. **各 API 的 SLA 目标值**——需业务方给出或从现有监控水位推导（如 query p95 < 300ms、create p95 < 800ms 仅为占位示例，不作为默认值写入）。
-3. **压测数据标记字段**——用 counterparty、book 还是自定义字段标记 `PERF_TEST`，需与开发确认对下游无副作用。
-4. **认证方式细节**——token 获取端点与刷新机制，实现 `lib/auth.js` 时确认。
+3. **压测数据标记字段**——用 counterparty、portfolio 还是自定义字段标记 `PERF_TEST`，需与开发确认对下游无副作用。
+4. **dat 文件是否需要参数化**——同一 dat 模板高频重复提交是否会触发幂等/去重逻辑或字段校验（如交易日期过期）；若 dat 为文本格式，可做模板变量替换，实现时用真实文件验证。
 5. **混合场景流量配比（P2）**——真实交易日各操作比例，届时从生产访问日志/监控统计。
+6. **5 个微服务的清单**——服务名、各自地址与核心模块，填充 `config/environments/` 与 `api-catalog.yaml` 时提供。
 
 ## 12. 演进路径
 

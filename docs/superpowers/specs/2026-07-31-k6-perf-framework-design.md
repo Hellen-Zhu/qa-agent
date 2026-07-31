@@ -61,7 +61,7 @@ perf/
 │   ├── params/             # JSON 参数池：counterparties、portfolio、查询条件组合
 │   └── datfiles/           # 各产品类型的 dat 模板文件：FX_TRF.dat 等
 ├── seed/                   # P1：数据铺底脚本
-├── deploy/                 # Dockerfile、job.yaml 模板、run.sh
+├── deploy/                 # job.yaml 模板、run.sh（不含 Dockerfile，镜像/脚本注入由公司侧机制提供）
 ├── tools/                  # 辅助脚本：基线对比等
 ├── dashboards/             # Grafana dashboard JSON（见第 8 节）
 ├── baselines/              # 各场景性能基线（JSON）
@@ -193,8 +193,9 @@ k6 run -e ENV=dev -e PROFILE=smoke src/scenarios/trades-query.js
 
 ### 10.3 交付物
 
-- Dockerfile 基于 k6 官方镜像 COPY 脚本与配置；镜像 tag 与 git commit 关联保证可追溯。
+- 仓库不交付 Dockerfile：Job 镜像须内含 k6 与 `/perf` 下的 config/src/data，由公司镜像流程构建或以 ConfigMap 挂载脚本（见遗留问题 #7）；镜像地址经 `K6_IMAGE` 环境变量传给 run.sh。
 - `run.sh` 负责参数校验、testid 生成、manifest 渲染（envsubst）、提交 Job、tail 日志；`--tags` 模式追加场景元数据扫描与 PASS/FAIL 汇总表输出。
+- 仓库内一切主机地址与业务数据（counterparty、身份账号）使用占位符，真实值仅在公司内网填写。
 
 ## 11. 遗留问题（实现前需确认）
 
@@ -203,7 +204,8 @@ k6 run -e ENV=dev -e PROFILE=smoke src/scenarios/trades-query.js
 3. **压测数据标记字段**——用 counterparty、portfolio 还是自定义字段标记 `PERF_TEST`，需与开发确认对下游无副作用。
 4. **dat 文件是否需要参数化**——同一 dat 模板高频重复提交是否会触发幂等/去重逻辑或字段校验（如交易日期过期）；若 dat 为文本格式，可做模板变量替换，实现时用真实文件验证。
 5. **混合场景流量配比（P2）**——真实交易日各操作比例，届时从生产访问日志/监控统计。
-6. **5 个微服务的清单**——服务名、各自地址与核心模块，填充 `config/environments/` 时提供。
+6. **5 个微服务的清单**——服务名、各自地址与核心模块，填充 `config/environments/` 时提供（仓库内保持 localhost 占位）。
+7. **k8s Job 的脚本注入方式**——公司镜像流程（内置 k6 + perf 内容）或 ConfigMap 挂载，二选一与平台组确认；本仓库不交付 Dockerfile。
 
 ## 12. 演进路径
 

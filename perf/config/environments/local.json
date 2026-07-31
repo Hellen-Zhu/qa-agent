@@ -1,0 +1,10 @@
+{
+  "name": "local",
+  "whitelist": ["localhost", "127.0.0.1"],
+  "promRwUrl": "",
+  "services": { "trade-svc": "http://localhost:9089" },
+  "users": {
+    "maker": ["maker1@example.com", "maker2@example.com"],
+    "checker": ["checker1@example.com"]
+  }
+}

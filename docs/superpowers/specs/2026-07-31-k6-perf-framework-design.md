@@ -47,25 +47,26 @@
 perf/
 ├── config/
 │   ├── environments/       # dev.json / uat.json：各微服务 baseUrl 映射、Prometheus RW 地址（不存在 prod 配置）
-│   └── slas/               # SLA 阈值，按 服务/模块/API 三级组织，集中管理
+│   └── slas/               # API 级分位数 SLA，按 服务/模块/API 三级组织，集中管理
 ├── src/                    # 只存放会被 k6 引擎加载执行的 JavaScript 代码
-│   ├── lib/                # 框架层：纯逻辑模块（config/users/data/sla/report，Node 可加载）
-│   │                       #   + k6 侧：http.js、metrics.js、bootstrap.js（场景装配：cfg/参数池/options/handleSummary）
-│   ├── api/                # API 客户端层，按 微服务/模块 分目录（见 3.1）
+│   ├── lib/                # 纯逻辑模块（config/users/data/rows/sla/report，Node 可加载）
+│   │                       #   + k6 侧：http.js、errors.js（三分类引擎）、bootstrap.js（场景装配）
+│   ├── api/                # API 客户端层，按 微服务/模块 分目录；<module>.js + <module>-data.js
 │   │   └── trade-svc/
-│   │       └── trades.js   # queryTrades / createTrade / triggerEvent
-│   ├── payloads/           # multipart 组装工厂：参数化 trade JSON + 按产品选择 dat 模板
-│   ├── profiles/           # 负载模型：smoke / load / stress / spike / soak
+│   │       ├── trades.js           # queryTrades / createTrade / triggerEvent（契约分类）
+│   │       └── trades-data.js      # 用例池实例化 + dat 预载
+│   ├── setup/              # preflight（本地数据闸）
 │   └── scenarios/          # 压测场景入口：trades-query.js、trades-create.js、
 │                           #   lifecycle-events.js (P1)、mixed.js (P2)
+├── profiles/               # 负载 profile（JSON 声明式，见 §4）
 ├── data/
-│   ├── trade-svc/          # 每个 API 一个专属数据文件：<scenario>.json，压该 API 所需的全部参数
-│   │   ├── trades-query.json    # { filters: [...] } 查询条件组合
-│   │   └── trades-create.json   # { portfolioId, notionalCurrencies, counterparties }
-│   └── datfiles/           # 各产品类型的 dat 模板文件：FX_TRF.dat 等
+│   ├── trade-svc/          # 每个 API 专属数据：<scenario>.json（一行=一个完整同源用例）
+│   │   ├── trades-query.json    # { filters: [...] } 查询字段池
+│   │   └── trades-create.json   # { datFile, productType, notionalCurrency, portfolioId, ... }
+│   └── datfiles/           # 各产品类型的 dat 样本文件（按 products/<productType>/ 组织）
 ├── seed/                   # P1：数据铺底脚本
 ├── deploy/                 # job.yaml 模板、run.sh（不含 Dockerfile，镜像/脚本注入由公司侧机制提供）
-├── tools/                  # 辅助脚本：基线对比等
+├── tools/                  # 辅助脚本：meta 提取、报告提取/渲染
 ├── dashboards/             # Grafana dashboard JSON（见第 8 节）
 ├── baselines/              # 各场景性能基线（JSON）
 ├── reports/                # 报告归档（整目录 gitignore；需长期保留的结果晋升为 baselines/ 基线）

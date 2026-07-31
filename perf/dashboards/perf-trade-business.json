@@ -9,7 +9,7 @@
       {
         "name": "testid",
         "type": "query",
-        "query": "label_values(k6_http_reqs_total, testid)",
+        "query": "label_values(k6_perf_ok_total, testid)",
         "refresh": 2,
         "sort": 2
       }
@@ -17,21 +17,38 @@
   },
   "panels": [
     {
-      "title": "trade_booking_duration p95/p99 (ms)",
+      "title": "success-only duration p95/p99 (ms) — SLA 观测对象",
       "type": "timeseries",
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
       "targets": [
-        { "expr": "k6_trade_booking_duration_p95{testid=\"$testid\"}", "legendFormat": "p95" },
-        { "expr": "k6_trade_booking_duration_p99{testid=\"$testid\"}", "legendFormat": "p99" }
+        { "expr": "k6_perf_success_duration_p95{testid=\"$testid\"}", "legendFormat": "p95" },
+        { "expr": "k6_perf_success_duration_p99{testid=\"$testid\"}", "legendFormat": "p99" }
       ]
     },
     {
-      "title": "business / booking errors per second",
+      "title": "errors per second by class",
       "type": "timeseries",
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
       "targets": [
-        { "expr": "rate(k6_business_errors_total{testid=\"$testid\"}[1m])", "legendFormat": "business errors" },
-        { "expr": "rate(k6_trade_booking_errors_total{testid=\"$testid\"}[1m])", "legendFormat": "booking errors" }
+        { "expr": "rate(k6_perf_err_technical_total{testid=\"$testid\"}[1m])", "legendFormat": "technical" },
+        { "expr": "rate(k6_perf_err_business_total{testid=\"$testid\"}[1m])", "legendFormat": "business" },
+        { "expr": "rate(k6_perf_err_script_total{testid=\"$testid\"}[1m])", "legendFormat": "script" }
+      ]
+    },
+    {
+      "title": "business success rate",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "targets": [
+        { "expr": "k6_perf_business_success{testid=\"$testid\"}", "legendFormat": "success rate" }
+      ]
+    },
+    {
+      "title": "business errors by data row (数据坏行定位)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "targets": [
+        { "expr": "sum by (row, reason) (rate(k6_perf_err_business_total{testid=\"$testid\"}[1m]))", "legendFormat": "row {{row}} {{reason}}" }
       ]
     }
   ]

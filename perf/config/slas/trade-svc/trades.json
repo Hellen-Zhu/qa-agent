@@ -1,4 +1,4 @@
 {
-  "query": { "name": "GET /api/v1/trades", "p95": 300, "p99": 800, "errorRate": 0.01 },
-  "create": { "name": "POST /api/v1/trades/create", "p95": 800, "p99": 2000, "errorRate": 0.01 }
+  "query": { "name": "GET /api/v1/trades", "p95": 300, "p99": 800 },
+  "create": { "name": "POST /api/v1/trades/create", "p95": 800, "p99": 2000 }
 }

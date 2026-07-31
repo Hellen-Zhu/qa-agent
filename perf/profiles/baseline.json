@@ -1,0 +1,10 @@
+{
+  "name": "baseline",
+  "description": "单用户基准——系统空闲时一笔要多久。一切对比的分母，并发目标的推导输入。没有它，'P95 慢了 30%' 没有意义。",
+  "_sample_size": "样本数 = 时长/单笔耗时。单笔 20s 时 300s 只有 15 个样本，P95 无意义；样本不足加 -e DURATION=1800s。",
+  "scenario": {
+    "executor": "constant-vus",
+    "vus": 1, "duration": "300s"
+  },
+  "thresholds": {}
+}

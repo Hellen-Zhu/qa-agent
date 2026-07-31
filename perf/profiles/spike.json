@@ -1,0 +1,21 @@
+{
+  "name": "spike",
+  "description": "突发流量：瞬间打至高位再回落（如行情剧烈波动时的集中交易）。",
+  "scenario": {
+    "executor": "ramping-arrival-rate",
+    "startRate": 0, "timeUnit": "1s",
+    "preAllocatedVUs": 50, "maxVUs": 200,
+    "stages": [
+      { "duration": "10s", "target": 100 },
+      { "duration": "1m", "target": 100 },
+      { "duration": "10s", "target": 20 },
+      { "duration": "2m", "target": 20 }
+    ]
+  },
+  "thresholds": {
+    "perf_business_success": [
+      { "threshold": "rate>0.99" },
+      { "threshold": "rate>0.50", "abortOnFail": true, "delayAbortEval": "3m" }
+    ]
+  }
+}

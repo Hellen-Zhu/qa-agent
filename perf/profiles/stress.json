@@ -1,0 +1,22 @@
+{
+  "name": "stress",
+  "description": "open 模型阶梯倍增——拐点之后系统怎么塌（arrival-rate 下队列真实堆积）。",
+  "_verdict": "同 ladder：技术错误是测量对象，只挂业务成功率熔断线。",
+  "scenario": {
+    "executor": "ramping-arrival-rate",
+    "startRate": 0, "timeUnit": "1s",
+    "preAllocatedVUs": 50, "maxVUs": 200,
+    "stages": [
+      { "duration": "2m", "target": 20 },
+      { "duration": "2m", "target": 40 },
+      { "duration": "2m", "target": 60 },
+      { "duration": "2m", "target": 80 },
+      { "duration": "1m", "target": 0 }
+    ]
+  },
+  "thresholds": {
+    "perf_business_success": [
+      { "threshold": "rate>0.50", "abortOnFail": true, "delayAbortEval": "3m" }
+    ]
+  }
+}

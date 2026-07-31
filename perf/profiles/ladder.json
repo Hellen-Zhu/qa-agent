@@ -1,0 +1,21 @@
+{
+  "name": "ladder",
+  "description": "closed 模型阶梯升 VU——找容量拐点（TPS 不再随 VU 上升、P95 陡升即拐点）。",
+  "_closed_model": "closed 模型：VU 发一收一，服务端变慢压力随之衰减，系统性低估过载后果。只用于找拐点；拐点之后的行为用 stress（open 模型）。",
+  "_verdict": "只挂熔断线不挂 verdict 线：ladder 的通过标准是找到拐点而非验收；拐点之后的技术错误恰是要测量的对象，刻意不因此熔断。",
+  "scenario": {
+    "executor": "ramping-vus",
+    "startVUs": 1, "gracefulRampDown": "30s",
+    "stages": [
+      { "duration": "60s", "target": 2 }, { "duration": "300s", "target": 2 },
+      { "duration": "60s", "target": 4 }, { "duration": "300s", "target": 4 },
+      { "duration": "60s", "target": 8 }, { "duration": "300s", "target": 8 },
+      { "duration": "60s", "target": 12 }, { "duration": "300s", "target": 12 }
+    ]
+  },
+  "thresholds": {
+    "perf_business_success": [
+      { "threshold": "rate>0.50", "abortOnFail": true, "delayAbortEval": "3m" }
+    ]
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "name": "load",
+  "description": "预期流量下是否满足 SLA。升-稳-降，稳态段为 SLA 观测窗。",
+  "_override": "命令行覆盖仅作用于标量键：本 profile 的 stages 为字面量，换目标速率请编辑本文件或复制变体。速率档位应从生产真实流量推导，推导过程写在这里。",
+  "scenario": {
+    "executor": "ramping-arrival-rate",
+    "startRate": 0, "timeUnit": "1s",
+    "preAllocatedVUs": 20, "maxVUs": 100,
+    "stages": [
+      { "duration": "2m", "target": 20 },
+      { "duration": "10m", "target": 20 },
+      { "duration": "1m", "target": 0 }
+    ]
+  },
+  "thresholds": {
+    "_circuitBreaker": "两级线：严格线是跑完后的 verdict；宽松线+abortOnFail 是熔断器，只杀整体性业务拒绝（数据失效）的必死之局。宽松是刻意的——低吞吐下零星合法瞬时失败不能中止长跑；delayAbortEval 先让样本量积起来。",
+    "perf_business_success": [
+      { "threshold": "rate>0.99" },
+      { "threshold": "rate>0.50", "abortOnFail": true, "delayAbortEval": "3m" }
+    ]
+  }
+}

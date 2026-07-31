@@ -1,0 +1,12 @@
+{
+  "name": "smoke",
+  "description": "脚本、数据、链路此刻通不通。大轮次前同一会话必跑——这同时是静态数据仍然有效的真实验证。",
+  "scenario": {
+    "executor": "constant-arrival-rate",
+    "rate": 2, "timeUnit": "1s", "duration": "1m",
+    "preAllocatedVUs": 5, "maxVUs": 10
+  },
+  "thresholds": {
+    "perf_business_success": ["rate>0.99"]
+  }
+}

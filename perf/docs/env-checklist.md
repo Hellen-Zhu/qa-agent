@@ -14,7 +14,7 @@ run.sh dry-run（tag 筛选、Job manifest 渲染）。
 - [ ] 5 个微服务清单（服务名/地址/模块）补入 `config/environments/` 与 `src/api/`（遗留问题 #6）
 - [ ] X-User-Id 身份（maker/checker 真实账号）填入环境文件并确认在目标环境有效
 - [ ] k8s 脚本注入方式（本仓库不交付 Dockerfile）：公司镜像流程内置 k6 + `/perf` 内容（workingDir 与 job.yaml 一致），或 ConfigMap 挂载——二选一实施，镜像地址经 `K6_IMAGE` 传入；`K6_NAMESPACE` 建立并有 Job 创建权限
-- [ ] 两份 dashboard 导入现网 Grafana，确认 testid 变量与业务指标面板出数；官方 19665 面板中 k6_checks_rate 图恒为空（框架已不使用 check()），首次看板评审勿当作故障
+- [ ] 导入 `perf-trade-business.json`（单板总览，日常主看板）到现网 Grafana，确认 testid 变量与各面板出数；官方 19665 现网已装、仓库份仅为固定版本存档（若全新 Grafana 才需一并导入）；板顶跳转链接指向 19665 的 uid（`ccbb2351-...`），若现网实例 uid 不同需改链接；19665 中 k6_checks_rate 图恒为空（框架已不使用 check()），首次看板评审勿当作故障
 - [ ] 服务端指标串联配置（依赖现网信息）：业务 dashboard 底部补服务端资源面板（PromQL 参照现有服务端 dashboard，按 service 过滤）；顶部加带 `?from=${__from}&to=${__to}` 的 dashboard link 跳转到各服务端 dashboard
 - [ ] 压测环境 trade 表存量数据接近生产量级（空表查询无参考价值）
 - [ ] 首跑顺序：smoke（1 分钟）→ 确认 Grafana 出数、报告生成、服务端无异常 → 再 load

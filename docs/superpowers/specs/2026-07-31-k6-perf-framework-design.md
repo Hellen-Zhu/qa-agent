@@ -166,7 +166,7 @@ perf/
 - **testid 约定**：每次运行生成唯一 `testid`（`<场景>-<YYYYMMDD-HHmmss>`）作为全局标签，Grafana 按 testid 下拉筛选任意一次历史压测（官方 dashboard 自带 testid 变量，`run.sh` 生成的 testid 直接可用）。
 - **dashboards/ 内容**（均为 JSON 进版本库）：
   1. **官方 k6 Prometheus dashboard（ID 19665，已在使用）**——展示 k6 内置指标（RPS、http_req_duration 分位数、错误率、VU 数），继续沿用，导出一份固定版本入库防漂移；
-  2. **业务指标 dashboard（自建）**——官方面板只覆盖内置指标，自定义指标需自建面板：三分类错误计数（`k6_perf_err_technical/business/script_total` 按 `reason` 下钻）、`k6_perf_business_success_rate`、`k6_perf_success_duration_p95/p99`（融合修订后取代原 booking 专属指标，按 `name`/`service`/`module`/`row` 标签切片）。P1a 落地时同步更新 `dashboards/perf-trade-business.json`。
+  2. **单板总览 dashboard（自建，`perf-trade-business.json`，日常主看板）**——同一块板上半为 HTTP 层（RPS、`k6_http_req_duration_p95/p99` 全请求延迟、VU 数、失败率），下半为业务层（三分类错误计数按 `reason` 下钻、`k6_perf_business_success_rate`、`k6_perf_success_duration_p95/p99`、按 `row` 定位坏行）——两类指标查的是同一 Prometheus 数据，单板即可对照，无需在两块板间切换；板顶带跳转链接（keepTime + includeVars）指向官方 19665 作深入参考。官方板保持原样以便随上游升级。
 - **与服务端指标串联**（压测后排障的关键路径，三个机制递进）：
   1. **同源数据**：k6 指标与服务端指标写入同一个 Prometheus，天然可在任意 dashboard 混排——自建业务 dashboard 底部直接加一组服务端资源面板（CPU/内存/GC/线程池/DB 连接池，PromQL 与现有服务端 dashboard 一致，按 service 变量过滤），压测曲线与资源曲线上下对齐一屏看完；
   2. **带时间窗跳转**：压测 dashboard 顶部配置 dashboard link 到各服务端 dashboard，URL 携带 `?from=${__from}&to=${__to}`，点击即以当前压测时间窗打开服务端视图，无需手动对时间；

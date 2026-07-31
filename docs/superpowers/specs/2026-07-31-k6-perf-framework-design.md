@@ -124,7 +124,7 @@ API 数量增长后，"哪些先压、哪些后压"靠 `config/api-catalog.yaml`
 ## 5. 身份与 API 客户端层
 
 - **身份模块（lib/users.js）**：系统无 token 认证，统一通过 `X-User-Id` 请求头传递身份（如 `maker@sc.com`）。身份池在 `config/` 中按角色维护（maker / checker 各若干），场景按业务动作选择角色——create 用 maker，approve/checker 类事件用 checker（maker-checker 四眼原则下 P1 lifecycle 场景必须双角色协作）。无 token 过期问题，soak 场景无需刷新逻辑。
-- **HTTP 统一封装（lib/http.js）**：对 `k6/http` 的薄封装，所有 API 调用经它发出，集中处理：按服务名解析 baseUrl；注入默认请求头（`X-User-Id`、`Accept`）；强制要求规范化的 `tags.name` 并附加 `service`/`module` 标签（URL 中动态 trade ID 归一化进 tag，避免 Prometheus 指标基数爆炸）；统一记录自定义指标与通用断言。api 层因此保持一行一调用的薄结构。
+- **HTTP 统一封装（lib/http.js）**：对 `k6/http` 的薄封装，对外只暴露三个动词——`get(service, path, opts)` / `postJson(service, path, body, opts)` / `postMultipart(service, path, formData, opts)`，三者收敛到同一个内部 `request()` 管道，集中处理：按服务名解析 baseUrl；注入默认请求头（`X-User-Id`、`Accept`）；强制要求规范化的 `tags.name` 并附加 `service`/`module` 标签（URL 中动态 trade ID 归一化进 tag，避免 Prometheus 指标基数爆炸）；统一记录自定义指标与通用断言。api 层因此保持一行一调用的薄结构，新增请求形态（如 put/delete）只在 http.js 加一个动词。
 - **双层断言**：HTTP 状态码校验 + 业务响应体校验（HTTP 200 但 body 含业务错误码计为失败）。关键业务动作建独立自定义指标：`trade_booking_duration`（Trend）、`trade_booking_errors`（Counter），区分 HTTP 层与业务层健康度。
 
 ## 6. 测试数据管理
@@ -149,8 +149,11 @@ API 数量增长后，"哪些先压、哪些后压"靠 `config/api-catalog.yaml`
 - **testid 约定**：每次运行生成唯一 `testid`（`<场景>-<YYYYMMDD-HHmmss>`）作为全局标签，Grafana 按 testid 下拉筛选任意一次历史压测（官方 dashboard 自带 testid 变量，`run.sh` 生成的 testid 直接可用）。
 - **dashboards/ 内容**（均为 JSON 进版本库）：
   1. **官方 k6 Prometheus dashboard（ID 19665，已在使用）**——展示 k6 内置指标（RPS、http_req_duration 分位数、错误率、VU 数），继续沿用，导出一份固定版本入库防漂移；
-  2. **业务指标 dashboard（自建）**——官方面板只覆盖内置指标，`k6_trade_booking_duration` 等自定义业务指标需要自建面板，并按 `service`/`module` 标签下钻；
-  3. 排障时与现有服务端 Dashboard 使用相同时间窗对照。
+  2. **业务指标 dashboard（自建）**——官方面板只覆盖内置指标，`k6_trade_booking_duration` 等自定义业务指标需要自建面板，并按 `service`/`module` 标签下钻。
+- **与服务端指标串联**（压测后排障的关键路径，三个机制递进）：
+  1. **同源数据**：k6 指标与服务端指标写入同一个 Prometheus，天然可在任意 dashboard 混排——自建业务 dashboard 底部直接加一组服务端资源面板（CPU/内存/GC/线程池/DB 连接池，PromQL 与现有服务端 dashboard 一致，按 service 变量过滤），压测曲线与资源曲线上下对齐一屏看完；
+  2. **带时间窗跳转**：压测 dashboard 顶部配置 dashboard link 到各服务端 dashboard，URL 携带 `?from=${__from}&to=${__to}`，点击即以当前压测时间窗打开服务端视图，无需手动对时间；
+  3. **压测窗口标注（P1）**：`run.sh` 在压测开始/结束时调用 Grafana Annotation API，在服务端 dashboard 上打上 `testid` 标注带——事后翻服务端监控时能直接看到"这段异常发生在某次压测期间"。
 
 ## 9. 报告与基线对比
 
@@ -158,18 +161,39 @@ API 数量增长后，"哪些先压、哪些后压"靠 `config/api-catalog.yaml`
 - **基线管理（baselines/）**：每场景保存基准 JSON；对比脚本输出本次 vs 基线的 P95/P99/错误率变化百分比，超容差标红——性能回归发现机制（P1）。
 - 报告结构复用 `performance-testing` 技能模板：Question / Verdict / Environment / 分位数表 / Knee point / Bottleneck hypothesis / Recommendations。
 
-## 10. 执行方式
+## 10. 执行方式与运行形态
+
+### 10.1 三种运行形态
+
+压测的执行单位是**场景（scenario 脚本）**，不是单个 API。一次 k6 运行加载一个场景脚本，但场景内部可以压一个或多个 API：
+
+| 形态 | 说明 | 用途 |
+|---|---|---|
+| 单 API 场景 | 一个场景只压一个 API（如 `trades-query.js`） | 单 API 容量测定与 SLA 验证——变量隔离最干净 |
+| 多 API 并行 | 利用 k6 `options.scenarios` 在**同一次运行**中定义多个并行 scenario，每个 API 独立的 executor、速率与阈值 | 多接口同时施压的整体演练 |
+| 混合业务流（P2） | 一个迭代内按业务顺序串多个 API（query → create → trigger-event），按流量配比编排 | 模拟真实交易日负载 |
+
+**方法论默认：单 API 场景 + 套件串行**。多个 API 同时压时共享资源（DB、网关、线程池）互相竞争，任一 API 的劣化都无法归因——"一次只变一个变量"。并行形态用于容量演练，而不是日常 SLA 验证。
+
+### 10.2 套件（suite）运行：按优先级批量执行
+
+"先跑所有 P0"不靠 tag 手工筛，靠 `api-catalog.yaml`：`run.sh --suite P0` 从 catalog 过滤出 `priority: P0` 且已覆盖的场景清单，逐个提交 Job 串行执行（每个场景独立 testid、独立报告），全部结束后汇总一张 PASS/FAIL 总表。`--suite P0,P1` 支持多级。
 
 ```bash
-# k8s 触发（渲染 job.yaml → kubectl apply → 输出 Grafana 链接与 testid）
+# 单场景触发（渲染 job.yaml → kubectl apply → 输出 Grafana 链接与 testid）
 ./run.sh -s trades-query -p load -e uat [-r 50 -d 10m]
+
+# 套件运行：catalog 中全部 P0 场景依次执行，输出汇总表
+./run.sh --suite P0 -p load -e uat
 
 # 本地调试（同一套脚本，行为一致，打印请求/响应细节）
 k6 run -e ENV=dev -e PROFILE=smoke src/scenarios/trades-query.js
 ```
 
+### 10.3 交付物
+
 - Dockerfile 基于 k6 官方镜像 COPY 脚本与配置；镜像 tag 与 git commit 关联保证可追溯。
-- `run.sh` 负责参数校验、testid 生成、manifest 渲染（envsubst）、提交 Job、tail 日志。
+- `run.sh` 负责参数校验、testid 生成、manifest 渲染（envsubst）、提交 Job、tail 日志；suite 模式追加 catalog 解析与汇总表输出。
 
 ## 11. 遗留问题（实现前需确认）
 

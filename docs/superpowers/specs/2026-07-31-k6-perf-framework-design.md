@@ -63,6 +63,7 @@ perf/
 │   └── datfiles/           # 各产品类型的 dat 模板文件：FX_TRF.dat 等
 ├── seed/                   # P1：数据铺底脚本
 ├── deploy/                 # Dockerfile、job.yaml 模板、run.sh
+├── tools/                  # 辅助脚本：sync-catalog（swagger→catalog 同步）、基线对比、覆盖率报告
 ├── dashboards/             # Grafana dashboard JSON（见第 8 节）
 ├── baselines/              # 各场景性能基线（JSON）
 ├── reports/                # 报告归档（整目录 gitignore；需长期保留的结果晋升为 baselines/ 基线）
@@ -85,17 +86,23 @@ perf/
 
 所有指标统一附加 `service`、`module` 标签（与 `tags.name` 并列），Grafana 可按服务/模块下钻聚合。
 
-### 3.2 API 清单与优先级治理
+### 3.2 API 清单与优先级治理（生成式，非人工维护）
 
-API 数量增长后，"哪些先压、哪些后压"靠 `config/api-catalog.yaml` 治理——每个 API 一条记录：
+`config/api-catalog.yaml` 是治理的单一事实源，但**不靠人工逐条维护**——三列数据、三种来源，只有一列留给人：
 
-```yaml
-- service: trade-svc
-  module: trades
-  endpoint: POST /api/v1/trades/create
-  priority: P0          # 见下方定级标准
-  sla: slas/trade-svc/trades.json#create
-  scenario: trades-create    # 覆盖它的场景；空 = 尚未覆盖
+| 数据列 | 来源 | 维护方式 |
+|---|---|---|
+| 清单（service/module/endpoint） | 各微服务的 OpenAPI/Swagger 文档（如 `/v3/api-docs`） | `tools/sync-catalog` 脚本定期拉取自动同步：新端点以 `priority: unassigned` 入库待定级，已下线端点标记 `stale` 待清理 |
+| 优先级（priority） | **人工决策（唯一人工列）** | 按下方定级标准评审填写；可由脚本从 Prometheus 拉生产 QPS 排名输出建议值辅助（P2），但"资金相关但低频"这类业务关键度无法从流量推导，必须保留人工 |
+| 覆盖（scenario） | 场景文件自身声明 | 自动反向计算：扫描 `src/scenarios/` 各文件 `meta.covers` 填充，人工不碰 |
+
+场景元数据相应扩展一个 `covers` 字段：
+
+```js
+export const meta = {
+  tags: ['P0', 'trade-svc', 'write'],
+  covers: ['POST /api/v1/trades/create'],
+};
 ```
 
 **定级标准**（满足任一升级为更高优先级）：
@@ -103,7 +110,7 @@ API 数量增长后，"哪些先压、哪些后压"靠 `config/api-catalog.yaml`
 - **P1**：常用查询与生命周期操作、有性能风险特征（复杂查询、大 payload）；
 - **P2**：低频后台/管理类接口。
 
-新 API 上线时先登记进 catalog 再排期写场景；catalog 中 `priority: P0` 且 `scenario` 为空的记录即压测覆盖缺口，可脚本化输出覆盖率报告。
+治理动作全部脚本化输出，不靠人记：`unassigned` 列表 = 待定级；`P0` 且无场景覆盖 = 覆盖缺口；`stale` = 待清理。（本仓库 jmeter-scripting 技能已有 swagger 解析脚本 `parse_swagger.py`，sync-catalog 可复用其经验。）
 
 ## 4. 负载模型（profiles）
 
@@ -198,6 +205,8 @@ k6 run -e ENV=dev -e PROFILE=smoke src/scenarios/trades-query.js
 
 每个命中的场景仍是独立 k6 运行（独立 testid、独立报告），默认串行执行（见 10.1 方法论）。
 
+**与 k6 原生 `--tag` 的边界（防混淆）**：`run.sh` 的 `--tags` 是框架自己的参数，由 run.sh 解析消费，**不会传给 k6**；k6 原生的 `--tag`（单数，指标标签）仅由框架内部使用——run.sh 组装 k6 命令时注入 `--tag testid=<testid>`，用户永远不手写它。场景里的 `export const meta` 对 k6 引擎只是一个未被引用的导出常量，运行时零副作用。若有人绕过 run.sh 直接执行 `k6 run --tags P0` 会得到未知参数报错——这本身就是"请走 run.sh"的提示。
+
 **场景 tag 与 api-catalog 的分工**：场景 tag 回答"这个脚本属于哪些集合"（选择机制，Cucumber 式贴在代码旁）；catalog 回答"系统有哪些 API、什么优先级、是否已被场景覆盖"（治理机制）。两者可脚本化交叉校验——场景标 P0 但 catalog 中其覆盖的 API 均非 P0 时告警，防止两处口径漂移。
 
 ### 10.3 交付物
@@ -213,6 +222,7 @@ k6 run -e ENV=dev -e PROFILE=smoke src/scenarios/trades-query.js
 4. **dat 文件是否需要参数化**——同一 dat 模板高频重复提交是否会触发幂等/去重逻辑或字段校验（如交易日期过期）；若 dat 为文本格式，可做模板变量替换，实现时用真实文件验证。
 5. **混合场景流量配比（P2）**——真实交易日各操作比例，届时从生产访问日志/监控统计。
 6. **5 个微服务的清单**——服务名、各自地址与核心模块，填充 `config/environments/` 与 `api-catalog.yaml` 时提供。
+7. **各服务 OpenAPI 文档可用性**——`sync-catalog` 自动同步的前提是各服务暴露 `/v3/api-docs` 或等价端点；若个别服务没有，该服务的清单列退回人工登记。
 
 ## 12. 演进路径
 

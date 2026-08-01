@@ -221,7 +221,8 @@ k6 run -e ENV=dev -e PROFILE=smoke src/scenarios/trades-query.js
 ### 10.3 交付物
 
 - 仓库不交付 Dockerfile：Job 镜像须内含 k6 与 `/perf` 下的 config/src/data，由公司镜像流程构建或以 ConfigMap 挂载脚本（见遗留问题 #7）；镜像地址经 `K6_IMAGE` 环境变量传给 run.sh。
-- `run.sh` 负责参数校验、testid 生成、manifest 渲染（envsubst）、提交 Job、tail 日志；`--tags` 模式追加场景元数据扫描与 PASS/FAIL 汇总表输出。
+- `deploy/run.sh` 负责参数校验、testid 生成、manifest 渲染（envsubst）、提交 Job、tail 日志；`--tags` 模式追加场景元数据扫描与 PASS/FAIL 汇总表输出；接受任意 `KEY=value` 透传为 k6 `-e` 覆盖（仅 `--local` 模式生效，k8s Job 命令为固定模板）。
+- `perf/run.sh` 为本地便捷入口：位置参数 `<scenario>[.js] [env] [profile] [KEY=value ...]`（默认 local + smoke），参数解析后委托 `deploy/run.sh --local`——报告提取、汇总表、判定逻辑单一事实源。
 - 仓库内一切主机地址与业务数据（counterparty、身份账号）使用占位符，真实值仅在公司内网填写。
 
 ## 11. 遗留问题（实现前需确认）

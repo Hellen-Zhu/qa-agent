@@ -3,6 +3,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."   # 定位到 perf/ 根
 
 SCENARIO="" TAGS="" PROFILE="smoke" ENV_NAME="local" RATE="" DURATION="" LOCAL=0 DRY=0
+EXTRA_ENV=()
 IMAGE="${K6_IMAGE:-perf-k6:latest}"
 NAMESPACE="${K6_NAMESPACE:-perf}"
 
@@ -14,9 +15,12 @@ usage() {
   -p        负载 profile: smoke|baseline|load|ladder|stress|spike|soak（默认 smoke）
   -e        环境名（config/environments/<env>.json，默认 local）
   -r / -d   覆盖目标速率 / 稳态时长
+  KEY=value 任意 __ENV 覆盖，原样透传给 k6 -e（如 VUS=2 MAX_VUS=50 PRODUCT=FX_TRF
+            CREATE_DATA_FILE=...）；仅 --local 模式生效，k8s Job 命令为固定模板
   --local   本机 k6 直跑（默认提交 k8s Job）
   --dry-run 只打印将执行的命令/渲染的 manifest
 注意: --tags 是本脚本参数，与 k6 的 --tag（指标标签）无关，不会传给 k6。
+本地快捷入口：perf 根目录 ./run.sh <scenario>[.js] [env] [profile] [KEY=value ...]
 EOF
   exit 2
 }
@@ -31,6 +35,7 @@ while [[ $# -gt 0 ]]; do
     -d) DURATION="$2"; shift 2 ;;
     --local) LOCAL=1; shift ;;
     --dry-run) DRY=1; shift ;;
+    *=*) EXTRA_ENV+=("$1"); shift ;;
     *) usage ;;
   esac
 done
@@ -38,6 +43,9 @@ done
 [[ -n "$SCENARIO" && -n "$TAGS" ]] && usage
 [[ -z "$SCENARIO" && -z "$TAGS" ]] && usage
 [[ -f "config/environments/${ENV_NAME}.json" ]] || { echo "未知环境: ${ENV_NAME}" >&2; exit 1; }
+if [[ "$LOCAL" == 0 && "${#EXTRA_ENV[@]}" -gt 0 ]]; then
+  echo "警告: KEY=value 覆盖仅 --local 模式生效（k8s Job 命令为固定模板），忽略: ${EXTRA_ENV[*]}" >&2
+fi
 
 PROM_RW_URL="$(node -p "JSON.parse(require('fs').readFileSync('config/environments/${ENV_NAME}.json','utf8')).promRwUrl || ''")"
 K6_OUT_VALUE=""
@@ -65,6 +73,10 @@ run_local() {
   local args=(run --tag "testid=${testid}" -e "ENV=${ENV_NAME}" -e "PROFILE=${PROFILE}" -e "TESTID=${testid}")
   [[ -n "$RATE" ]] && args+=(-e "RATE=${RATE}")
   [[ -n "$DURATION" ]] && args+=(-e "DURATION=${DURATION}")
+  if [[ "${#EXTRA_ENV[@]}" -gt 0 ]]; then
+    local kv
+    for kv in "${EXTRA_ENV[@]}"; do args+=(-e "$kv"); done
+  fi
   [[ -n "$PROM_RW_URL" ]] && args+=(-o experimental-prometheus-rw)
   if [[ "$DRY" == 1 ]]; then
     echo "DRY(local): k6 ${args[*]} src/scenarios/${sc}.js"

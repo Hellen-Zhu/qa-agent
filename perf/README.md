@@ -6,17 +6,20 @@ FX Structured Products Trading System 服务端压测框架。
 ## 快速开始
 
 ```bash
+# 本机直跑（本地 runner，位置参数：<scenario> [env] [profile]，默认 local + smoke）
+./run.sh trades-create.js dev smoke
+./run.sh trades-query                                      # 等价 trades-query local smoke
+./run.sh trades-create local baseline VUS=1 DURATION=600s  # KEY=value 任意 __ENV 覆盖
+./run.sh --tags P0 dev load                                # 批量 + 汇总表
+
 # 本地静态验证（不发压）
 k6 inspect -e ENV=local src/scenarios/trades-query.js
-./deploy/run.sh --tags P0 -p smoke -e local --dry-run
+./run.sh --tags P0 --dry-run
 
-# 内网压 dev 环境（先按 docs/env-checklist.md 完成启用项）
+# 内网压 dev 环境（k8s Job，先按 docs/env-checklist.md 完成启用项）
 ./deploy/run.sh -s trades-query -p smoke -e dev            # 首跑必须 smoke
 ./deploy/run.sh -s trades-query -p load -e dev -r 50 -d 10m
 ./deploy/run.sh --tags P0 -p load -e dev                   # 批量 P0 + 汇总表
-
-# 本机直跑（不经 k8s）
-./deploy/run.sh -s trades-query -p smoke -e dev --local
 ```
 
 ## 目录结构
@@ -39,7 +42,7 @@ k6 inspect -e ENV=local src/scenarios/trades-query.js
 - **错误三分类**：technical（性能结论）/ business（通常是数据问题）/ script（本轮作废）必须分开看；SLA 分位数只看 `perf_success_duration`（业务成功请求）
 - 数据取数一律全局游标（`exec.scenario.iterationInTest`）；指标 tag 只允许有界取值，严禁 tradeId 类唯一值
 - 新增写路径 API：`src/api/<service>/` 加 `<api>.js`（契约）+ `<api>-data.js`（用例池）+ `data/<service>/<scenario>.json` 用例文件 + preflight；新增读路径 API：加 `<api>.js` 用 `classifyRead` + 字段池数据文件
-- RATE/VUS/DURATION/MAX_VUS 覆盖仅作用于 profile 中存在的同名标量键（stages 字面量不受影响）；本地直跑 `k6 run -e VUS=8 ...` 可用全部覆盖，run.sh 暂只透传 RATE/DURATION
+- RATE/VUS/DURATION/MAX_VUS 覆盖仅作用于 profile 中存在的同名标量键（stages 字面量不受影响）；本地模式（`./run.sh` 或 `deploy/run.sh --local`）支持任意 `KEY=value` 透传为 k6 `-e`；k8s 模式仅 `-r`/`-d`（Job 命令为固定模板）
 
 ## 真实环境启用
 

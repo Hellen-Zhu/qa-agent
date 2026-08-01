@@ -38,6 +38,7 @@ k6 inspect -e ENV=local src/scenarios/trades-query.js
 
 ## 约定
 
+- **全链路 UTC**：run.sh 已 `export TZ=UTC`（k6 是 Go，认 TZ，Windows Git Bash 同样生效），runId/结果目录/manifest/k6.log 同钟，可直接与服务端日志对表；**绕过 run.sh 裸跑调试须自带 `TZ=UTC k6 run ...`**，否则 k6.log 落回本机时区。dashboard.html 图表横轴是浏览器本地时区渲染，属前端行为，不参与对表
 - **错误三分类**：technical（性能结论）/ business（通常是数据问题）/ script（本轮作废）必须分开看；SLA 分位数只看 `perf_success_duration`（业务成功请求）
 - 判定权威是 summary（三分类 + 阈值 + 0 请求防假绿），不是 dashboard.html——web dashboard 的错误率是 HTTP 层的 http_req_failed，本系统业务失败也返回 200
 - 数据取数一律全局游标（`exec.scenario.iterationInTest`）；指标 tag 只允许有界取值，严禁 tradeId 类唯一值

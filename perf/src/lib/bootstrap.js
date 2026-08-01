@@ -5,7 +5,7 @@
 // open() 路径一律经 import.meta.resolve() 锚定到本文件。
 import { parseEnvConfig } from './config.js';
 import { buildThresholds } from './sla.js';
-import { summarize, toMarkers } from './report.js';
+import { summarize, buildTextSummary } from './report.js';
 
 export const ENV = __ENV.ENV || 'local';
 export const PROFILE = __ENV.PROFILE || 'smoke';
@@ -78,12 +78,23 @@ export function buildOptions(slaFile, slaKey, extraThresholds) {
       apiSla ? buildThresholds(entry) : {},
       extraThresholds || {},
     ),
-    summaryTrendStats: ['avg', 'med', 'p(95)', 'p(99)'],
+    // 文本摘要各列（P50/P90/P95/P99/max/avg + 样本数）都要有值，缺谁谁列空
+    summaryTrendStats: ['avg', 'min', 'med', 'p(90)', 'p(95)', 'p(99)', 'max', 'count'],
   };
 }
 
-// 标准 handleSummary：stdout 标记 JSON（run.sh 从日志提取后出报告）。
+// 标准 handleSummary（导出后 k6 不再打默认摘要，本函数负责全部输出）：
+//   stdout 文本摘要；RESULT_DIR（runner 传入）非空时由 k6 直接写盘
+//   summary.txt（同文本）+ summary.json（机读，runner 提取 verdict 定退出码）。
+// 裸 `k6 run` 不传 RESULT_DIR，只打终端——行为与 trade-performance 一致。
 // 场景以 `export { stdHandleSummary as handleSummary } from '../lib/bootstrap.js'` 复用。
 export function stdHandleSummary(data) {
-  return { stdout: toMarkers(summarize(data, TESTID)) };
+  const text = buildTextSummary(data, { testid: TESTID, env: ENV, profile: PROFILE });
+  const out = { stdout: text };
+  const dir = __ENV.RESULT_DIR;
+  if (dir) {
+    out[`${dir}/summary.txt`] = text;
+    out[`${dir}/summary.json`] = JSON.stringify(summarize(data, TESTID), null, 2);
+  }
+  return out;
 }

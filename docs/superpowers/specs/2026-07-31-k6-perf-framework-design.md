@@ -1,7 +1,7 @@
 # k6 性能测试框架设计文档
 
 - **日期**: 2026-07-31
-- **状态**: P0 已实现（PR #1）；2026-07-31 与 trade-performance 融合修订（§4-§7、§11-§13）待评审，落地排期为 P1a
+- **状态**: P0 + P1a 已实现（PR #1）。2026-08-01 修订：**执行层收敛为本机 runner**（k8s Job 路径、tag 批量筛选、Node 报告后处理整体移除，k8s 移入演进路径条件触发）；summary 改由 k6 handleSummary 直接写盘（§2、§9、§10、§13）
 - **被测系统**: 公司内部 FX Structured Products Trading System（trade 全生命周期管理）
 - **技术栈**: k6 + 现有 Prometheus + 现有 Grafana + Kubernetes
 
@@ -23,19 +23,19 @@
 ## 2. 总体架构
 
 ```
-开发者/QA ──run.sh──▶ k8s Job (单个 k6 Pod) ──HTTP──▶ Trading System 微服务
-                          │                              │
-                          │ Prometheus remote write       │ 服务端指标（已有）
-                          ▼                              ▼
-                     现有 Prometheus ◀───────────────────┘
+开发者/QA ──run.sh──▶ 本机 k6 进程 ──HTTP──▶ Trading System 微服务
+                          │                       │
+                          │ Prometheus remote write │ 服务端指标（已有）
+                          ▼                       ▼
+                     现有 Prometheus ◀────────────┘
                           │
                           ▼
                      现有 Grafana ◀── 导入压测 Dashboard（JSON 进版本库）
 ```
 
-- 一次压测 = 一个 k8s Job，跑单个 k6 Pod（内部系统负载量级下单 Pod 足够）。
+- 一次压测 = 本机一个 k6 进程（`./run.sh`，Linux/macOS 直跑，Windows 用 Git Bash 跑同一份脚本；内部系统负载量级下单机足够）。除 k6 外零依赖。
 - k6 客户端指标经内置 `experimental-prometheus-rw` 输出写入现有 Prometheus，与服务端指标同源，在 Grafana 中按时间轴对齐定位瓶颈。
-- 执行层设计为可替换：未来需要分布式时仅替换 `deploy/` 层为 k6-operator（TestRun CRD），`src/` 脚本层零改动。
+- 执行层设计为可替换：施压机不足或需分布式时再引入 k8s Job / k6-operator（见 §12 演进路径），`src/` 脚本层零改动——2026-08-01 前曾实现 k8s Job 路径，因当前阶段用不到已整体移除（git 历史可找回）。
 
 **外部依赖（唯一）**：现有 Prometheus 需开启 `--web.enable-remote-write-receiver`。若运维不允许，备选方案为 Pushgateway 中转（实现计划中先验证此依赖）。
 
@@ -66,11 +66,10 @@ perf/
 │   │   └── trades-create.json   # { productType, notionalCurrency, portfolioId, ... }（行内不写 dat 路径）
 │   └── datfiles/           # dat 样本，同名约定：products/<productType>/<productType>.dat
 ├── seed/                   # P1：数据铺底脚本
-├── deploy/                 # job.yaml 模板、run.sh（不含 Dockerfile，镜像/脚本注入由公司侧机制提供）
-├── tools/                  # 辅助脚本：meta 提取、报告提取/渲染
+├── run.sh                  # 本机 runner（唯一执行入口，除 k6 外零依赖）
 ├── dashboards/             # Grafana dashboard JSON（见第 8 节）
 ├── baselines/              # 各场景性能基线（JSON）
-├── reports/                # 报告归档（整目录 gitignore；需长期保留的结果晋升为 baselines/ 基线）
+├── results/                # 每次运行独立目录（整目录 gitignore；需长期保留的结果晋升为 baselines/ 基线）
 └── docs/                   # 使用说明、环境准备 checklist
 ```
 
@@ -92,7 +91,7 @@ perf/
 
 ### 3.2 API 优先级表达（catalog 治理已延后）
 
-第一期不建 API catalog，优先级直接由场景文件的 `meta.tags` 表达（`P0`/`P1`/`P2` tag），配合 10.2 的 `--tags` 筛选执行。**定级标准**（满足任一升级为更高优先级）：
+第一期不建 API catalog，优先级由场景文件头部注释标注（`P0`/`P1`/`P2`；2026-08-01 前曾以 `meta.tags` 导出配合 `--tags` 批量筛选，已随 k8s 执行层一并移除——场景数少时逐条运行即可，规模驱动再启用）。**定级标准**（满足任一升级为更高优先级）：
 
 - **P0**：交易日高频路径、涉及资金/交易状态变更、生产监控 QPS 排名靠前；
 - **P1**：常用查询与生命周期操作、有性能风险特征（复杂查询、大 payload）；
@@ -158,12 +157,12 @@ perf/
 - **SLA 集中管理（config/slas/）**：按 API 定义分位数阈值（p95/p99），场景装配时生成 k6 `thresholds` 并与 profile 级阈值叠加（见第 4 节），运行结束自动判 PASS/FAIL（进程退出码体现，为 P2 接 CI 门禁打基础）。**分位数阈值挂在 `perf_success_duration{name:<api>}` 上而非 http_req_duration**——失败请求（尤其快速拒绝）会拉低分位数使容量虚高，SLA 只对业务成功的请求有意义。SLA 具体数值待业务方/现有监控水位确认（见第 11 节遗留问题）。
 - **两级熔断（2026-07-31 融合修订，取代单线设计）**：`perf_business_success` 上两条线各司其职——严格线（如 `rate>0.99`，无 abortOnFail）是**跑完后的 verdict**；宽松线（`rate>0.50` + `abortOnFail` + `delayAbortEval: '3m'`）是**熔断器**，只杀"整体性业务拒绝"的必死之局（数据失效，无论发生在启动时还是第 3 小时）。宽松是刻意的：低吞吐下零星合法瞬时失败不能中止长跑；delayAbortEval 先让样本量积起来。ladder 类探索型 profile 只挂熔断线不挂 verdict 线——拐点之后的技术错误恰是要测量的对象。**诚实说明**：`perf_business_success` 把技术性失败也计为失败（三分类中只有 `ok` 计入成功），因此宽松线在整体性技术崩塌（而非单纯数据失效）时同样会触发——对 ladder/stress 这类探索型 profile 而言，这条线的作用因此是"共享环境保护"（防止一次探索性压测把环境打死太久），而非验收意义上的 verdict。
 - **环境白名单**：`config/environments/` 中不存在 prod 配置；框架启动时校验目标域名在白名单内，否则拒绝执行。
-- **资源防护**：Job 设置 CPU/内存 limit 与 `ttlSecondsAfterFinished` 自动回收；profile 内置 maxVUs 上限。
+- **资源防护**：profile 内置 maxVUs 上限 + 装配层全局硬上限 500，防误配置打挂共享环境。
 
 ## 8. 可观测性与 Grafana
 
 - k6 通过内置 `experimental-prometheus-rw` 输出指标至现有 Prometheus，Trend 指标配置 p95/p99 统计。**所有指标（含自定义业务指标）都会以 `k6_` 前缀写入**——remote write 不区分内置与自定义。
-- **testid 约定**：每次运行生成唯一 `testid`（`<场景>-<YYYYMMDD-HHmmss>`）作为全局标签，Grafana 按 testid 下拉筛选任意一次历史压测（官方 dashboard 自带 testid 变量，`run.sh` 生成的 testid 直接可用）。
+- **testid 约定**：每次运行生成唯一 `testid`（`<场景>_<环境>_<profile>_<UTC时间戳>`）作为全局标签，Grafana 按 testid 下拉筛选任意一次历史压测（官方 dashboard 自带 testid 变量，`run.sh` 生成的 testid 直接可用）。
 - **dashboards/ 内容**（均为 JSON 进版本库）：
   1. **官方 k6 Prometheus dashboard（ID 19665，已在使用）**——展示 k6 内置指标（RPS、http_req_duration 分位数、错误率、VU 数），继续沿用，导出一份固定版本入库防漂移；
   2. **单板总览 dashboard（自建，`perf-trade-business.json`，日常主看板）**——同一块板上半为 HTTP 层（RPS、`k6_http_req_duration_p95/p99` 全请求延迟、VU 数、失败率），下半为业务层（三分类错误计数按 `reason` 下钻、`k6_perf_business_success_rate`、`k6_perf_success_duration_p95/p99`、按 `row` 定位坏行）——两类指标查的是同一 Prometheus 数据，单板即可对照，无需在两块板间切换；板顶带跳转链接（keepTime + includeVars）指向官方 19665 作深入参考。官方板保持原样以便随上游升级。
@@ -174,7 +173,7 @@ perf/
 
 ## 9. 报告与基线对比
 
-- `handleSummary()` 每次运行产出 JSON 摘要 + HTML 报告，Job 结束后归档至 `reports/`（P0 用 `kubectl cp`/logs 取回，后续可挂 PVC）。
+- **summary 双路输出，k6 直接写盘，runner 零后处理**（2026-08-01 修订，机制取自 trade-performance）：`handleSummary` 返回 `{路径: 内容}` 映射，k6 自己把文件写进 `results/<UTC日>/<runId>/`——`summary.txt`（stdout 同款文本摘要：三分类表、成功/全量双延迟分位对照、按 API 子指标行、业务 TPS、样本量纪律告警、阈值清单，判定权威）+ `summary.json`（机读，含 `verdict` 字段供 runner 用 sed 提取定退出码，也是基线对比的输入）。0 请求时合成 `no-samples(0-requests)` 失败项防假绿。时序曲线由 k6 web dashboard 导出的 `dashboard.html` 承担（不作判定——其错误率是 HTTP 层的 http_req_failed，本系统业务失败也返回 200；极短运行会跳过导出）。原"stdout 标记 → Node 提取 → HTML 渲染"管道是 k8s Pod 产物通道的产物，已随执行层收敛一并移除。
 - **基线管理（baselines/）**：每场景保存基准 JSON；对比脚本输出本次 vs 基线的 P95/P99/错误率变化百分比，超容差标红——性能回归发现机制（P1）。
 - 报告结构复用 `performance-testing` 技能模板：Question / Verdict / Environment / 分位数表 / Knee point / Bottleneck hypothesis / Recommendations。
 
@@ -192,37 +191,13 @@ perf/
 
 **方法论默认：单 API 场景 + 套件串行**。多个 API 同时压时共享资源（DB、网关、线程池）互相竞争，任一 API 的劣化都无法归因——"一次只变一个变量"。并行形态用于容量演练，而不是日常 SLA 验证。
 
-### 10.2 按 tag 筛选批量执行（Cucumber 风格）
+### 10.2 批量执行（已延后，规模驱动）
 
-k6 没有 Cucumber 式的用例选择 tag（k6 的 "tag" 是指标维度，用于结果分析过滤，不是用例选择；一次 `k6 run` 只认一个入口文件）。框架自行实现同等体验——每个场景文件导出元数据声明 tags，`run.sh` 扫描 `src/scenarios/` 过滤执行：
-
-```js
-// src/scenarios/trades-create.js
-export const meta = { tags: ['P0', 'trade-svc', 'write'] };
-```
-
-```bash
-# 单场景触发（渲染 job.yaml → kubectl apply → 输出 Grafana 链接与 testid）
-./run.sh -s trades-query -p load -e uat [-r 50 -d 10m]
-
-# tag 筛选：所有标 P0 的场景串行执行，输出 PASS/FAIL 汇总表
-./run.sh --tags P0 -p load -e uat
-./run.sh --tags P0,trade-svc -p smoke -e dev   # 多 tag 取交集
-
-# 本地调试（同一套脚本，行为一致，打印请求/响应细节）
-k6 run -e ENV=dev -e PROFILE=smoke src/scenarios/trades-query.js
-```
-
-每个命中的场景仍是独立 k6 运行（独立 testid、独立报告），默认串行执行（见 10.1 方法论）。
-
-**与 k6 原生 `--tag` 的边界（防混淆）**：`run.sh` 的 `--tags` 是框架自己的参数，由 run.sh 解析消费，**不会传给 k6**；k6 原生的 `--tag`（单数，指标标签）仅由框架内部使用——run.sh 组装 k6 命令时注入 `--tag testid=<testid>`，用户永远不手写它。场景里的 `export const meta` 对 k6 引擎只是一个未被引用的导出常量，运行时零副作用。若有人绕过 run.sh 直接执行 `k6 run --tags P0` 会得到未知参数报错——这本身就是"请走 run.sh"的提示。
-
+2026-08-01 前曾实现 Cucumber 风格的 `--tags` 场景筛选与 PASS/FAIL 汇总表（场景导出 `meta.tags`，runner 扫描过滤），随 k8s 执行层一并移除——当前场景数量下逐条运行即可，git 历史可找回。届时仍须守住的边界：框架的用例选择参数与 k6 原生 `--tag`（指标标签，runner 注入 `--tag testid=`）同名不同物，不可混淆。
 
 ### 10.3 交付物
 
-- 仓库不交付 Dockerfile：Job 镜像须内含 k6 与 `/perf` 下的 config/src/data，由公司镜像流程构建或以 ConfigMap 挂载脚本（见遗留问题 #7）；镜像地址经 `K6_IMAGE` 环境变量传给 run.sh。
-- `deploy/run.sh` 负责参数校验、testid 生成、manifest 渲染（envsubst）、提交 Job、tail 日志；`--tags` 模式追加场景元数据扫描与 PASS/FAIL 汇总表输出；接受任意 `KEY=value` 透传为 k6 `-e` 覆盖（仅 `--local` 模式生效，k8s Job 命令为固定模板）。
-- `perf/run.sh` 为**独立本地 runner**（参考内部 trade-performance 框架的 runner 设计，不依赖 deploy/run.sh）：位置参数 `<scenario>[.js] [env] [profile] [KEY=value ...]`（默认 local + smoke）。机制：全链路 TZ=UTC（与服务端日志对表）；每次运行独立目录 `results/<UTC日>/<runId>/`，内含 **manifest.txt**（时间戳/epoch/覆盖项/主机/k6 版本/git commit + 内联 env 与 profile 全文——"一次只变一个变量"的事后审计凭证）、k6.log、summary.json/.html（三分类判定权威）、dashboard.html（k6 内置 web dashboard 实时曲线导出，不作判定）、result.csv（逐请求明细）；结束打印带 from/to/var-testid 的 Grafana 直达链接（环境配置 `grafanaDashboard` 键或 GRAFANA_DASHBOARD_URL 覆盖）；Prometheus 输出带 stale markers 与完整 trend stats；PREFLIGHT FAILED 时摘要提示；K6_HTTP_DEBUG 原生直通。判定：k6 退出码非零优先，否则以 thresholdFailures 定 PASS/FAIL。多场景批量汇总表仍走 `deploy/run.sh --tags`。
+- `perf/run.sh` 为**唯一执行入口**（参考内部 trade-performance 框架的 runner 设计；Linux/macOS 直跑，Windows 用 Git Bash 跑同一份脚本；除 k6 外零依赖——无 Node/jq/python，配置读取用行级 sed，summary 由 k6 直接写盘）：位置参数 `<scenario>[.js] [env] [profile] [KEY=value ...]`（默认 local + smoke，KEY=value 任意透传为 k6 `-e`）。机制：全链路 TZ=UTC（与服务端日志对表）；每次运行独立目录 `results/<UTC日>/<runId>/`，内含 **manifest.txt**（时间戳/epoch/覆盖项/主机/k6 版本/git commit + 内联 env 与 profile 全文——"一次只变一个变量"的事后审计凭证）、k6.log、summary.txt/.json（三分类判定权威，见 §9）、dashboard.html（k6 内置 web dashboard 实时曲线导出，不作判定）、result.csv（逐请求明细）；结束打印带 from/to/var-testid 的 Grafana 直达链接（环境配置 `grafanaDashboard` 键或 GRAFANA_DASHBOARD_URL 覆盖）；Prometheus 输出带 stale markers 与完整 trend stats；PREFLIGHT FAILED 时摘要提示；K6_HTTP_DEBUG 原生直通。判定：k6 退出码非零优先，否则以 summary.json 的 verdict 定 PASS/FAIL。
 - 仓库内一切主机地址与业务数据（counterparty、身份账号）使用占位符，真实值仅在公司内网填写。
 
 ## 11. 遗留问题（实现前需确认）
@@ -234,7 +209,7 @@ k6 run -e ENV=dev -e PROFILE=smoke src/scenarios/trades-query.js
 4b. **用例池同源采集**——每行数据须整行来自同一份真实 curl（系统 Web 界面建单 + DevTools Copy as cURL），每换 productType/counterparty 采一次；采集样本含真实业务数据，放 gitignore 的 `_samples/`，不入库。
 5. **混合场景流量配比（P2）**——真实交易日各操作比例，届时从生产访问日志/监控统计。
 6. **5 个微服务的清单**——服务名、各自地址与核心模块，填充 `config/environments/` 时提供（仓库内保持 localhost 占位）。
-7. **k8s Job 的脚本注入方式**——公司镜像流程（内置 k6 + perf 内容）或 ConfigMap 挂载，二选一与平台组确认；本仓库不交付 Dockerfile。
+7. ~~k8s Job 的脚本注入方式~~——2026-08-01 随 k8s 执行层移除而失效；将来重新引入 k8s 时再议（公司镜像流程或 ConfigMap 挂载）。
 
 ## 12. 演进路径
 
@@ -244,7 +219,8 @@ k6 run -e ENV=dev -e PROFILE=smoke src/scenarios/trades-query.js
 - **API catalog 治理（延后，规模驱动）**：当 API 数量增长到需要覆盖率治理时启用生成式 catalog——清单由各服务 Swagger/OpenAPI 自动同步（可复用本仓库 `parse_swagger.py` 经验），优先级为唯一人工列（Prometheus QPS 排名输出建议值辅助），覆盖列由场景元数据反向计算；届时场景 `meta` 增加 `covers` 字段声明所覆盖端点。
 - **WebSocket（P2）**：k6 原生支持 ws 协议；在 `api/` 层新增 ws 客户端模块，`lib/errors.js` 增加消息延迟指标，无架构变更。
 - **CI 集成（P2）**：SLA 判定已体现在退出码，接入 CI 仅需增加流水线配置。
-- **分布式/平台化（远期）**：替换 `deploy/` 为 k6-operator TestRun CRD（`parallelism: N` + 数据分片）；Web 平台后端通过 k8s API 创建 Job/TestRun，脚本层不变。
+- **k8s 执行层（条件触发）**：单机施压能力不足（内网实测撞到 runner 机器瓶颈）时重新引入 k8s Job 路径——2026-08-01 前的实现（job.yaml 模板、提交/轮询/汇总、stdout 标记报告通道）在 git 历史中可整体找回。
+- **分布式/平台化（远期）**：k6-operator TestRun CRD（`parallelism: N` + 数据分片）；Web 平台后端通过 k8s API 创建 Job/TestRun，脚本层不变。
 
 ## 13. 与 trade-performance 框架的融合评估（2026-07-31）
 
@@ -254,4 +230,6 @@ k6 run -e ENV=dev -e PROFILE=smoke src/scenarios/trades-query.js
 
 **保留本框架（不因融合退化）**：per-API 分位数 SLA（对方完全没有延迟阈值）、`--tags` 批量执行与汇总表、k8s Job 双路径执行层、stdout 标记→JSON/HTML 报告归档管道、环境白名单、maxVUs 全局硬上限、`meta.tags` 语义化命名（对方为编号命名）。
 
-**暂不采纳（YAGNI，条件触发再启用）**：journey 层（P2 端到端时引入）、DAT_NAME_MODE 缺陷绕行开关（撞上服务端临时文件竞态再借用，见 §11-4）、自研终端 summary 的展示细节（信息密度高但与本框架报告管道重复）。
+**暂不采纳（YAGNI，条件触发再启用）**：journey 层（P2 端到端时引入）、DAT_NAME_MODE 缺陷绕行开关（撞上服务端临时文件竞态再借用，见 §11-4）。
+
+**2026-08-01 补记（执行层收敛后翻案两项）**：原"暂不采纳"的自研终端 summary 与 handleSummary 直接写盘机制均已采纳——当时不采纳的理由是"与本框架报告管道重复"，报告管道（stdout 标记 → Node 提取 → HTML）随 k8s 执行层删除后前提反转：文本摘要成为三分类唯一的人读视图（导出 handleSummary 后 k6 不打默认摘要），k6 写盘取代全部 Node 后处理（见 §9）。反向地，本框架当时"保留不退化"的 `--tags` 批量执行与 k8s 双路径也已按 YAGNI 移除（§10.2、§12）。

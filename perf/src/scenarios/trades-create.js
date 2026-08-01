@@ -5,7 +5,7 @@ import { pickCase } from '../api/trade-svc/trades-data.js';
 import { createTrade } from '../api/trade-svc/trades.js';
 import { createTradePreflight } from '../setup/create-trade-preflight.js';
 
-export const meta = { tags: ['P0', 'trade-svc', 'write'] };
+// P0 · trade-svc · 写路径
 
 export const options = buildOptions('trade-svc/trades', 'create');
 

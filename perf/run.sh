@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
-# run.sh — 本地 runner（独立实现，参考内部 trade-performance 框架的 runner 设计；
-#          k8s 提交入口在 deploy/run.sh，二者互不依赖）
+# run.sh — 本机 runner（参考内部 trade-performance 框架的 runner 设计；
+#          Linux/macOS 直跑，Windows 用 Git Bash 跑同一份脚本）
 #
 #   ./run.sh <scenario>[.js] [env] [profile] [KEY=value ...]
 #
@@ -18,9 +18,6 @@
 #
 # 逐 HTTP 报文调试（仅 smoke 级验证；full 会把 .dat 二进制整个倒进日志，用完删 k6.log）:
 #   K6_HTTP_DEBUG=headers ./run.sh trades-query
-#
-# 批量按 tag 执行（含多场景汇总表）走 deploy/run.sh:
-#   ./deploy/run.sh --tags P0 -p smoke -e local --local
 set -euo pipefail
 K6_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$K6_ROOT"
@@ -79,10 +76,16 @@ command -v k6 >/dev/null 2>&1 || {
   echo "  Linux:   https://grafana.com/docs/k6/latest/set-up/install-k6/" >&2
   exit 2
 }
-command -v node >/dev/null 2>&1 || { echo "ERROR: node 不在 PATH（报告提取/渲染依赖 Node ≥20）" >&2; exit 2; }
+# ── 从 config/<env>.json 读一个平铺标量 ──
+# ⚠ 刻意不是 JSON 解析器：bash 没有内置解析，jq/python/node 在压测机上都不能假定
+#   存在。只处理"独占一行的 `"key": value`"这一种形态（去引号、去尾逗号），
+#   这样读的键在文件里必须唯一。结构化解析都在 k6 侧（lib/config.js）。
+cfg_get() {
+  sed -n "s/^[[:space:]]*\"$1\"[[:space:]]*:[[:space:]]*\(.*\)$/\1/p" "$ENV_FILE" \
+    | head -1 | sed 's/,[[:space:]]*$//; s/^"//; s/"$//'
+}
 
 # 环境级地址：配置文件为准，环境变量单次覆盖（改文件容易被顺手提交，覆盖不会）
-cfg_get() { node -p "JSON.parse(require('fs').readFileSync('${ENV_FILE}','utf8')).$1 || ''"; }
 PROM_URL="${K6_PROMETHEUS_RW_SERVER_URL:-$(cfg_get promRwUrl)}"
 GRAFANA_URL="${GRAFANA_DASHBOARD_URL:-$(cfg_get grafanaDashboard)}"
 
@@ -170,6 +173,7 @@ k6 run \
   -e ENV="$ENV_NAME" \
   -e PROFILE="$PROFILE" \
   -e TESTID="$RUN_ID" \
+  -e RESULT_DIR="$RUN_DIR" \
   ${OVERRIDE_ARGS[@]+"${OVERRIDE_ARGS[@]}"} \
   "${OUT_ARGS[@]}" \
   "$SCENARIO_FILE" 2>&1 | tee "$RUN_DIR/k6.log"
@@ -179,21 +183,23 @@ set -e
 # 结束时间戳——与 epochMillis 配对贴进 Grafana 的 &from= &to=
 echo "endEpochMillis: $(( $(date +%s) * 1000 ))" >> "$MANIFEST"
 
-# ── 报告：标记提取 → summary.json → summary.html，判定看 thresholdFailures ──
+# ── 判定：summary.json/summary.txt 由 k6 的 handleSummary 直接写盘（含 0 请求
+#    防假绿的合成失败项，见 src/lib/report.js），runner 只提取 verdict 字段。
+#    文件缺失 = 没跑到 handleSummary，基本是 init 报错（preflight 中止仍会产出并判 FAIL）。
 VERDICT="FAIL(no-summary)"
-if node tools/extract-summary.mjs "$RUN_DIR/k6.log" "$RUN_DIR/summary.json" >/dev/null 2>&1; then
-  node tools/render-report.mjs "$RUN_DIR/summary.json" >/dev/null
-  VERDICT="$(node -p "JSON.parse(require('fs').readFileSync('$RUN_DIR/summary.json','utf8')).thresholdFailures.length ? 'FAIL' : 'PASS'")"
+if [[ -f "$RUN_DIR/summary.json" ]]; then
+  VERDICT="$(sed -n 's/^[[:space:]]*"verdict": *"\([A-Z]*\)".*/\1/p' "$RUN_DIR/summary.json" | head -1)"
+  [[ -z "$VERDICT" ]] && VERDICT="FAIL(bad-summary)"
 else
-  echo "⚠ 日志无 summary 标记（场景未跑到 handleSummary，多为 preflight 中止或 init 报错）" >&2
+  echo "⚠ 未生成 summary.json（k6 未跑到 handleSummary，多为 init 阶段报错——看 k6.log 开头）" >&2
 fi
 
 echo ""
 # ⚠ ${VERDICT} 的大括号不可省：bash 3.2 在 C locale 下解析变量名时会把紧随的
 #   多字节字符（如全角括号）字节误并进名字，报 unbound variable
 echo "── 结果（${VERDICT}）────────────────────────────────"
-[[ -f "$RUN_DIR/summary.json" ]] && echo "summary:   $RUN_DIR/summary.json"
-[[ -f "$RUN_DIR/summary.html" ]] && echo "report:    $RUN_DIR/summary.html   ← 三分类/双延迟，判定权威"
+[[ -f "$RUN_DIR/summary.txt" ]] && echo "summary:   $RUN_DIR/summary.txt   ← 三分类/双延迟文本摘要（终端同款），判定权威"
+[[ -f "$RUN_DIR/summary.json" ]] && echo "raw:       $RUN_DIR/summary.json  ← 机读（verdict/基线对比输入）"
 [[ -f "$RUN_DIR/dashboard.html" ]] && echo "dashboard: $RUN_DIR/dashboard.html ← 时序曲线（不作判定）"
 echo "csv:       $RUN_DIR/result.csv"
 echo "k6 log:    $RUN_DIR/k6.log"

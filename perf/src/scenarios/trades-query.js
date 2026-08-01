@@ -4,7 +4,7 @@ import { pickUser } from '../lib/users.js';
 import { pickAt } from '../lib/data.js';
 import { queryTrades } from '../api/trade-svc/trades-read.js';
 
-export const meta = { tags: ['P0', 'trade-svc', 'read'] };
+// P0 · trade-svc · 读路径
 
 const DATA = loadData('trade-svc/trades-query');
 

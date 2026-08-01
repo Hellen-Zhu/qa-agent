@@ -16,8 +16,10 @@
 #   ./run.sh trades-query                        # 默认 local + smoke
 #   ./run.sh trades-create local baseline VUS=1 DURATION=600s
 #
-# 逐 HTTP 报文调试（仅 smoke 级验证；full 会把 .dat 二进制整个倒进日志，用完删 k6.log）:
+# 逐 HTTP 报文调试（仅 smoke 级验证；报文只写 k6.log 不刷屏；full 会把 .dat
+# 二进制整个倒进日志，用完删 k6.log）:
 #   K6_HTTP_DEBUG=headers ./run.sh trades-query
+#   K6_HTTP_DEBUG=full ./run.sh trades-create local smoke RATE=1 DURATION=5s MAX_VUS=1
 set -euo pipefail
 K6_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$K6_ROOT"
@@ -160,24 +162,34 @@ if [[ "${K6_WEB_DASHBOARD:-true}" != "false" ]]; then
   echo ""
 fi
 
-# 逐报文调试经 k6 原生 K6_HTTP_DEBUG 直通，runner 不做翻译
+# 逐报文调试经 k6 原生 K6_HTTP_DEBUG 直通，runner 不做翻译。
+# 开启时用 k6 原生 K6_LOG_OUTPUT 把日志流（含报文转储）直写 k6.log——
+# 报文动辄几百 KB，刷屏毫无可读性；终端只留进度与文本摘要。
 if [[ -n "${K6_HTTP_DEBUG:-}" ]]; then
-  echo "⚠ K6_HTTP_DEBUG=$K6_HTTP_DEBUG — 打印每条 HTTP 报文，仅 smoke 级验证用；"
-  echo "  报文含真实业务数据，full 还会整倒 .dat 二进制——用完删除本次 k6.log。"
+  export K6_LOG_OUTPUT="${K6_LOG_OUTPUT:-file=$RUN_DIR/k6.log}"
+  echo "⚠ K6_HTTP_DEBUG=${K6_HTTP_DEBUG} — 每条 HTTP 报文写入 ${K6_LOG_OUTPUT#file=}（不进终端），仅 smoke 级验证用；"
+  echo "  报文含真实业务数据，full 还会整倒 .dat 二进制——用完删除该日志。"
   echo ""
 fi
 
+K6_ARGS=(run
+  --tag "testid=$RUN_ID"
+  -e ENV="$ENV_NAME"
+  -e PROFILE="$PROFILE"
+  -e TESTID="$RUN_ID"
+  -e RESULT_DIR="$RUN_DIR")
+K6_ARGS+=(${OVERRIDE_ARGS[@]+"${OVERRIDE_ARGS[@]}"})
+K6_ARGS+=("${OUT_ARGS[@]}" "$SCENARIO_FILE")
+
 set +e
-k6 run \
-  --tag "testid=$RUN_ID" \
-  -e ENV="$ENV_NAME" \
-  -e PROFILE="$PROFILE" \
-  -e TESTID="$RUN_ID" \
-  -e RESULT_DIR="$RUN_DIR" \
-  ${OVERRIDE_ARGS[@]+"${OVERRIDE_ARGS[@]}"} \
-  "${OUT_ARGS[@]}" \
-  "$SCENARIO_FILE" 2>&1 | tee "$RUN_DIR/k6.log"
-K6_RC=${PIPESTATUS[0]}
+if [[ -n "${K6_HTTP_DEBUG:-}" ]]; then
+  # 日志已由 k6 直写 k6.log（K6_LOG_OUTPUT），不再 tee——两路同写一个文件会互相踩踏
+  k6 "${K6_ARGS[@]}"
+  K6_RC=$?
+else
+  k6 "${K6_ARGS[@]}" 2>&1 | tee "$RUN_DIR/k6.log"
+  K6_RC=${PIPESTATUS[0]}
+fi
 set -e
 
 # 结束时间戳——与 epochMillis 配对贴进 Grafana 的 &from= &to=

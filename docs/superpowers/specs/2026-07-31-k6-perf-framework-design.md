@@ -222,7 +222,7 @@ k6 run -e ENV=dev -e PROFILE=smoke src/scenarios/trades-query.js
 
 - 仓库不交付 Dockerfile：Job 镜像须内含 k6 与 `/perf` 下的 config/src/data，由公司镜像流程构建或以 ConfigMap 挂载脚本（见遗留问题 #7）；镜像地址经 `K6_IMAGE` 环境变量传给 run.sh。
 - `deploy/run.sh` 负责参数校验、testid 生成、manifest 渲染（envsubst）、提交 Job、tail 日志；`--tags` 模式追加场景元数据扫描与 PASS/FAIL 汇总表输出；接受任意 `KEY=value` 透传为 k6 `-e` 覆盖（仅 `--local` 模式生效，k8s Job 命令为固定模板）。
-- `perf/run.sh` 为本地便捷入口：位置参数 `<scenario>[.js] [env] [profile] [KEY=value ...]`（默认 local + smoke），参数解析后委托 `deploy/run.sh --local`——报告提取、汇总表、判定逻辑单一事实源。
+- `perf/run.sh` 为**独立本地 runner**（参考内部 trade-performance 框架的 runner 设计，不依赖 deploy/run.sh）：位置参数 `<scenario>[.js] [env] [profile] [KEY=value ...]`（默认 local + smoke）。机制：全链路 TZ=UTC（与服务端日志对表）；每次运行独立目录 `results/<UTC日>/<runId>/`，内含 **manifest.txt**（时间戳/epoch/覆盖项/主机/k6 版本/git commit + 内联 env 与 profile 全文——"一次只变一个变量"的事后审计凭证）、k6.log、summary.json/.html（三分类判定权威）、dashboard.html（k6 内置 web dashboard 实时曲线导出，不作判定）、result.csv（逐请求明细）；结束打印带 from/to/var-testid 的 Grafana 直达链接（环境配置 `grafanaDashboard` 键或 GRAFANA_DASHBOARD_URL 覆盖）；Prometheus 输出带 stale markers 与完整 trend stats；PREFLIGHT FAILED 时摘要提示；K6_HTTP_DEBUG 原生直通。判定：k6 退出码非零优先，否则以 thresholdFailures 定 PASS/FAIL。多场景批量汇总表仍走 `deploy/run.sh --tags`。
 - 仓库内一切主机地址与业务数据（counterparty、身份账号）使用占位符，真实值仅在公司内网填写。
 
 ## 11. 遗留问题（实现前需确认）

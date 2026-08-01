@@ -6,15 +6,16 @@ FX Structured Products Trading System 服务端压测框架。
 ## 快速开始
 
 ```bash
-# 本机直跑（本地 runner，位置参数：<scenario> [env] [profile]，默认 local + smoke）
+# 本机直跑（本地 runner，独立实现：<scenario> [env] [profile] [KEY=value...]，默认 local+smoke）
 ./run.sh trades-create.js dev smoke
 ./run.sh trades-query                                      # 等价 trades-query local smoke
 ./run.sh trades-create local baseline VUS=1 DURATION=600s  # KEY=value 任意 __ENV 覆盖
-./run.sh --tags P0 dev load                                # 批量 + 汇总表
+# 产物在 results/<UTC日>/<runId>/：manifest.txt（本轮完整环境快照）、k6.log、
+# summary.json/.html（三分类判定权威）、dashboard.html（k6 实时曲线导出）、result.csv（逐请求明细）
 
 # 本地静态验证（不发压）
 k6 inspect -e ENV=local src/scenarios/trades-query.js
-./run.sh --tags P0 --dry-run
+./deploy/run.sh --tags P0 -p smoke -e local --local --dry-run
 
 # 内网压 dev 环境（k8s Job，先按 docs/env-checklist.md 完成启用项）
 ./deploy/run.sh -s trades-query -p smoke -e dev            # 首跑必须 smoke

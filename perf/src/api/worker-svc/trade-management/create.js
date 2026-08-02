@@ -1,13 +1,13 @@
 import http from 'k6/http';
-import * as client from '../../lib/http.js';
-import { classifyResponse, reasonFrom } from '../../lib/errors.js';
-import { getDat, datName } from './trade-management-data.js';
+import * as client from '../../../lib/http.js';
+import { classifyResponse, reasonFrom } from '../../../lib/errors.js';
+import { getDat, datName } from './create-data.js';
 
 const SVC = 'worker-svc';
 const MOD = 'trade-management';
 
-// 读路径（queryTrades / perf_trades_rows）已拆分到 ./trade-management-read.js（终审 #4）：
-// 本文件保留 create + 其 -data 数据图，query 场景不再传递性加载用例池与 dat。
+// 读路径（queryTrades / perf_trades_rows）在 ./query.js（终审 #4 的 init 图隔离）：
+// 本文件只有 create + 其 ./create-data.js 数据图，压其他 API 不会传递性加载用例池与 dat。
 
 /*
  * ── create 的响应契约（trade-performance 实测校准版；业务分类属于本文件，

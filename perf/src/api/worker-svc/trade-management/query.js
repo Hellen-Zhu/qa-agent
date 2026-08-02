@@ -5,8 +5,8 @@
  * 任何 create 数据坏了都会拖垮 query 场景的 init，且每个 query VU 白白多背一份 dat 内存。
  * 本文件只做只读端点：查询无可断言的业务拒绝形态，契约只有结构校验。
  */
-import * as client from '../../lib/http.js';
-import { classifyRead, ERR } from '../../lib/errors.js';
+import * as client from '../../../lib/http.js';
+import { classifyRead, ERR } from '../../../lib/errors.js';
 import { Trend } from 'k6/metrics';
 
 const SVC = 'worker-svc';

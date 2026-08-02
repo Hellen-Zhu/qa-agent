@@ -31,7 +31,7 @@ k6 inspect -e ENV=local src/scenarios/trades-query.js
 - `profiles/` 负载 profile（JSON 声明式，scenario 块即 k6 executor 原文；`_` 开头键为注释；smoke/baseline/load/ladder/stress/spike/soak 七个，方法论见各文件 description）
 - `data/<service>/<module>/` 每 API 专属数据：查询字段池 + create 用例池（一行=一个完整同源用例，纪律见 `data/worker-svc/trade-management/README.md`）；`data/datfiles/products/<productType>/` dat 样本（占位，须真实采集替换）
 - `src/lib` 纯逻辑模块（config/users/data/rows/sla/report，Node 可加载）+ k6 侧模块（http.js 纯发送管道、errors.js 三分类引擎、bootstrap.js 场景装配 + handleSummary 双路输出）
-- `src/api/<service>/` API 客户端层：`<module>.js`（请求构造+响应契约分类）与 `<module>-data.js`（用例池实例化+dat 预载）
+- `src/api/<service>/<module>/` API 客户端层：`<api>.js`（请求构造+响应契约分类）+ 需要用例池的配 `<api>-data.js`——每 API 一文件，init 图天然隔离；按需建档（被压测才建）
 - `src/setup/` preflight（本地数据闸，setup 阶段不发请求）
 - `src/scenarios` 场景入口（数据 + 一次业务动作）
 - `dashboards/` Grafana dashboard JSON（单板总览 + 官方 19665 固定版本存档）
@@ -42,7 +42,7 @@ k6 inspect -e ENV=local src/scenarios/trades-query.js
 - **错误三分类**：technical（性能结论）/ business（通常是数据问题）/ script（本轮作废）必须分开看；SLA 分位数只看 `perf_success_duration`（业务成功请求）
 - 判定权威是 summary（三分类 + 阈值 + 0 请求防假绿），不是 dashboard.html——web dashboard 的错误率是 HTTP 层的 http_req_failed，本系统业务失败也返回 200
 - 数据取数一律全局游标（`exec.scenario.iterationInTest`）；指标 tag 只允许有界取值，严禁 tradeId 类唯一值
-- 新增写路径 API：`src/api/<service>/` 加 `<api>.js`（契约）+ `<api>-data.js`（用例池）+ `data/<service>/<scenario>.json` 用例文件 + preflight；新增读路径 API：加 `<api>.js` 用 `classifyRead` + 字段池数据文件
+- 新增写路径 API：`src/api/<service>/<module>/` 加 `<api>.js`（契约）+ `<api>-data.js`（用例池）+ `data/<service>/<module>/<scenario>.json` 用例文件 + preflight；新增读路径 API：加 `<api>.js` 用 `classifyRead` + 字段池数据文件
 - RATE/VUS/DURATION/MAX_VUS 覆盖仅作用于 profile 中存在的同名标量键（stages 字面量不受影响）；任意 `KEY=value` 透传为 k6 `-e`
 
 ## 真实环境启用

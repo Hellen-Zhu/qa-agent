@@ -1,8 +1,8 @@
 import exec from 'k6/execution';
 import { cfg, buildOptions } from '../lib/bootstrap.js';
 import { pickUser } from '../lib/users.js';
-import { pickCase } from '../api/worker-svc/trade-management-data.js';
-import { createTrade } from '../api/worker-svc/trade-management.js';
+import { pickCase } from '../api/worker-svc/trade-management/create-data.js';
+import { createTrade } from '../api/worker-svc/trade-management/create.js';
 import { createTradePreflight } from '../setup/create-trade-preflight.js';
 
 // P0 · worker-svc/trade-management · 写路径

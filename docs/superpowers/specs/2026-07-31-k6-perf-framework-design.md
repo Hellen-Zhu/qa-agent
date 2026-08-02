@@ -51,12 +51,14 @@ perf/
 ├── src/                    # 只存放会被 k6 引擎加载执行的 JavaScript 代码
 │   ├── lib/                # 纯逻辑模块（config/users/data/rows/sla/report，Node 可加载）
 │   │                       #   + k6 侧：http.js、errors.js（三分类引擎）、bootstrap.js（场景装配）
-│   ├── api/                # API 客户端层，按 微服务/模块 分目录；<module>.js + <module>-data.js
+│   ├── api/                # API 客户端层：服务→目录、模块→子目录、API→文件（见 §3.1）
 │   │   └── worker-svc/
-│   │       ├── trade-management.js       # createTrade / triggerEvent（P1b）（契约分类）
-│   │       ├── trade-management-read.js  # queryTrades：读路径客户端，独立于 create 数据图（init 图隔离）
-│   │       ├── trade-management-data.js  # 用例池实例化 + dat 预载
-│   │       └── checker-flow.js           # P1c：pending / approve / reject
+│   │       ├── trade-management/
+│   │       │   ├── create.js        # createTrade（契约分类）
+│   │       │   ├── create-data.js   # create 用例池实例化 + dat 预载
+│   │       │   ├── query.js         # queryTrades（读路径；每 API 一文件使 init 图天然隔离）
+│   │       │   └── trigger-event.js # P1b（+ trigger-event-data.js 目标清单）
+│   │       └── checker-flow/        # P1c：pending / approve / reject
 │   ├── setup/              # preflight（本地数据闸）
 │   ├── scenarios/          # 单 API 场景入口（一次业务动作，SLA/容量结论的唯一来源）
 │   ├── journeys/           # E2E 业务流入口（P1c：一个迭代串多 API，per-step 子指标）
@@ -96,7 +98,7 @@ perf/
 三级映射规则：
 
 - **服务 → 目录**：`src/api/<service>/`，每个服务一个目录；
-- **模块 → 文件**：`src/api/<service>/<module>.js`，模块内 API 是该文件导出的函数；
+- **模块 → 子目录、API → 文件**（2026-08-02 升级，原"模块→文件"在 trade-management 已知 9+ API 后废弃——单文件大杂烩且 init 图耦合）：`src/api/<service>/<module>/<api>.js`，一个文件 = 一个压测目标及其契约，需要用例池的再配 `<api>-data.js`——**每 API 一文件使 init 图隔离成为默认结构**（压哪个 API 只加载哪个契约与数据，原 -read 后缀补丁不再需要）。**按需建档**：只有被压测或被 journey 使用的 API 才建文件，端点清单不预先铺满（trade-management 已知 API 面：create、query、trigger-event、update、risk-metrics、dat-to-json、target-gain、generate-schedule、sync-cashflows-batch——记录备查，非建档任务）。紧密协作的小端点组（如 checker-flow 的 pending/approve/reject 审批动作组）可合一文件，P1c 时按压测目标定；
 - **服务地址**：`config/environments/<env>.json` 中维护 `services` 映射（每个服务独立 host:port），api 层按服务名取 baseUrl，场景代码不感知地址。
 
 所有指标统一附加 `service`、`module` 标签（与 `tags.name` 并列），Grafana 可按服务/模块下钻聚合。
@@ -237,7 +239,7 @@ perf/
 
 - **P1a：测量正确性融合改造（先于 lifecycle 场景）**——本次修订新增的机制落地：写路径用例行数据模型 + preflight、错误三分类引擎（含 perf_success_duration 与 SLA 指标源切换）、全局游标轮换、profile JSON 化与 baseline/ladder 增补、两级熔断。**排在 P1b 之前的理由：lifecycle 场景建立在这些机制之上，先建场景再改机制等于返工。**
 - **P1b：trigger-event 单 API 场景 + 基线对比**——`triggerEvent(cfg, tradeId, eventType, user)` 参数化客户端（8 类事件共用契约骨架、按事件微分）；seed 铺 PENDING 池（纯 create 批量，`SEED_TARGET=PENDING`）；LIVE 池查询圈定 + 事件目标清单 preflight（含 PERF portfolio 硬闸，§6）；基线对比脚本消费 summary.json（§9）。首个压测事件选终态性明确、数据供给成本最低者（§11-8/9 确认后定）。checker-task 审批 API 本期**不实现**。
-- **P1c：checker-task 审批链 + E2E journey**——checker-flow 客户端（`src/api/worker-svc/checker-flow.js`：pending / approve / reject，taskId 寻址）；LIVE 池全自动 seed（create→查 pending 映射 taskId→approve 双身份流水线）；`src/journeys/trade-lifecycle.js`（create → approve → event 三步双角色、失败短路防 404 洪水，journey 机制借用 trade-performance 实现按需裁剪）；run.sh 入口查找扩展多目录（§10.1）。
+- **P1c：checker-task 审批链 + E2E journey**——checker-flow 客户端（`src/api/worker-svc/checker-flow/`：pending / approve / reject，taskId 寻址）；LIVE 池全自动 seed（create→查 pending 映射 taskId→approve 双身份流水线）；`src/journeys/trade-lifecycle.js`（create → approve → event 三步双角色、失败短路防 404 洪水，journey 机制借用 trade-performance 实现按需裁剪）；run.sh 入口查找扩展多目录（§10.1）。
 - **P2 混合配比场景**（`src/mixed/`）：多 scenario 块并行按生产流量配比，可复用 journey 函数；think time、软依赖降级届时按需引入。
 - **API catalog 治理（延后，规模驱动）**：当 API 数量增长到需要覆盖率治理时启用生成式 catalog——清单由各服务 Swagger/OpenAPI 自动同步（可复用本仓库 `parse_swagger.py` 经验），优先级为唯一人工列（Prometheus QPS 排名输出建议值辅助），覆盖列由场景元数据反向计算；届时场景 `meta` 增加 `covers` 字段声明所覆盖端点。
 - **WebSocket（P2）**：k6 原生支持 ws 协议；在 `api/` 层新增 ws 客户端模块，`lib/errors.js` 增加消息延迟指标，无架构变更。

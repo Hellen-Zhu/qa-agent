@@ -6,7 +6,7 @@
  * 二进制 dat 进不了 → 每 VU 复制一份，内存 ≈ VU 数 × dat 总字节，大文件警惕。
  */
 import { SharedArray } from 'k6/data';
-import { rowsFromJson } from '../../lib/rows.js';
+import { rowsFromJson } from '../../../lib/rows.js';
 
 function envOr(key, fallback) {
   const v = __ENV[key];
@@ -20,7 +20,7 @@ if (!DATA_FILE.endsWith('.json')) {
 }
 
 export const createCases = new SharedArray('create-cases', () =>
-  rowsFromJson(open(import.meta.resolve(`../../../${DATA_FILE}`)), DATA_FILE)
+  rowsFromJson(open(import.meta.resolve(`../../../../${DATA_FILE}`)), DATA_FILE)
 );
 
 /** 全局游标轮换：i 用 exec.scenario.iterationInTest——均匀覆盖且可复现 */
@@ -33,7 +33,7 @@ export function pickCase(i) {
 // 约定优于配置：行里只写 productType，dat 按同名约定定位——数据文件无路径字符串可打错，
 // 加产品 = 放一个约定命名的文件 + 加一行数据。同一产品需要多个 dat 样本时，
 // 再为行增加可选 datFile 覆盖列（当前 YAGNI）。只预加载数据文件实际引用的产品。
-const DAT_ROOT = '../../../data/datfiles/products/';
+const DAT_ROOT = '../../../../data/datfiles/products/';
 // productType 会拼进文件路径：先过字符集闸（顺带在装载时就拦住拼写异常）
 const PRODUCT_TYPE_RE = /^[A-Za-z0-9_-]+$/;
 const datBinaries = {};

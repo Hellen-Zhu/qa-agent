@@ -5,8 +5,8 @@
  * "数据今天是否仍有效"由 smoke 会话纪律 + 长跑熔断线回答（见 data/worker-svc/trade-management/README.md）。
  */
 import exec from 'k6/execution';
-import { createCases, pickCase, DATA_FILE } from '../api/worker-svc/trade-management-data.js';
-import { validateInputs } from '../api/worker-svc/trade-management.js';
+import { createCases, pickCase, DATA_FILE } from '../api/worker-svc/trade-management/create-data.js';
+import { validateInputs } from '../api/worker-svc/trade-management/create.js';
 
 export function createTradePreflight() {
   console.log('── preflight: create 用例池本地校验 ──');

@@ -4,7 +4,7 @@
 - `trades-create.json` — create 用例池：一行 = 一个完整可跑用例。行号 `__row` 装载时自动注入，
   作为指标 tag（哪行数据坏了直接从指标切出）；无人工维护的 id 列。
 
-读路径客户端（`src/api/worker-svc/trade-management-read.js`）与写路径客户端（`trade-management.js`）代码分离，
+读路径客户端（`src/api/worker-svc/trade-management/query.js`）与写路径客户端（`create.js`）代码分离，
 原因是读场景不应加载 create 用例池与 dat 二进制——两者互不 import。
 
 ## 为什么归属字段内嵌一行，且必须同源

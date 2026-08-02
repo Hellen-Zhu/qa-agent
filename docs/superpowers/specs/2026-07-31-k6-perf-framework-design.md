@@ -184,7 +184,12 @@ perf/
 - **testid 约定**：每次运行生成唯一 `testid`（`<场景>_<环境>_<profile>_<UTC时间戳>`）作为全局标签，Grafana 按 testid 下拉筛选任意一次历史压测（官方 dashboard 自带 testid 变量，`run.sh` 生成的 testid 直接可用）。
 - **dashboards/ 内容**（均为 JSON 进版本库）：
   1. **官方 k6 Prometheus dashboard（ID 19665，已在使用，当前主打通目标）**——展示 k6 内置指标（RPS、http_req_duration 分位数、错误率、VU 数），继续沿用，导出一份固定版本入库防漂移。框架侧已按其指标需求对齐（2026-08-02）：trend stats 推 p50/p95/p99/min/max/avg（quantile 下拉全可选）；`expected_response`/`testid` 等标签默认发出；**Checks 面板由三分类引擎桥接**——业务成败镜像为一条 `business success` check，使其 Checks Success Rate 大卡直接显示业务成功率（其 failed rate 只反映 HTTP 层，本系统业务失败也返回 200），判定权威不变；
-  2. **单板总览 dashboard（自建，`perf-trade-business.json`，日常主看板）**——同一块板上半为 HTTP 层（RPS、`k6_http_req_duration_p95/p99` 全请求延迟、VU 数、失败率），下半为业务层（三分类错误计数按 `reason` 下钻、`k6_perf_business_success_rate`、`k6_perf_success_duration_p95/p99`、按 `row` 定位坏行）——两类指标查的是同一 Prometheus 数据，单板即可对照，无需在两块板间切换；板顶带跳转链接（keepTime + includeVars）指向官方 19665 作深入参考。官方板保持原样以便随上游升级。
+  2. **单板总览 dashboard（自建，`perf-trade-business.json`，日常主看板；2026-08-02 按"summary 对齐"模型重构）**——版面按**数据可信度分区**：
+     - **对账区**（头部 stat 大卡）：total/ok/technical/business/script/业务成功率/业务 TPS，全部用 `max_over_time` counter 终值——**与该轮 summary 逐项精确一致**（范围向量不受 stale marker 影响，这是 2026-08-02 对数事故的修正成果）；
+     - **施压有效性区**：RPS + `dropped_iterations`（>0 即压力机跟不上、本轮速率失真——"图好看但没压到位"的唯一证据）、VUs vs maxVUs 上限；
+     - **趋势区**（面板描述明示口径）：success duration p50/p95/p99 按 `name` 分线（journey 预留）、全请求 vs 成功 p95 同图对照（差距拉大=快速失败混入时刻）、按类错误率、technical 按 `reason` 下钻、business 按 `row` 定位、`perf_trades_rows` 空库守卫——**5s 推送窗口口径，只回答"何时/形状"，结论数字以 summary 为准**（分位数 gauge 不可聚合是 k6 官方明示限制）；
+     - **刻意不放**：`http_req_failed`（本系统 200+业务拒绝在它眼里是绿的——口径陷阱，要看去 19665）、checks（那是给 19665 搭的桥）、verdict（判定权威在 summary，看板不复刻）；
+     - 服务端关联区占位（内网按 checklist 补齐）；板顶跳转链接（keepTime + includeVars）指向官方 19665 作 k6 内置指标深挖。官方板保持原样以便随上游升级。**条件触发升级**：干系人必须直接从 Grafana 读结论数字时，启用 native histogram（Prometheus ≥2.40 开 `--enable-feature=native-histograms` + `K6_PROMETHEUS_RW_TREND_AS_NATIVE_HISTOGRAM=true`），本板分位数卡换 `histogram_quantile` 全程精确聚合（官方 native 板为 ID 18030，但缺业务层概念，仍以自建板为主）。
 - **与服务端指标串联**（压测后排障的关键路径，三个机制递进）：
   1. **同源数据**：k6 指标与服务端指标写入同一个 Prometheus，天然可在任意 dashboard 混排——自建业务 dashboard 底部直接加一组服务端资源面板（CPU/内存/GC/线程池/DB 连接池，PromQL 与现有服务端 dashboard 一致，按 service 变量过滤），压测曲线与资源曲线上下对齐一屏看完；
   2. **带时间窗跳转**：压测 dashboard 顶部配置 dashboard link 到各服务端 dashboard，URL 携带 `?from=${__from}&to=${__to}`，点击即以当前压测时间窗打开服务端视图，无需手动对时间；

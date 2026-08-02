@@ -13,7 +13,7 @@ run.sh 真实运行（summary 写盘、verdict/退出码、preflight 提示）�
 - [ ] 压测机 k6 版本 ≥ 0.55（与本地验证版本行为一致：experimental-prometheus-rw 输出名、K6_PROMETHEUS_RW_TREND_STATS、web dashboard 导出）；Windows 机器装 Git Bash 跑同一份 run.sh
 - [ ] 5 个微服务清单（服务名/地址/模块）补入 `config/environments/` 与 `src/api/`（遗留问题 #6）
 - [ ] X-User-Id 身份（maker/checker 真实账号）填入环境文件并确认在目标环境有效
-- [ ] 导入 `perf-trade-business.json`（单板总览，日常主看板）到现网 Grafana，确认 testid 变量与各面板出数；官方 19665 现网已装、仓库份仅为固定版本存档（若全新 Grafana 才需一并导入）；板顶跳转链接指向 19665 的 uid（`ccbb2351-...`），若现网实例 uid 不同需改链接；19665 的 Checks 面板显示框架桥接的 `business success`（业务成功率镜像，2026-08-02 起）——判定权威仍是 summary 三分类，Checks 大卡仅作展示
+- [ ] 导入 `perf-trade-business.json`（单板总览，日常主看板）到现网 Grafana，确认 testid 变量与各面板出数；**跑一轮 smoke 后核对头部对账区大卡与该轮 summary 三分类逐项相等**（对账区用 counter 终值，应精确一致；曲线区是 5s 窗口趋势口径，分位数与 summary 有差属预期）；官方 19665 现网已装、仓库份仅为固定版本存档（若全新 Grafana 才需一并导入）；板顶跳转链接指向 19665 的 uid（`ccbb2351-...`），若现网实例 uid 不同需改链接；19665 的 Checks 面板显示框架桥接的 `business success`（业务成功率镜像，2026-08-02 起）——判定权威仍是 summary 三分类，Checks 大卡仅作展示
 - [ ] 服务端指标串联配置（依赖现网信息）：业务 dashboard 底部补服务端资源面板（PromQL 参照现有服务端 dashboard，按 service 过滤）；顶部加带 `?from=${__from}&to=${__to}` 的 dashboard link 跳转到各服务端 dashboard
 - [ ] 压测环境 trade 表存量数据接近生产量级（空表查询无参考价值）
 - [ ] 首跑顺序：smoke（1 分钟）→ 确认 Grafana 出数、报告生成、服务端无异常 → 再 load

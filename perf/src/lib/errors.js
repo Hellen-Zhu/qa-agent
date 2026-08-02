@@ -85,55 +85,8 @@ export function recordOutcome(errClass, tags, res, reason) {
   check(ok, { 'business success': (v) => v }, tags);
 }
 
-/*
- * ── HTTP_DUMP=1：每请求一行结构化 JSON（经 run.sh 落盘 k6.log）───────────
- * k6 原生 K6_HTTP_DEBUG 把整段报文塞进 logrus 的 msg 字段（\n 被转义，不可读）；
- * 分类引擎本就经手每个响应，这里输出可读得多的记录：响应体解析为真 JSON 对象，
- * 并附三分类归因。仅 smoke 级调试用（每请求一行 console，压力下反噬压力机）。
- * 提取：grep '^{' k6.log（raw 格式下 k6 自身日志行与 JSONL 混排）。
- */
-const DUMP = __ENV.HTTP_DUMP === '1' || __ENV.HTTP_DUMP === 'true';
-const DUMP_CAP = 2000;
-
-function dumpBody(b) {
-  if (b === null || b === undefined || b === '') return null;
-  const s = typeof b === 'string' ? b : String(b);
-  // 二进制（multipart 里的 dat）不进日志：控制字符探测前 512 字节即可
-  if (/[\x00-\x08\x0E-\x1F]/.test(s.slice(0, 512))) return `[binary elided, ${s.length} bytes]`;
-  return s.length > DUMP_CAP ? s.slice(0, DUMP_CAP) + `...[+${s.length - DUMP_CAP} chars]` : s;
-}
-
-function dumpHttp(res, tags, out) {
-  let resBody = dumpBody(res.body);
-  if (typeof res.body === 'string' && res.body.length > 0 && res.body.length < 65536) {
-    try { resBody = JSON.parse(res.body); } catch (_) { /* 非 JSON 保持截断字符串 */ }
-  }
-  const req = res.request || {};
-  const u = (req.headers || {})['X-User-Id'];
-  console.log(JSON.stringify({
-    t: new Date().toISOString(),
-    vu: __VU,
-    name: (tags || {}).name,
-    method: req.method,
-    url: req.url,
-    status: res.status,
-    durMs: Math.round(res.timings.duration),
-    errClass: out.errClass,
-    reason: out.reason || undefined,
-    user: Array.isArray(u) ? u[0] : u,   // k6 的 header 值是数组形态
-    reqBody: dumpBody(req.body),
-    resBody,
-  }));
-}
-
 /** 通用分类引擎。分支顺序即分类优先级（technical → not-json → business → shape），勿调整 */
 export function classifyResponse(res, tags, spec) {
-  const out = doClassify(res, tags, spec);
-  if (DUMP) dumpHttp(res, tags, out);
-  return out;
-}
-
-function doClassify(res, tags, spec) {
   const s = spec || {};
   const t = tags || {};
 

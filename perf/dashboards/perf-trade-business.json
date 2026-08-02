@@ -11,10 +11,11 @@
   ],
   "title": "Perf - Trade Overview",
   "uid": "perf-trade-biz",
+  "description": "对账区（精确，=summary）+ 趋势区（5s 窗口口径）。结论数字以 summary 为准；判定权威是阈值。",
   "schemaVersion": 39,
   "tags": [
-    "perf",
-    "k6"
+    "k6",
+    "perf"
   ],
   "time": {
     "from": "now-1h",
@@ -46,227 +47,979 @@
   },
   "panels": [
     {
-      "title": "requests per second (RPS)",
-      "type": "timeseries",
+      "id": 1,
+      "type": "stat",
+      "title": "total 请求",
+      "description": "精确口径：counter 终值（max_over_time），应与该轮 summary 逐项一致。",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
       "gridPos": {
-        "h": 8,
-        "w": 12,
+        "h": 4,
+        "w": 4,
         "x": 0,
         "y": 0
       },
       "targets": [
         {
-          "expr": "sum(rate(k6_http_reqs_total{testid=\"$testid\"}[1m]))",
-          "legendFormat": "RPS",
           "datasource": {
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
-          }
+          },
+          "expr": "sum(max_over_time(k6_http_reqs_total{testid=\"$testid\"}[$__range]))",
+          "refId": "A",
+          "legendFormat": "",
+          "instant": true,
+          "range": false
         }
       ],
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
       }
     },
     {
-      "title": "virtual users (VUs)",
-      "type": "timeseries",
+      "id": 2,
+      "type": "stat",
+      "title": "ok（业务成功）",
+      "description": "精确口径：counter 终值（max_over_time），应与该轮 summary 逐项一致。",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
       "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 12,
+        "h": 4,
+        "w": 4,
+        "x": 4,
         "y": 0
       },
       "targets": [
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "(sum(max_over_time(k6_perf_ok_total{testid=\"$testid\"}[$__range])) or vector(0))",
+          "refId": "A",
+          "legendFormat": "",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "technical",
+      "description": "精确口径：counter 终值（max_over_time），应与该轮 summary 逐项一致。 technical 是性能结论。",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 3,
+        "x": 8,
+        "y": 0
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "sum(max_over_time(k6_perf_err_technical_total{testid=\"$testid\"}[$__range])) or vector(0)",
+          "refId": "A",
+          "legendFormat": "",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "business",
+      "description": "精确口径：counter 终值（max_over_time），应与该轮 summary 逐项一致。 business 通常是数据问题。",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 3,
+        "x": 11,
+        "y": 0
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "sum(max_over_time(k6_perf_err_business_total{testid=\"$testid\"}[$__range])) or vector(0)",
+          "refId": "A",
+          "legendFormat": "",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "script",
+      "description": "精确口径：counter 终值（max_over_time），应与该轮 summary 逐项一致。 script>0 本轮作废。",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 3,
+        "x": 14,
+        "y": 0
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "sum(max_over_time(k6_perf_err_script_total{testid=\"$testid\"}[$__range])) or vector(0)",
+          "refId": "A",
+          "legendFormat": "",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 6,
+      "type": "stat",
+      "title": "业务成功率",
+      "description": "精确口径：counter 终值（max_over_time），应与该轮 summary 逐项一致。 由 counter 算出，比窗口 rate 指标精确。",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 17,
+        "y": 0
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "(sum(max_over_time(k6_perf_ok_total{testid=\"$testid\"}[$__range])) or vector(0)) / sum(max_over_time(k6_http_reqs_total{testid=\"$testid\"}[$__range]))",
+          "refId": "A",
+          "legendFormat": "",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 0.95
+              },
+              {
+                "color": "green",
+                "value": 0.99
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 7,
+      "type": "stat",
+      "title": "业务 TPS",
+      "description": "精确口径。分母是看板时间范围——请用 run.sh 打印的深链（精确 from/to），手动放宽范围会稀释此值。",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 3,
+        "x": 21,
+        "y": 0
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "(sum(max_over_time(k6_perf_ok_total{testid=\"$testid\"}[$__range])) or vector(0)) / $__range_s",
+          "refId": "A",
+          "legendFormat": "",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "施压速率：RPS vs dropped",
+      "description": "dropped/s 一旦 >0：压力机跟不上目标速率（maxVUs 不足/机器瓶颈），本轮速率失真、所有结论打折。",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 4
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "sum(rate(k6_http_reqs_total{testid=\"$testid\"}[$__rate_interval]))",
+          "refId": "A",
+          "legendFormat": "RPS"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "sum(rate(k6_dropped_iterations_total{testid=\"$testid\"}[$__rate_interval]))",
+          "refId": "B",
+          "legendFormat": "dropped/s"
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "VUs",
+      "description": "open 模型下 VU 数是\"为维持速率付出的并发\"；逼近 maxVUs 上限 = 速率即将失真的前兆。",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 4
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
           "expr": "k6_vus{testid=\"$testid\"}",
-          "legendFormat": "VUs",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
-          }
-        }
-      ],
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
-      }
-    },
-    {
-      "title": "HTTP duration p95/p99 (ms) — 全请求含失败",
-      "type": "timeseries",
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 0,
-        "y": 8
-      },
-      "targets": [
-        {
-          "expr": "k6_http_req_duration_p95{testid=\"$testid\"}",
-          "legendFormat": "p95",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
-          }
+          "refId": "A",
+          "legendFormat": "VUs"
         },
         {
-          "expr": "k6_http_req_duration_p99{testid=\"$testid\"}",
-          "legendFormat": "p99",
           "datasource": {
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
-          }
+          },
+          "expr": "k6_vus_max{testid=\"$testid\"}",
+          "refId": "B",
+          "legendFormat": "maxVUs 上限"
         }
       ],
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
-      }
-    },
-    {
-      "title": "HTTP failed rate",
-      "type": "timeseries",
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 8
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
       },
-      "targets": [
-        {
-          "expr": "k6_http_req_failed_rate{testid=\"$testid\"}",
-          "legendFormat": "failed rate",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
           }
-        }
-      ],
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
+        },
+        "overrides": []
       }
     },
     {
-      "title": "success-only duration p95/p99 (ms) — SLA 观测对象",
+      "id": 10,
       "type": "timeseries",
+      "title": "success duration 分位数（按 API）",
+      "description": "趋势口径（5s 推送窗口），回答\"何时/形状\"——结论数字以 summary 为准。 SLA 观测对象（只含业务成功样本）；P95/P50 发散点=慢路径出现时刻；按 name 分线为 journey 预留。",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
       "gridPos": {
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 16
+        "y": 12
       },
       "targets": [
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "k6_perf_success_duration_p50{testid=\"$testid\"}",
+          "refId": "A",
+          "legendFormat": "{{name}} p50"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
           "expr": "k6_perf_success_duration_p95{testid=\"$testid\"}",
-          "legendFormat": "p95",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
-          }
+          "refId": "B",
+          "legendFormat": "{{name}} p95"
         },
         {
-          "expr": "k6_perf_success_duration_p99{testid=\"$testid\"}",
-          "legendFormat": "p99",
           "datasource": {
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
-          }
+          },
+          "expr": "k6_perf_success_duration_p99{testid=\"$testid\"}",
+          "refId": "C",
+          "legendFormat": "{{name}} p99"
         }
       ],
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
       }
     },
     {
-      "title": "errors per second by class",
+      "id": 11,
       "type": "timeseries",
+      "title": "全请求 vs 成功 p95",
+      "description": "趋势口径（5s 推送窗口），回答\"何时/形状\"——结论数字以 summary 为准。 两线差距拉大 = 快速失败开始混入的时刻。",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
       "gridPos": {
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 16
+        "y": 12
       },
       "targets": [
         {
-          "expr": "rate(k6_perf_err_technical_total{testid=\"$testid\"}[1m])",
-          "legendFormat": "technical",
           "datasource": {
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
-          }
+          },
+          "expr": "avg(k6_http_req_duration_p95{testid=\"$testid\"})",
+          "refId": "A",
+          "legendFormat": "all p95（含失败）"
         },
         {
-          "expr": "rate(k6_perf_err_business_total{testid=\"$testid\"}[1m])",
-          "legendFormat": "business",
           "datasource": {
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
-          }
-        },
-        {
-          "expr": "rate(k6_perf_err_script_total{testid=\"$testid\"}[1m])",
-          "legendFormat": "script",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
-          }
+          },
+          "expr": "avg(k6_perf_success_duration_p95{testid=\"$testid\"})",
+          "refId": "B",
+          "legendFormat": "success p95（SLA 对象）"
         }
       ],
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
       }
     },
     {
-      "title": "business success rate",
+      "id": 12,
       "type": "timeseries",
+      "title": "错误速率（按类）",
+      "description": "趋势口径（5s 推送窗口），回答\"何时/形状\"——结论数字以 summary 为准。 错误何时开始、哪类先出现。",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
       "gridPos": {
         "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 20
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "sum(rate(k6_perf_err_technical_total{testid=\"$testid\"}[$__rate_interval]))",
+          "refId": "A",
+          "legendFormat": "technical"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "sum(rate(k6_perf_err_business_total{testid=\"$testid\"}[$__rate_interval]))",
+          "refId": "B",
+          "legendFormat": "business"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "sum(rate(k6_perf_err_script_total{testid=\"$testid\"}[$__rate_interval]))",
+          "refId": "C",
+          "legendFormat": "script"
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 13,
+      "type": "timeseries",
+      "title": "technical 按 reason",
+      "description": "趋势口径（5s 推送窗口），回答\"何时/形状\"——结论数字以 summary 为准。 劣化模式识别：超时（net-*）和 5xx 是完全不同的故事；http-409 先怀疑身份池配置。",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 20
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "sum by (reason)(rate(k6_perf_err_technical_total{testid=\"$testid\"}[$__rate_interval]))",
+          "refId": "A",
+          "legendFormat": "{{reason}}"
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 14,
+      "type": "timeseries",
+      "title": "business 按数据行定位",
+      "description": "趋势口径（5s 推送窗口），回答\"何时/形状\"——结论数字以 summary 为准。 哪行数据坏了、什么原因——直接指向 data 文件行号。",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 20
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "sum by (row, reason) (rate(k6_perf_err_business_total{testid=\"$testid\"}[$__rate_interval]))",
+          "refId": "A",
+          "legendFormat": "row {{row}} · {{reason}}"
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 15,
+      "type": "timeseries",
+      "title": "query 返回行数（空库守卫）",
+      "description": "趋势口径（5s 推送窗口），回答\"何时/形状\"——结论数字以 summary 为准。 恒为 0 = 空库或过滤字段名猜错，本轮查询数字无证明力；仅 query 场景有数。",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "h": 6,
         "w": 12,
         "x": 0,
-        "y": 24
+        "y": 28
       },
       "targets": [
         {
-          "expr": "k6_perf_business_success_rate{testid=\"$testid\"}",
-          "legendFormat": "success rate",
           "datasource": {
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
-          }
+          },
+          "expr": "k6_perf_trades_rows_avg{testid=\"$testid\"}",
+          "refId": "A",
+          "legendFormat": "rows/响应（窗口 avg）"
         }
       ],
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
       }
     },
     {
-      "title": "business errors by data row (数据坏行定位)",
-      "type": "timeseries",
+      "id": 16,
+      "type": "text",
+      "title": "服务端关联区（内网启用项）",
       "gridPos": {
-        "h": 8,
+        "h": 6,
         "w": 12,
         "x": 12,
-        "y": 24
+        "y": 28
       },
-      "targets": [
-        {
-          "expr": "sum by (row, reason) (rate(k6_perf_err_business_total{testid=\"$testid\"}[1m]))",
-          "legendFormat": "row {{row}} {{reason}}",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
-          }
-        }
-      ],
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
+      "options": {
+        "mode": "markdown",
+        "content": "此区按 env-checklist 在内网补齐（PromQL 参照现网服务端 dashboard，按 service 过滤）：\n\n- CPU / 内存 / GC / 线程池 / DB 连接池 —— 与上方压测曲线同屏按时间对齐\n- 板顶链接可跳官方 19665 看 k6 内置指标全集（传输/连接细节）\n\n**口径提醒**：头部大卡为精确对账区（=summary）；曲线均为 5s 窗口趋势口径，结论数字以 summary 为准。"
       }
     }
   ]

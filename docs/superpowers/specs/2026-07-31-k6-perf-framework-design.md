@@ -183,7 +183,7 @@ perf/
 - k6 通过内置 `experimental-prometheus-rw` 输出指标至现有 Prometheus，Trend 指标配置 p95/p99 统计。**所有指标（含自定义业务指标）都会以 `k6_` 前缀写入**——remote write 不区分内置与自定义。
 - **testid 约定**：每次运行生成唯一 `testid`（`<场景>_<环境>_<profile>_<UTC时间戳>`）作为全局标签，Grafana 按 testid 下拉筛选任意一次历史压测（官方 dashboard 自带 testid 变量，`run.sh` 生成的 testid 直接可用）。
 - **dashboards/ 内容**（均为 JSON 进版本库）：
-  1. **官方 k6 Prometheus dashboard（ID 19665，已在使用）**——展示 k6 内置指标（RPS、http_req_duration 分位数、错误率、VU 数），继续沿用，导出一份固定版本入库防漂移；
+  1. **官方 k6 Prometheus dashboard（ID 19665，已在使用，当前主打通目标）**——展示 k6 内置指标（RPS、http_req_duration 分位数、错误率、VU 数），继续沿用，导出一份固定版本入库防漂移。框架侧已按其指标需求对齐（2026-08-02）：trend stats 推 p50/p95/p99/min/max/avg（quantile 下拉全可选）；`expected_response`/`testid` 等标签默认发出；**Checks 面板由三分类引擎桥接**——业务成败镜像为一条 `business success` check，使其 Checks Success Rate 大卡直接显示业务成功率（其 failed rate 只反映 HTTP 层，本系统业务失败也返回 200），判定权威不变；
   2. **单板总览 dashboard（自建，`perf-trade-business.json`，日常主看板）**——同一块板上半为 HTTP 层（RPS、`k6_http_req_duration_p95/p99` 全请求延迟、VU 数、失败率），下半为业务层（三分类错误计数按 `reason` 下钻、`k6_perf_business_success_rate`、`k6_perf_success_duration_p95/p99`、按 `row` 定位坏行）——两类指标查的是同一 Prometheus 数据，单板即可对照，无需在两块板间切换；板顶带跳转链接（keepTime + includeVars）指向官方 19665 作深入参考。官方板保持原样以便随上游升级。
 - **与服务端指标串联**（压测后排障的关键路径，三个机制递进）：
   1. **同源数据**：k6 指标与服务端指标写入同一个 Prometheus，天然可在任意 dashboard 混排——自建业务 dashboard 底部直接加一组服务端资源面板（CPU/内存/GC/线程池/DB 连接池，PromQL 与现有服务端 dashboard 一致，按 service 变量过滤），压测曲线与资源曲线上下对齐一屏看完；

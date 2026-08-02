@@ -11,6 +11,7 @@
  * 经 spec 回调注入。tag 只允许有界取值——reason 来自模式表槽位 + 服务端
  * code 枚举 + HTTP 状态码；严禁把自由文本 msg 或 tradeId 类唯一值当 tag。
  */
+import { check } from 'k6';
 import { Counter, Rate, Trend } from 'k6/metrics';
 
 export const cOk = new Counter('perf_ok');
@@ -76,6 +77,12 @@ export function recordOutcome(errClass, tags, res, reason) {
 
   rBusinessSuccess.add(ok, tags);
   if (ok) tSuccessDuration.add(res.timings.duration, tags);
+
+  // 官方 19665 板桥接：其 Checks 面板读 k6_checks_rate，而本框架不以 check() 作
+  // 断言（三分类才是判定权威）。这里仅把业务成败镜像成一条 check，让 19665 的
+  // Checks Success Rate 大卡直接显示业务成功率——它的 failed rate 是 http_req_failed
+  // （HTTP 层），本系统业务失败也返回 200，没有这条桥官方板讲不了业务层的故事。
+  check(ok, { 'business success': (v) => v }, tags);
 }
 
 /** 通用分类引擎。分支顺序即分类优先级（technical → not-json → business → shape），勿调整 */

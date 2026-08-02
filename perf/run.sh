@@ -140,8 +140,9 @@ OUT_ARGS=(--out "csv=$RUN_DIR/result.csv")
 if [[ -n "$PROM_URL" ]]; then
   OUT_ARGS+=(--out experimental-prometheus-rw)
   export K6_PROMETHEUS_RW_SERVER_URL="$PROM_URL"
-  # 默认只推 p(99)；官方 19665 与自建面板要 p95 等，缺了延迟图半空。显式设置仍优先。
-  export K6_PROMETHEUS_RW_TREND_STATS="${K6_PROMETHEUS_RW_TREND_STATS:-p(95),p(99),min,max,avg}"
+  # 默认只推 p(99)；官方 19665 的 quantile 下拉枚举实际存在的序列后缀，
+  # 这里推什么它就能选什么（p50 是 P95/P50 比值诊断的分母）。显式设置仍优先。
+  export K6_PROMETHEUS_RW_TREND_STATS="${K6_PROMETHEUS_RW_TREND_STATS:-p(50),p(95),p(99),min,max,avg}"
   # 结束即标记序列 stale——否则 from->now 查询里尾值再飘 ~5 分钟，
   # 经典的"Grafana 和 summary 对不上"来源之一。
   export K6_PROMETHEUS_RW_STALE_MARKERS="${K6_PROMETHEUS_RW_STALE_MARKERS:-true}"

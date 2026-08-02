@@ -193,7 +193,7 @@ perf/
 ## 9. 报告与基线对比
 
 - **summary 双路输出，k6 直接写盘，runner 零后处理**（2026-08-01 修订，机制取自 trade-performance）：`handleSummary` 返回 `{路径: 内容}` 映射，k6 自己把文件写进 `results/<UTC日>/<runId>/`——`summary.txt`（stdout 同款文本摘要：三分类表、成功/全量双延迟分位对照、按 API 子指标行、业务 TPS、样本量纪律告警、阈值清单，判定权威）+ `summary.json`（机读，含 `verdict` 字段供 runner 用 sed 提取定退出码，也是基线对比的输入）。0 请求时合成 `no-samples(0-requests)` 失败项防假绿。时序曲线由 k6 web dashboard 导出的 `dashboard.html` 承担（不作判定——其错误率是 HTTP 层的 http_req_failed，本系统业务失败也返回 200；极短运行会跳过导出）。原"stdout 标记 → Node 提取 → HTML 渲染"管道是 k8s Pod 产物通道的产物，已随执行层收敛一并移除。
-- **基线管理（baselines/）**：每场景保存基准 JSON；对比脚本输出本次 vs 基线的 P95/P99/错误率变化百分比，超容差标红——性能回归发现机制（P1）。
+- **基线管理（baselines/，2026-08-02 已实现，k6 侧零依赖）**：基线 = 晋升（cp）的 summary.json，键为 `<scenario>_<env>_<profile>`（跨环境/跨负载档对比无意义）。对比在 handleSummary 内完成：成功延迟 P50/P95/P99 增幅（容差 +10%，`BASELINE_TOL_PCT` 覆盖）、业务成功率降幅（-1pp）、technical 从无到有；rps 刻意不比（open 模型下速率是配置值）。**超容差只标红不改判定**——verdict 权威仍是阈值，基线对比是回归发现机制，门禁化等 P2 接 CI 再议。无基线静默跳过；基线损坏 init 响亮失败；run.sh 在 PASS 且无基线时打印晋升命令。原设想的"对比脚本"因零依赖约束改为 k6 内实现。
 - 报告结构复用 `performance-testing` 技能模板：Question / Verdict / Environment / 分位数表 / Knee point / Bottleneck hypothesis / Recommendations。
 
 ## 10. 执行方式与运行形态
@@ -238,7 +238,7 @@ perf/
 ## 12. 演进路径
 
 - **P1a：测量正确性融合改造（先于 lifecycle 场景）**——本次修订新增的机制落地：写路径用例行数据模型 + preflight、错误三分类引擎（含 perf_success_duration 与 SLA 指标源切换）、全局游标轮换、profile JSON 化与 baseline/ladder 增补、两级熔断。**排在 P1b 之前的理由：lifecycle 场景建立在这些机制之上，先建场景再改机制等于返工。**
-- **P1b：trigger-event 单 API 场景 + 基线对比**——`triggerEvent(cfg, tradeId, eventType, user)` 参数化客户端（8 类事件共用契约骨架、按事件微分）；seed 铺 PENDING 池（纯 create 批量，`SEED_TARGET=PENDING`）；LIVE 池查询圈定 + 事件目标清单 preflight（含 PERF portfolio 硬闸，§6）；基线对比脚本消费 summary.json（§9）。首个压测事件选终态性明确、数据供给成本最低者（§11-8/9 确认后定）。checker-task 审批 API 本期**不实现**。
+- **P1b：trigger-event 单 API 场景 + 基线对比**——`triggerEvent(cfg, tradeId, eventType, user)` 参数化客户端（8 类事件共用契约骨架、按事件微分）；seed 铺 PENDING 池（纯 create 批量，`SEED_TARGET=PENDING`）；LIVE 池查询圈定 + 事件目标清单 preflight（含 PERF portfolio 硬闸，§6）；基线对比已于 2026-08-02 先行落地（k6 侧实现，§9）。首个压测事件选终态性明确、数据供给成本最低者（§11-8/9 确认后定）。checker-task 审批 API 本期**不实现**。
 - **P1c：checker-task 审批链 + E2E journey**——checker-flow 客户端（`src/api/worker-svc/checker-flow/`：pending / approve / reject，taskId 寻址）；LIVE 池全自动 seed（create→查 pending 映射 taskId→approve 双身份流水线）；`src/journeys/trade-lifecycle.js`（create → approve → event 三步双角色、失败短路防 404 洪水，journey 机制借用 trade-performance 实现按需裁剪）；run.sh 入口查找扩展多目录（§10.1）。
 - **P2 混合配比场景**（`src/mixed/`）：多 scenario 块并行按生产流量配比，可复用 journey 函数；think time、软依赖降级届时按需引入。
 - **API catalog 治理（延后，规模驱动）**：当 API 数量增长到需要覆盖率治理时启用生成式 catalog——清单由各服务 Swagger/OpenAPI 自动同步（可复用本仓库 `parse_swagger.py` 经验），优先级为唯一人工列（Prometheus QPS 排名输出建议值辅助），覆盖列由场景元数据反向计算；届时场景 `meta` 增加 `covers` 字段声明所覆盖端点。

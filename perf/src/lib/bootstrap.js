@@ -5,11 +5,29 @@
 // open() 路径一律经 import.meta.resolve() 锚定到本文件。
 import { parseEnvConfig } from './config.js';
 import { buildThresholds } from './sla.js';
-import { summarize, buildTextSummary } from './report.js';
+import { summarize, buildTextSummary, compareBaseline } from './report.js';
 
 export const ENV = __ENV.ENV || 'local';
 export const PROFILE = __ENV.PROFILE || 'smoke';
 export const TESTID = __ENV.TESTID || 'local-run';
+// runner 传入（run.sh -e SCENARIO）；裸 k6 run 无此值 → 跳过基线对比
+const SCENARIO = __ENV.SCENARIO || '';
+
+// ── 基线加载：baselines/<scenario>_<env>_<profile>.json ─────
+// 基线就是某轮可信运行晋升来的 summary.json（spec §9）。组合键含 env+profile——
+// 跨环境或跨负载档的对比没有意义。无基线是常态（open 抛错→null，静默跳过）；
+// 有文件但损坏则响亮失败（JSON.parse 抛出，init 报错拒跑），坏基线不许静默降级。
+function loadBaseline() {
+  if (!SCENARIO) return null;
+  let raw = null;
+  try {
+    raw = open(import.meta.resolve(`../../baselines/${SCENARIO}_${ENV}_${PROFILE}.json`));
+  } catch (_) {
+    return null;
+  }
+  return JSON.parse(raw);
+}
+const BASELINE = loadBaseline();
 
 const HARD_MAX_VUS = 500;
 
@@ -89,12 +107,19 @@ export function buildOptions(slaFile, slaKey, extraThresholds) {
 // 裸 `k6 run` 不传 RESULT_DIR，只打终端——行为与 trade-performance 一致。
 // 场景以 `export { stdHandleSummary as handleSummary } from '../lib/bootstrap.js'` 复用。
 export function stdHandleSummary(data) {
-  const text = buildTextSummary(data, { testid: TESTID, env: ENV, profile: PROFILE });
+  const s = summarize(data, TESTID);
+  // 基线对比：只提示不改判定（verdict 权威=阈值；BASELINE_TOL_PCT 覆盖延迟容差）
+  let cmp = null;
+  if (BASELINE) {
+    cmp = compareBaseline(s, BASELINE, parseInt(__ENV.BASELINE_TOL_PCT || '', 10));
+    s.baseline = cmp;
+  }
+  const text = buildTextSummary(data, { testid: TESTID, env: ENV, profile: PROFILE }, cmp);
   const out = { stdout: text };
   const dir = __ENV.RESULT_DIR;
   if (dir) {
     out[`${dir}/summary.txt`] = text;
-    out[`${dir}/summary.json`] = JSON.stringify(summarize(data, TESTID), null, 2);
+    out[`${dir}/summary.json`] = JSON.stringify(s, null, 2);
   }
   return out;
 }

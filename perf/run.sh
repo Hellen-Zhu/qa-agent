@@ -177,6 +177,7 @@ K6_ARGS=(run
   -e ENV="$ENV_NAME"
   -e PROFILE="$PROFILE"
   -e TESTID="$RUN_ID"
+  -e SCENARIO="$SCENARIO"
   -e RESULT_DIR="$RUN_DIR")
 K6_ARGS+=(${OVERRIDE_ARGS[@]+"${OVERRIDE_ARGS[@]}"})
 K6_ARGS+=("${OUT_ARGS[@]}" "$SCENARIO_FILE")
@@ -226,6 +227,16 @@ else
   echo "Grafana 时间范围（替换 URL 里的 from=now-1h&to=now）:"
   grep -E 'epochMillis' "$MANIFEST" | sed 's/^/  /'
   echo "  想要现成链接：在 $ENV_FILE 配 grafanaDashboard（或单次 export GRAFANA_DASHBOARD_URL）"
+fi
+
+# ── 基线晋升提示：本组合尚无基线且本轮 PASS 时给出现成命令 ──
+# 对比本身在 k6 侧完成（summary 里的 Baseline comparison 段，见 src/lib/report.js）；
+# 晋升是人的决定——样本量是否够（见 summary 的 Sample size 段）、这轮是否有代表性。
+BASELINE_FILE="baselines/${SCENARIO}_${ENV_NAME}_${PROFILE}.json"
+if [[ ! -f "$BASELINE_FILE" && "$VERDICT" == "PASS" ]]; then
+  echo ""
+  echo "基线：<${SCENARIO} × ${ENV_NAME} × ${PROFILE}> 尚无基线，回归对比未启用。本轮可晋升："
+  echo "  cp $RUN_DIR/summary.json $BASELINE_FILE"
 fi
 
 if grep -q 'PREFLIGHT FAILED' "$RUN_DIR/k6.log" 2>/dev/null; then

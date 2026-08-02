@@ -90,7 +90,7 @@ function pctRow(label, w, vals) {
   );
 }
 
-export function buildTextSummary(data, meta) {
+export function buildTextSummary(data, meta, cmp) {
   const L = [];
   const durSec = (data.state.testRunDurationMs || 0) / 1000;
 
@@ -215,9 +215,95 @@ export function buildTextSummary(data, meta) {
     L.push('');
   }
 
+  // ── 基线对比（有基线才出现）────────────────────────────
+  if (cmp) {
+    L.push('── Baseline comparison ────────────────────────────');
+    L.push(`  vs ${cmp.baselineTestid}`);
+    if (!cmp.comparable) {
+      L.push(`  (not comparable: ${cmp.reason})`);
+    } else {
+      L.push('    ' + padR('', 12) + padL('base', 8) + padL('curr', 8) + padL('delta', 9));
+      cmp.rows.forEach((r) => {
+        L.push(
+          '    ' + padR(r.key, 12) + padL(r.base, 8) + padL(r.cur, 8) +
+          padL(r.delta === null ? '-' : r.delta, 9) + (r.bad ? '  ✗' : '')
+        );
+      });
+      if (cmp.regressions.length > 0) {
+        L.push(`  ✗ ${cmp.regressions.length} regression(s) beyond tolerance (latency +${cmp.tolPct}%, biz-success -1.0pp)`);
+        L.push('    informational only — verdict comes from thresholds, not baseline');
+      } else {
+        L.push(`  ✓ all within tolerance (latency +${cmp.tolPct}%, biz-success -1.0pp)`);
+      }
+    }
+    L.push('');
+  }
+
   const verdict = buildThresholdFailures(data, requests).length === 0 ? 'PASS' : 'FAIL';
   L.push(`  VERDICT: ${verdict}`);
   L.push('══════════════════════════════════════════════════════════');
   L.push('');
   return L.join('\n');
+}
+
+// ── 基线对比纯逻辑 ──────────────────────────────────────────
+// current/baseline 均为 summarize() 输出——基线不是新格式，就是某轮可信运行
+// 晋升（cp）而来的 summary.json。对比维度刻意收窄：
+//   成功延迟 P50/P95/P99 增幅（容差 tolPct%，默认 10）
+//   业务成功率降幅（容差 1pp）
+//   technical 从无到有（基线 0 而本轮 >0）
+// rps 不比：open 模型下速率是 profile 配置出来的，比它没有信息量。
+// 结果只提示不改判定——verdict 的权威永远是阈值（spec §9）。
+function pct(v) {
+  return (v >= 0 ? '+' : '') + v.toFixed(1) + '%';
+}
+
+export function compareBaseline(current, baseline, tolPct) {
+  const tol = tolPct === undefined || tolPct === null || isNaN(tolPct) ? 10 : tolPct;
+  const cmp = {
+    baselineTestid: (baseline && baseline.testid) || 'unknown',
+    tolPct: tol,
+    comparable: true,
+    rows: [],
+    regressions: [],
+  };
+  if (!current.ok || current.ok === 0) {
+    return Object.assign(cmp, { comparable: false, reason: 'no business-successful requests in current run' });
+  }
+  if (!baseline.ok || baseline.ok === 0) {
+    return Object.assign(cmp, { comparable: false, reason: 'baseline has no business-successful samples (bad promotion?)' });
+  }
+
+  ['p50', 'p95', 'p99'].forEach((k) => {
+    const b = (baseline.successLatencyMs || {})[k];
+    const c = (current.successLatencyMs || {})[k];
+    if (b === null || b === undefined || c === null || c === undefined || b === 0) {
+      cmp.rows.push({ key: k.toUpperCase(), base: '-', cur: '-', delta: null, bad: false });
+      return;
+    }
+    const d = ((c - b) / b) * 100;
+    const bad = d > tol;
+    cmp.rows.push({ key: k.toUpperCase(), base: b.toFixed(0), cur: c.toFixed(0), delta: pct(d), bad });
+    if (bad) cmp.regressions.push(`${k.toUpperCase()} ${pct(d)} beyond +${tol}%`);
+  });
+
+  const bRate = baseline.businessSuccessRate;
+  const cRate = current.businessSuccessRate;
+  if (bRate !== null && bRate !== undefined && cRate !== null && cRate !== undefined) {
+    const dPp = (cRate - bRate) * 100;
+    const bad = dPp < -1.0;
+    cmp.rows.push({
+      key: 'biz-ok', base: (bRate * 100).toFixed(1) + '%', cur: (cRate * 100).toFixed(1) + '%',
+      delta: (dPp >= 0 ? '+' : '') + dPp.toFixed(1) + 'pp', bad,
+    });
+    if (bad) cmp.regressions.push(`biz-success ${dPp.toFixed(1)}pp beyond -1.0pp`);
+  }
+
+  const techBad = (baseline.errTechnical || 0) === 0 && (current.errTechnical || 0) > 0;
+  cmp.rows.push({ key: 'technical', base: baseline.errTechnical || 0, cur: current.errTechnical || 0, delta: null, bad: techBad });
+  if (techBad) cmp.regressions.push(`technical errors appeared (baseline had 0, current ${current.errTechnical})`);
+
+  // 样本量并排展示：分位数可信度随样本量走，对比双方样本悬殊时读者需要看见
+  cmp.rows.push({ key: 'ok-samples', base: baseline.ok, cur: current.ok, delta: null, bad: false });
+  return cmp;
 }

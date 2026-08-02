@@ -35,6 +35,7 @@ k6 inspect -e ENV=local src/scenarios/trades-query.js
 - `src/setup/` preflight（本地数据闸，setup 阶段不发请求）
 - `src/scenarios` 场景入口（数据 + 一次业务动作）
 - `dashboards/` Grafana dashboard JSON（单板总览 + 官方 19665 固定版本存档）
+- `baselines/` 性能基线 = 晋升的 summary.json（`<scenario>_<env>_<profile>.json`）；存在即自动在 summary 里出 Baseline comparison 段——超容差只标红不改判定，纪律见 `baselines/README.md`
 
 ## 约定
 

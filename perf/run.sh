@@ -16,10 +16,11 @@
 #   ./run.sh trades-query                        # 默认 local + smoke
 #   ./run.sh trades-create local baseline VUS=1 DURATION=600s
 #
-# 逐 HTTP 报文调试（仅 smoke 级验证；报文只写 k6.log 不刷屏；full 会把 .dat
-# 二进制整个倒进日志，用完删 k6.log）:
-#   K6_HTTP_DEBUG=headers ./run.sh trades-query
+# 调试（两种，都只写 k6.log 不刷屏、仅 smoke 级、用完删日志）:
+#   HTTP_DUMP=1 ./run.sh trades-query local smoke RATE=1 DURATION=5s
+#       ↑ 推荐：每请求一行 JSON（响应体已解析 + 三分类归因），grep '^{' k6.log 提取
 #   K6_HTTP_DEBUG=full ./run.sh trades-create local smoke RATE=1 DURATION=5s MAX_VUS=1
+#       ↑ 原生逐报文（线上原始格式；full 会把 .dat 二进制整个倒进日志）
 set -euo pipefail
 K6_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$K6_ROOT"
@@ -170,6 +171,21 @@ if [[ -n "${K6_HTTP_DEBUG:-}" ]]; then
   export K6_LOG_OUTPUT="${K6_LOG_OUTPUT:-file=$RUN_DIR/k6.log}"
   echo "⚠ K6_HTTP_DEBUG=${K6_HTTP_DEBUG} — 每条 HTTP 报文写入 ${K6_LOG_OUTPUT#file=}（不进终端），仅 smoke 级验证用；"
   echo "  报文含真实业务数据，full 还会整倒 .dat 二进制——用完删除该日志。"
+  echo "  提示：想要可读的结构化输出用 HTTP_DUMP=1（每请求一行 JSON，响应体已解析）。"
+  echo ""
+fi
+
+# ── HTTP_DUMP=1：每请求一行结构化 JSON（分类引擎输出，见 src/lib/errors.js）──
+# 响应体解析为真 JSON、附三分类归因，比原生报文转储可读得多。
+# K6_LOG_FORMAT=raw 让 JSON 行不被 logrus 包裹（代价：该轮 k6 自身日志行无时间戳）；
+# 提取纯 JSONL：grep '^{' k6.log
+if [[ -n "${HTTP_DUMP:-}" ]]; then
+  OVERRIDE_ARGS+=(-e "HTTP_DUMP=${HTTP_DUMP}")
+  export K6_LOG_OUTPUT="${K6_LOG_OUTPUT:-file=$RUN_DIR/k6.log}"
+  export K6_LOG_FORMAT="${K6_LOG_FORMAT:-raw}"
+  echo "⚠ HTTP_DUMP=${HTTP_DUMP} — 每请求一行 JSON（含请求/响应体与三分类归因）写入 $RUN_DIR/k6.log，"
+  echo "  终端不刷屏；仅 smoke 级调试用，记录含真实业务数据——用完删除该日志。"
+  echo "  提取：grep '^{' $RUN_DIR/k6.log"
   echo ""
 fi
 
@@ -184,7 +200,7 @@ K6_ARGS+=(${OVERRIDE_ARGS[@]+"${OVERRIDE_ARGS[@]}"})
 K6_ARGS+=("${OUT_ARGS[@]}" "$SCENARIO_FILE")
 
 set +e
-if [[ -n "${K6_HTTP_DEBUG:-}" ]]; then
+if [[ -n "${K6_HTTP_DEBUG:-}${HTTP_DUMP:-}" ]]; then
   # 日志已由 k6 直写 k6.log（K6_LOG_OUTPUT），不再 tee——两路同写一个文件会互相踩踏
   k6 "${K6_ARGS[@]}"
   K6_RC=$?

@@ -125,7 +125,7 @@ perf/
 
 ## 5. 身份与 API 客户端层
 
-- **身份模块（lib/users.js）**：系统无 token 认证，统一通过 `X-User-Id` 请求头传递身份（如 `maker@sc.com`）。身份池在 `config/` 中按角色维护（maker / checker 各若干），场景按业务动作选择角色——create/trigger-event 用 maker，审批走独立的 checker-task API（见 §6 状态机）用 checker；maker-checker 四眼原则下 LIVE 池自动铺底与 E2E journey（均 P1c）必须双角色协作。无 token 过期问题，soak 场景无需刷新逻辑。
+- **身份模块（lib/users.js）**：系统无 token 认证，统一通过 `X-User-Id` 请求头传递身份（如 `maker@sc.com`）。身份池在 `config/` 中按角色维护（maker / checker 各若干），**权限服务端强制互斥**（2026-08-02 确认）：maker 只能发起（create / trigger-event，无 approve 权限），checker 只能裁决（approve / reject，不发起业务操作）——四眼原则由权限模型保证，不存在自批路径。场景按业务动作选角色：create/trigger-event 用 maker，checker-task API 用 checker；LIVE 池自动铺底与 E2E journey（均 P1c）必须双角色协作。推论：压测中出现 HTTP 403/权限拒绝应首先怀疑**身份池配错账号**（maker 账号填进 checker 池或反之），属配置问题而非性能问题——写入归因说明。无 token 过期问题，soak 场景无需刷新逻辑。
 - **HTTP 统一封装（lib/http.js）**：对 `k6/http` 的薄封装，对外只暴露三个动词——`get(service, path, opts)` / `postJson(service, path, body, opts)` / `postMultipart(service, path, formData, opts)`，三者收敛到同一个内部 `request()` 管道，集中处理：按服务名解析 baseUrl；注入默认请求头（`X-User-Id`、`Accept`）；强制要求规范化的 `tags.name` 并附加 `service`/`module` 标签（URL 中动态 trade ID 归一化进 tag，避免 Prometheus 指标基数爆炸）；统一记录自定义指标与通用断言。api 层因此保持一行一调用的薄结构，新增请求形态（如 put/delete）只在 http.js 加一个动词。
 - **错误三分类引擎（lib/errors.js，2026-07-31 融合修订，取代原"双层断言"二值设计）**：本系统**业务失败也返回 HTTP 200**（业务状态在 body 的 code/status 字段），只看状态码的报告会显示"0% 错误"而实际一笔未成。所有响应经统一分类引擎归入三类，且必须分开呈现——混成一个错误率无法回答"12% 是开发问题还是数据问题"：
   - `technical`（连接失败/超时/5xx）→ 系统扛不住，**这才是性能结论**；
@@ -220,7 +220,7 @@ perf/
 7. ~~k8s Job 的脚本注入方式~~——2026-08-01 随 k8s 执行层移除而失效；将来重新引入 k8s 时再议（公司镜像流程或 ConfigMap 挂载）。
 8. **trigger-event 各事件契约（P1b 实现前采集）**——8 类事件的请求 payload、成功判据、业务拒绝形态逐一真实采集（同源采集纪律同 create）；**关键未知：事件操作是否同样产生 checker 审批任务**——若是，事件"成功"的即时状态是 PENDING 而非生效，直接改写成功契约与消耗性模型。
 9. **事件终态性**——哪些事件后 trade 仍为 LIVE（§6 的可重复候选逐一验证），决定 soak 能否用单 API 形态、seed 规模公式对哪些事件生效。
-10. **checker 审批约束**——checker 能否审批自己 maker 身份创建的单（四眼原则的服务端强度，影响 journey 身份配对）；`checker/tasks/pending` 的过滤/分页参数（tradeId→taskId 映射依赖它，P1c）。
+10. **checker-task API 细节（P1c）**——~~checker 能否自批~~（2026-08-02 已确认：权限服务端强制互斥，maker 不能 approve、checker 不发起业务操作，自批路径不存在）；仍待确认：`checker/tasks/pending` 的过滤/分页参数（tradeId→taskId 映射依赖它）；权限拒绝的响应形态（403 还是 200+业务 code——决定它落 technical 还是 business 类，及归因模式表条目）。
 
 ## 12. 演进路径
 

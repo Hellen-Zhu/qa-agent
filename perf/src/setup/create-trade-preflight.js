@@ -2,11 +2,11 @@
  * create 路径的本地数据闸：setup() 中运行，整轮开始前一次。
  * 只回答一个问题且不发任何请求："数据文件填好了吗"——占位符、缺字段、空池。
  * 这些问题会让每一次迭代以同样方式失败，在这里拦截零成本且能报出精确行号。
- * "数据今天是否仍有效"由 smoke 会话纪律 + 长跑熔断线回答（见 data/trade-svc/README.md）。
+ * "数据今天是否仍有效"由 smoke 会话纪律 + 长跑熔断线回答（见 data/worker-svc/trade-management/README.md）。
  */
 import exec from 'k6/execution';
-import { createCases, pickCase, DATA_FILE } from '../api/trade-svc/trades-data.js';
-import { validateInputs } from '../api/trade-svc/trades.js';
+import { createCases, pickCase, DATA_FILE } from '../api/worker-svc/trade-management-data.js';
+import { validateInputs } from '../api/worker-svc/trade-management.js';
 
 export function createTradePreflight() {
   console.log('── preflight: create 用例池本地校验 ──');

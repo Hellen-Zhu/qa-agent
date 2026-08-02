@@ -1,7 +1,7 @@
 # k6 性能测试框架设计文档
 
 - **日期**: 2026-07-31
-- **状态**: P0 + P1a 已实现（PR #1）。2026-08-01 修订：**执行层收敛为本机 runner**（k8s Job 路径、tag 批量筛选、Node 报告后处理整体移除，k8s 移入演进路径条件触发）；summary 改由 k6 handleSummary 直接写盘（§2、§9、§10、§13）。2026-08-02 P1b 需求评审修订：lifecycle 状态机（事件仅发生于 LIVE trade）、8 类事件清单、checker-task 独立审批 API、P1b/P1c 范围切分（§1、§5、§6、§10-§13）
+- **状态**: P0 + P1a 已实现（PR #1）。2026-08-01 修订：**执行层收敛为本机 runner**（k8s Job 路径、tag 批量筛选、Node 报告后处理整体移除，k8s 移入演进路径条件触发）；summary 改由 k6 handleSummary 直接写盘（§2、§9、§10、§13）。2026-08-02 P1b 需求评审修订：lifecycle 状态机（事件仅发生于 LIVE trade）、8 类事件清单、checker-task 独立审批 API、P1b/P1c 范围切分、5 服务拓扑确认与 worker-svc 目录重组（§1、§3、§5、§6、§10-§13）
 - **被测系统**: 公司内部 FX Structured Products Trading System（trade 全生命周期管理）
 - **技术栈**: k6 + 现有 Prometheus + 现有 Grafana + Kubernetes
 
@@ -52,17 +52,18 @@ perf/
 │   ├── lib/                # 纯逻辑模块（config/users/data/rows/sla/report，Node 可加载）
 │   │                       #   + k6 侧：http.js、errors.js（三分类引擎）、bootstrap.js（场景装配）
 │   ├── api/                # API 客户端层，按 微服务/模块 分目录；<module>.js + <module>-data.js
-│   │   └── trade-svc/
-│   │       ├── trades.js           # createTrade / triggerEvent（P1b）（契约分类）
-│   │       ├── trades-read.js      # queryTrades：读路径客户端，独立于 create 数据图（不 import trades-data.js）
-│   │       └── trades-data.js      # 用例池实例化 + dat 预载
+│   │   └── worker-svc/
+│   │       ├── trade-management.js       # createTrade / triggerEvent（P1b）（契约分类）
+│   │       ├── trade-management-read.js  # queryTrades：读路径客户端，独立于 create 数据图（init 图隔离）
+│   │       ├── trade-management-data.js  # 用例池实例化 + dat 预载
+│   │       └── checker-flow.js           # P1c：pending / approve / reject
 │   ├── setup/              # preflight（本地数据闸）
 │   ├── scenarios/          # 单 API 场景入口（一次业务动作，SLA/容量结论的唯一来源）
 │   ├── journeys/           # E2E 业务流入口（P1c：一个迭代串多 API，per-step 子指标）
 │   └── mixed/              # 混合配比入口（P2：多 scenario 块并行按流量配比；届时再建目录）
 ├── profiles/               # 负载 profile（JSON 声明式，见 §4）
 ├── data/
-│   ├── trade-svc/          # 每个 API 专属数据：<scenario>.json（一行=一个完整同源用例）
+│   ├── <service>/<module>/ # 每个 API 专属数据：<scenario>.json（一行=一个完整同源用例）
 │   │   ├── trades-query.json    # { filters: [...] } 查询字段池
 │   │   └── trades-create.json   # { productType, notionalCurrency, portfolioId, ... }（行内不写 dat 路径）
 │   └── datfiles/           # dat 样本，同名约定：products/<productType>/<productType>.dat
@@ -82,7 +83,17 @@ perf/
 
 ### 3.1 多微服务组织
 
-系统含 5 个微服务，各服务下分模块，模块下多个 API。三级映射规则：
+系统含 5 个微服务（2026-08-02 确认，此前仓库以 `trade-svc` 占位的实为 worker-svc 的 trade-management 模块，已重命名）：
+
+| 服务 | 已知模块 | 框架内状态 |
+|---|---|---|
+| worker-svc | trade-management、product-management、checker-flow | trade-management 已实现（P0/P1a）；checker-flow 归 P1c |
+| refdata-svc | counterparty、portfolio、marketers | 未实现（查询类候选） |
+| uc-svc | 待补 | 未实现 |
+| notification-svc | 待补 | 未实现 |
+| ops-svc | 待补 | 未实现 |
+
+三级映射规则：
 
 - **服务 → 目录**：`src/api/<service>/`，每个服务一个目录；
 - **模块 → 文件**：`src/api/<service>/<module>.js`，模块内 API 是该文件导出的函数；
@@ -141,14 +152,14 @@ perf/
 
 > 2026-07-31 融合修订：**写路径改用"用例行"模型**（取自 trade-performance，评估见第 13 节），读路径保留字段池模型。分界标准：字段间存在业务有效性关联（portfolio 归属、counterparty 开户关系、dat 产品定义）→ 用例行；字段间无关联约束（查询过滤条件）→ 字段池。
 
-- **写路径：用例行模型（`data/trade-svc/trades-create.json`）**——一行 = 一个完整可跑用例：`productType` + `notionalCurrency` + 三个归属字段（portfolioId/counterpartyFmId/counterpartyName）内嵌同一行。核心纪律：**整行必须同源采集自同一份真实 curl**（DevTools 复制真实建单请求）——静态供数没有 live 查询兜底，任何手工拼装都可能造出现实中不存在的组合（portfolio 属于 A 台、counterparty 未在 A 台开户），服务端业务拒绝在报告里呈现为"错误率升高"，看起来像性能问题实际是数据问题。配套机制：
+- **写路径：用例行模型（`data/worker-svc/trade-management/trades-create.json`）**——一行 = 一个完整可跑用例：`productType` + `notionalCurrency` + 三个归属字段（portfolioId/counterpartyFmId/counterpartyName）内嵌同一行。核心纪律：**整行必须同源采集自同一份真实 curl**（DevTools 复制真实建单请求）——静态供数没有 live 查询兜底，任何手工拼装都可能造出现实中不存在的组合（portfolio 属于 A 台、counterparty 未在 A 台开户），服务端业务拒绝在报告里呈现为"错误率升高"，看起来像性能问题实际是数据问题。配套机制：
   - 行号 `__row` 装载时自动注入并作为指标 tag——"哪行数据坏了"直接从指标切出；
   - 数据经 SharedArray 共享（全 VU 一份），**全局游标轮换**（`exec.scenario.iterationInTest % 行数`）——均匀覆盖且可复现，取代 hash 取数；
   - 数据文件可经 `CREATE_DATA_FILE` 覆盖切换**变体池**（如锁竞争对照实验：全部行填同一组归属值），不改脚本；
   - dat 按**同名约定**定位：`data/datfiles/products/<productType>/<productType>.dat`——行内只写 productType，无路径字符串可打错；只预加载数据文件实际引用的产品；productType 装载时过字符集闸（进路径的值必须先验）。同一产品需多个 dat 样本时再加可选 datFile 覆盖列（当前 YAGNI）；
   - 数据内容随环境失效（id 不跨环境），换环境重新采集同一文件；采集时间与来源记在行的 `note` 字段。
 - **preflight（setup 阶段本地数据闸）**：开跑前逐行校验用例池——占位符（TBC/TODO/N/A 类模式，注意**不含** PERF 前缀——专用 PERF portfolio 是合法真值）、缺字段、空池即 `exec.test.abort`，并报出具体行号。**不发探针请求**（只验第一行是抽样冒充证明，且污染请求计数）；"数据今天是否仍有效"由两层机制回答：大轮次前同会话先跑 smoke + 长跑 profile 的业务成功率宽松熔断线。
-- **读路径：字段池模型（`data/trade-svc/trades-query.json`）**：查询过滤条件组合（日期区间、状态、counterparty），字段间无有效性关联，池内自由轮换即可；覆盖多样条件防缓存热点造成虚假乐观结果。
+- **读路径：字段池模型（`data/worker-svc/trade-management/trades-query.json`）**：查询过滤条件组合（日期区间、状态、counterparty），字段间无有效性关联，池内自由轮换即可；覆盖多样条件防缓存热点造成虚假乐观结果。
 - **唯一性与标记**：payload **不接受额外自定义字段**（trade-performance 已实测——原设计的 clientRef 注入字段作废），客户端唯一标识机制列入 P1b（当前 payload 不接受额外字段，无逐请求标识落盘）；压测数据识别与清理依赖"专用 PERF portfolio + 状态 + 时间窗"组合，专用 portfolio 的真实值在环境启用时确认。
 - **lifecycle 事件数据（P1b/P1c，2026-08-02 需求评审定稿）**：
   - **状态机前置**：`create（maker）→ PENDING APPROVAL → checker 审批通过 → LIVE`，全部 trigger-event 事件只能发生在 **LIVE** trade 上。审批是独立的 checker-task API（`GET /api/v1/checker/tasks/pending`、`POST /api/v1/checker/tasks/{taskId}/approve` 与 `.../reject`），**以 taskId 而非 tradeId 寻址**——自动化审批须先查 pending 清单做 tradeId→taskId 映射（P1c）。
@@ -216,7 +227,7 @@ perf/
 4. **dat 文件是否需要参数化**——同一 dat 高频重复提交是否触发幂等/去重或日期校验，实现时用真实文件验证。已知伏笔（trade-performance 实测发现）：服务端上传临时文件按时间戳命名，同一瞬间并发上传会互相删除临时文件（"dat not found"）——若撞上，其 DAT_NAME_MODE=unique 绕行开关与归因模式可直接借用。
 4b. **用例池同源采集**——每行数据须整行来自同一份真实 curl（系统 Web 界面建单 + DevTools Copy as cURL），每换 productType/counterparty 采一次；采集样本含真实业务数据，放 gitignore 的 `_samples/`，不入库。
 5. **混合场景流量配比（P2）**——真实交易日各操作比例，届时从生产访问日志/监控统计。
-6. **5 个微服务的清单**——服务名、各自地址与核心模块，填充 `config/environments/` 时提供（仓库内保持 localhost 占位）。
+6. ~~5 个微服务的清单~~——2026-08-02 已确认（worker-svc / refdata-svc / uc-svc / notification-svc / ops-svc，见 §3.1）；真实地址仍待内网填充（仓库内保持 localhost 占位），uc/notification/ops 的模块清单待补。
 7. ~~k8s Job 的脚本注入方式~~——2026-08-01 随 k8s 执行层移除而失效；将来重新引入 k8s 时再议（公司镜像流程或 ConfigMap 挂载）。
 8. **trigger-event 各事件契约（P1b 实现前采集）**——8 类事件的请求 payload、成功判据、业务拒绝形态逐一真实采集（同源采集纪律同 create）；**关键未知：事件操作是否同样产生 checker 审批任务**——若是，事件"成功"的即时状态是 PENDING 而非生效，直接改写成功契约与消耗性模型。
 9. **事件终态性**——哪些事件后 trade 仍为 LIVE（§6 的可重复候选逐一验证），决定 soak 能否用单 API 形态、seed 规模公式对哪些事件生效。
@@ -226,7 +237,7 @@ perf/
 
 - **P1a：测量正确性融合改造（先于 lifecycle 场景）**——本次修订新增的机制落地：写路径用例行数据模型 + preflight、错误三分类引擎（含 perf_success_duration 与 SLA 指标源切换）、全局游标轮换、profile JSON 化与 baseline/ladder 增补、两级熔断。**排在 P1b 之前的理由：lifecycle 场景建立在这些机制之上，先建场景再改机制等于返工。**
 - **P1b：trigger-event 单 API 场景 + 基线对比**——`triggerEvent(cfg, tradeId, eventType, user)` 参数化客户端（8 类事件共用契约骨架、按事件微分）；seed 铺 PENDING 池（纯 create 批量，`SEED_TARGET=PENDING`）；LIVE 池查询圈定 + 事件目标清单 preflight（含 PERF portfolio 硬闸，§6）；基线对比脚本消费 summary.json（§9）。首个压测事件选终态性明确、数据供给成本最低者（§11-8/9 确认后定）。checker-task 审批 API 本期**不实现**。
-- **P1c：checker-task 审批链 + E2E journey**——checker-tasks 客户端（`src/api/trade-svc/checker-tasks.js`：pending / approve / reject，taskId 寻址）；LIVE 池全自动 seed（create→查 pending 映射 taskId→approve 双身份流水线）；`src/journeys/trade-lifecycle.js`（create → approve → event 三步双角色、失败短路防 404 洪水，journey 机制借用 trade-performance 实现按需裁剪）；run.sh 入口查找扩展多目录（§10.1）。
+- **P1c：checker-task 审批链 + E2E journey**——checker-flow 客户端（`src/api/worker-svc/checker-flow.js`：pending / approve / reject，taskId 寻址）；LIVE 池全自动 seed（create→查 pending 映射 taskId→approve 双身份流水线）；`src/journeys/trade-lifecycle.js`（create → approve → event 三步双角色、失败短路防 404 洪水，journey 机制借用 trade-performance 实现按需裁剪）；run.sh 入口查找扩展多目录（§10.1）。
 - **P2 混合配比场景**（`src/mixed/`）：多 scenario 块并行按生产流量配比，可复用 journey 函数；think time、软依赖降级届时按需引入。
 - **API catalog 治理（延后，规模驱动）**：当 API 数量增长到需要覆盖率治理时启用生成式 catalog——清单由各服务 Swagger/OpenAPI 自动同步（可复用本仓库 `parse_swagger.py` 经验），优先级为唯一人工列（Prometheus QPS 排名输出建议值辅助），覆盖列由场景元数据反向计算；届时场景 `meta` 增加 `covers` 字段声明所覆盖端点。
 - **WebSocket（P2）**：k6 原生支持 ws 协议；在 `api/` 层新增 ws 客户端模块，`lib/errors.js` 增加消息延迟指标，无架构变更。

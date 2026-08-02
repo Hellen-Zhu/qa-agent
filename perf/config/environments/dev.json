@@ -3,7 +3,13 @@
   "whitelist": ["localhost", "127.0.0.1"],
   "promRwUrl": "",
   "grafanaDashboard": "",
-  "services": { "trade-svc": "http://localhost:9089" },
+  "services": {
+    "worker-svc": "http://localhost:9089",
+    "refdata-svc": "http://localhost:9090",
+    "uc-svc": "http://localhost:9091",
+    "notification-svc": "http://localhost:9092",
+    "ops-svc": "http://localhost:9093"
+  },
   "users": {
     "maker": ["maker1@example.com", "maker2@example.com"],
     "checker": ["checker1@example.com"]

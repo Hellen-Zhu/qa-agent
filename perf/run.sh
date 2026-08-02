@@ -232,7 +232,7 @@ if grep -q 'PREFLIGHT FAILED' "$RUN_DIR/k6.log" 2>/dev/null; then
   echo ""
   echo "⚠ PREFLIGHT FAILED — 用例池未通过本地校验（占位符/缺字段/空池），一条请求都没发。"
   grep 'PREFLIGHT' "$RUN_DIR/k6.log" | tail -5
-  echo "  先把数据填好：见 data/trade-svc/README.md"
+  echo "  先把数据填好：见 data/worker-svc/trade-management/README.md"
 fi
 
 # 退出码：k6 非零（阈值中断/中止/脚本错）优先；k6 为零但判定 FAIL（如 0 样本）也非零

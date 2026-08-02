@@ -1,13 +1,13 @@
 import exec from 'k6/execution';
 import { cfg, buildOptions } from '../lib/bootstrap.js';
 import { pickUser } from '../lib/users.js';
-import { pickCase } from '../api/trade-svc/trades-data.js';
-import { createTrade } from '../api/trade-svc/trades.js';
+import { pickCase } from '../api/worker-svc/trade-management-data.js';
+import { createTrade } from '../api/worker-svc/trade-management.js';
 import { createTradePreflight } from '../setup/create-trade-preflight.js';
 
-// P0 · trade-svc · 写路径
+// P0 · worker-svc/trade-management · 写路径
 
-export const options = buildOptions('trade-svc/trades', 'create');
+export const options = buildOptions('worker-svc/trade-management', 'create');
 
 export function setup() {
   return createTradePreflight();

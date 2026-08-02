@@ -1,10 +1,10 @@
-# trade-svc 数据文件
+# worker-svc / trade-management 数据文件
 
 - `trades-query.json` — 查询字段池：`{ filters: [...] }`。字段间无有效性关联，池内自由轮换。
 - `trades-create.json` — create 用例池：一行 = 一个完整可跑用例。行号 `__row` 装载时自动注入，
   作为指标 tag（哪行数据坏了直接从指标切出）；无人工维护的 id 列。
 
-读路径客户端（`src/api/trade-svc/trades-read.js`）与写路径客户端（`trades.js`）代码分离，
+读路径客户端（`src/api/worker-svc/trade-management-read.js`）与写路径客户端（`trade-management.js`）代码分离，
 原因是读场景不应加载 create 用例池与 dat 二进制——两者互不 import。
 
 ## 为什么归属字段内嵌一行，且必须同源
@@ -34,7 +34,7 @@ portfolio 属于 A 台、counterparty 未在 A 台开户。服务端业务拒绝
 ## 变体池（对照实验）
 
 如 portfolio 级锁竞争：复制 `trades-create.json` 为变体（全部行填同一组归属值），
-`CREATE_DATA_FILE=data/trade-svc/<变体>.json` 覆盖切换，不改脚本。
+`CREATE_DATA_FILE=data/worker-svc/trade-management/<变体>.json` 覆盖切换，不改脚本。
 
 ⚠ 采集来的 curl/响应样本放本目录 `_samples/`（已 gitignore）——DevTools 导出含会话
 cookie 与真实业务数据，**不入库**。

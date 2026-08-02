@@ -13,8 +13,8 @@ function envOr(key, fallback) {
   return v === undefined || v === '' ? fallback : v;
 }
 
-// 变体池切换（对照实验）不改脚本：CREATE_DATA_FILE=data/worker-svc/trade-management/<变体>.json
-export const DATA_FILE = envOr('CREATE_DATA_FILE', 'data/worker-svc/trade-management/trades-create.json');
+// 变体池切换（对照实验）不改脚本：CREATE_DATA_FILE=data/worker-svc/trade/<变体>.json
+export const DATA_FILE = envOr('CREATE_DATA_FILE', 'data/worker-svc/trade/trades-create.json');
 if (!DATA_FILE.endsWith('.json')) {
   throw new Error(`数据文件必须是 .json: ${DATA_FILE}（契约见 lib/rows.js）`);
 }

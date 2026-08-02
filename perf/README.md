@@ -29,7 +29,7 @@ k6 inspect -e ENV=local src/scenarios/trades-query.js
 - `config/environments/` 环境（服务地址映射、白名单、promRwUrl、grafanaDashboard、身份池）；**仓库内全部为 localhost/示例占位，真实值仅在内网填写；没有也不允许有 prod**
 - `config/slas/` 按 服务/模块 组织的 API 级分位数 SLA（挂 perf_success_duration；错误率与熔断属 profile 级）
 - `profiles/` 负载 profile（JSON 声明式，scenario 块即 k6 executor 原文；`_` 开头键为注释；smoke/baseline/load/ladder/stress/spike/soak 七个，方法论见各文件 description）
-- `data/<service>/<module>/` 每 API 专属数据：查询字段池 + create 用例池（一行=一个完整同源用例，纪律见 `data/worker-svc/trade-management/README.md`）；`data/datfiles/products/<productType>/` dat 样本（占位，须真实采集替换）
+- `data/<service>/<module>/` 每 API 专属数据：查询字段池 + create 用例池（一行=一个完整同源用例，纪律见 `data/worker-svc/trade/README.md`）；`data/datfiles/products/<productType>/` dat 样本（占位，须真实采集替换）
 - `src/lib` 纯逻辑模块（config/users/data/rows/sla/report，Node 可加载）+ k6 侧模块（http.js 纯发送管道、errors.js 三分类引擎、bootstrap.js 场景装配 + handleSummary 双路输出）
 - `src/api/<service>/<module>/` API 客户端层：`<api>.js`（请求构造+响应契约分类）+ 需要用例池的配 `<api>-data.js`——每 API 一文件，init 图天然隔离；按需建档（被压测才建）
 - `src/setup/` preflight（本地数据闸，setup 阶段不发请求）

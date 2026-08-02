@@ -53,7 +53,7 @@ perf/
 │   │                       #   + k6 侧：http.js、errors.js（三分类引擎）、bootstrap.js（场景装配）
 │   ├── api/                # API 客户端层：服务→目录、模块→子目录、API→文件（见 §3.1）
 │   │   └── worker-svc/
-│   │       ├── trade-management/
+│   │       ├── trade/
 │   │       │   ├── create.js        # createTrade（契约分类）
 │   │       │   ├── create-data.js   # create 用例池实例化 + dat 预载
 │   │       │   ├── query.js         # queryTrades（读路径；每 API 一文件使 init 图天然隔离）
@@ -85,11 +85,11 @@ perf/
 
 ### 3.1 多微服务组织
 
-系统含 5 个微服务（2026-08-02 确认，此前仓库以 `trade-svc` 占位的实为 worker-svc 的 trade-management 模块，已重命名）：
+系统含 5 个微服务（2026-08-02 确认，此前仓库以 `trade-svc` 占位的实为 worker-svc 的 trade 模块，已重命名）：
 
 | 服务 | 已知模块 | 框架内状态 |
 |---|---|---|
-| worker-svc | trade-management、product-management、checker-flow | trade-management 已实现（P0/P1a）；checker-flow 归 P1c |
+| worker-svc | trade、product-management、checker-flow | trade 已实现（P0/P1a）；checker-flow 归 P1c |
 | refdata-svc | counterparty、portfolio、marketers | 未实现（查询类候选） |
 | uc-svc | 待补 | 未实现 |
 | notification-svc | 待补 | 未实现 |
@@ -98,7 +98,7 @@ perf/
 三级映射规则：
 
 - **服务 → 目录**：`src/api/<service>/`，每个服务一个目录；
-- **模块 → 子目录、API → 文件**（2026-08-02 升级，原"模块→文件"在 trade-management 已知 9+ API 后废弃——单文件大杂烩且 init 图耦合）：`src/api/<service>/<module>/<api>.js`，一个文件 = 一个压测目标及其契约，需要用例池的再配 `<api>-data.js`——**每 API 一文件使 init 图隔离成为默认结构**（压哪个 API 只加载哪个契约与数据，原 -read 后缀补丁不再需要）。**按需建档**：只有被压测或被 journey 使用的 API 才建文件，端点清单不预先铺满（trade-management 已知 API 面：create、query、trigger-event、update、risk-metrics、dat-to-json、target-gain、generate-schedule、sync-cashflows-batch——记录备查，非建档任务）。紧密协作的小端点组（如 checker-flow 的 pending/approve/reject 审批动作组）可合一文件，P1c 时按压测目标定；
+- **模块 → 子目录、API → 文件**（2026-08-02 升级，原"模块→文件"在 trade 已知 9+ API 后废弃——单文件大杂烩且 init 图耦合）：`src/api/<service>/<module>/<api>.js`，一个文件 = 一个压测目标及其契约，需要用例池的再配 `<api>-data.js`——**每 API 一文件使 init 图隔离成为默认结构**（压哪个 API 只加载哪个契约与数据，原 -read 后缀补丁不再需要）。**按需建档**：只有被压测或被 journey 使用的 API 才建文件，端点清单不预先铺满（trade 已知 API 面：create、query、trigger-event、update、risk-metrics、dat-to-json、target-gain、generate-schedule、sync-cashflows-batch——记录备查，非建档任务）。紧密协作的小端点组（如 checker-flow 的 pending/approve/reject 审批动作组）可合一文件，P1c 时按压测目标定；
 - **服务地址**：`config/environments/<env>.json` 中维护 `services` 映射（每个服务独立 host:port），api 层按服务名取 baseUrl，场景代码不感知地址。
 
 所有指标统一附加 `service`、`module` 标签（与 `tags.name` 并列），Grafana 可按服务/模块下钻聚合。
@@ -154,14 +154,14 @@ perf/
 
 > 2026-07-31 融合修订：**写路径改用"用例行"模型**（取自 trade-performance，评估见第 13 节），读路径保留字段池模型。分界标准：字段间存在业务有效性关联（portfolio 归属、counterparty 开户关系、dat 产品定义）→ 用例行；字段间无关联约束（查询过滤条件）→ 字段池。
 
-- **写路径：用例行模型（`data/worker-svc/trade-management/trades-create.json`）**——一行 = 一个完整可跑用例：`productType` + `notionalCurrency` + 三个归属字段（portfolioId/counterpartyFmId/counterpartyName）内嵌同一行。核心纪律：**整行必须同源采集自同一份真实 curl**（DevTools 复制真实建单请求）——静态供数没有 live 查询兜底，任何手工拼装都可能造出现实中不存在的组合（portfolio 属于 A 台、counterparty 未在 A 台开户），服务端业务拒绝在报告里呈现为"错误率升高"，看起来像性能问题实际是数据问题。配套机制：
+- **写路径：用例行模型（`data/worker-svc/trade/trades-create.json`）**——一行 = 一个完整可跑用例：`productType` + `notionalCurrency` + 三个归属字段（portfolioId/counterpartyFmId/counterpartyName）内嵌同一行。核心纪律：**整行必须同源采集自同一份真实 curl**（DevTools 复制真实建单请求）——静态供数没有 live 查询兜底，任何手工拼装都可能造出现实中不存在的组合（portfolio 属于 A 台、counterparty 未在 A 台开户），服务端业务拒绝在报告里呈现为"错误率升高"，看起来像性能问题实际是数据问题。配套机制：
   - 行号 `__row` 装载时自动注入并作为指标 tag——"哪行数据坏了"直接从指标切出；
   - 数据经 SharedArray 共享（全 VU 一份），**全局游标轮换**（`exec.scenario.iterationInTest % 行数`）——均匀覆盖且可复现，取代 hash 取数；
   - 数据文件可经 `CREATE_DATA_FILE` 覆盖切换**变体池**（如锁竞争对照实验：全部行填同一组归属值），不改脚本；
   - dat 按**同名约定**定位：`data/datfiles/products/<productType>/<productType>.dat`——行内只写 productType，无路径字符串可打错；只预加载数据文件实际引用的产品；productType 装载时过字符集闸（进路径的值必须先验）。同一产品需多个 dat 样本时再加可选 datFile 覆盖列（当前 YAGNI）；
   - 数据内容随环境失效（id 不跨环境），换环境重新采集同一文件；采集时间与来源记在行的 `note` 字段。
 - **preflight（setup 阶段本地数据闸）**：开跑前逐行校验用例池——占位符（TBC/TODO/N/A 类模式，注意**不含** PERF 前缀——专用 PERF portfolio 是合法真值）、缺字段、空池即 `exec.test.abort`，并报出具体行号。**不发探针请求**（只验第一行是抽样冒充证明，且污染请求计数）；"数据今天是否仍有效"由两层机制回答：大轮次前同会话先跑 smoke + 长跑 profile 的业务成功率宽松熔断线。
-- **读路径：字段池模型（`data/worker-svc/trade-management/trades-query.json`）**：查询过滤条件组合（日期区间、状态、counterparty），字段间无有效性关联，池内自由轮换即可；覆盖多样条件防缓存热点造成虚假乐观结果。
+- **读路径：字段池模型（`data/worker-svc/trade/trades-query.json`）**：查询过滤条件组合（日期区间、状态、counterparty），字段间无有效性关联，池内自由轮换即可；覆盖多样条件防缓存热点造成虚假乐观结果。
 - **唯一性与标记**：payload **不接受额外自定义字段**（trade-performance 已实测——原设计的 clientRef 注入字段作废），客户端唯一标识机制列入 P1b（当前 payload 不接受额外字段，无逐请求标识落盘）；压测数据识别与清理依赖"专用 PERF portfolio + 状态 + 时间窗"组合，专用 portfolio 的真实值在环境启用时确认。
 - **lifecycle 事件数据（P1b/P1c，2026-08-02 需求评审定稿）**：
   - **状态机前置**：`create（maker）→ PENDING APPROVAL → checker 审批通过 → LIVE`，全部 trigger-event 事件只能发生在 **LIVE** trade 上。审批是独立的 checker-task API（`GET /api/v1/checker/tasks/pending`、`POST /api/v1/checker/tasks/{taskId}/approve` 与 `.../reject`），**以 taskId 而非 tradeId 寻址**——自动化审批须先查 pending 清单做 tradeId→taskId 映射（P1c）。

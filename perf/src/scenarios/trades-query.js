@@ -2,14 +2,14 @@ import exec from 'k6/execution';
 import { cfg, loadData, buildOptions } from '../lib/bootstrap.js';
 import { pickUser } from '../lib/users.js';
 import { pickAt } from '../lib/data.js';
-import { queryTrades } from '../api/worker-svc/trade-management/query.js';
+import { queryTrades } from '../api/worker-svc/trade/query.js';
 
-// P0 · worker-svc/trade-management · 读路径
+// P0 · worker-svc/trade · 读路径
 
-const DATA = loadData('worker-svc/trade-management/trades-query');
+const DATA = loadData('worker-svc/trade/trades-query');
 
 // perf_trades_rows avg>0：空库守卫（空库上的查询数字无意义）
-export const options = buildOptions('worker-svc/trade-management', 'query', {
+export const options = buildOptions('worker-svc/trade', 'query', {
   perf_trades_rows: ['avg>0'],
 });
 

@@ -4,7 +4,7 @@ import { classifyResponse, reasonFrom } from '../../../lib/errors.js';
 import { getDat, datName } from './create-data.js';
 
 const SVC = 'worker-svc';
-const MOD = 'trade-management';
+const MOD = 'trade';
 
 // 读路径（queryTrades / perf_trades_rows）在 ./query.js（终审 #4 的 init 图隔离）：
 // 本文件只有 create + 其 ./create-data.js 数据图，压其他 API 不会传递性加载用例池与 dat。
@@ -44,7 +44,7 @@ export function validateInputs(caseRow) {
   ['portfolioId', 'counterpartyFmId', 'counterpartyName'].forEach((k) => {
     const v = caseRow[k];
     if (!v || !String(v).trim()) problems.push(`${k} 未解析（检查数据文件路径与字段名，见 ./trades-data.js）`);
-    else if (PLACEHOLDER.test(v)) problems.push(`${k}='${v}' 仍是占位符（见 data/worker-svc/trade-management/README.md）`);
+    else if (PLACEHOLDER.test(v)) problems.push(`${k}='${v}' 仍是占位符（见 data/worker-svc/trade/README.md）`);
   });
   if (!caseRow.productType || !String(caseRow.productType).trim()) {
     problems.push('productType 未解析（dat 按 productType 同名约定定位，见 ./trades-data.js）');

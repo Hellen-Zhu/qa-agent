@@ -3,6 +3,10 @@
 - `trades-query.json` — 查询字段池：`{ filters: [...] }`。字段间无有效性关联，池内自由轮换。
 - `trades-create.json` — create 用例池：一行 = 一个完整可跑用例。行号 `__row` 装载时自动注入，
   作为指标 tag（哪行数据坏了直接从指标切出）；无人工维护的 id 列。
+- `trade-ids.json` — trade ID 池：`{ ids: [...] }`，detail 与 risk-metrics 场景共享。
+  采集：`GET /api/v1/trades` 查一把（或界面复制），取 **专用 PERF portfolio** 下的 trade id 填入；
+  ID 随环境失效，换环境重采。占位符由 setup 阶段 preflight 拦截。
+  ⚠ ID 过期的表现是 **http-404 落 technical 类**——见到成片 http-404 先重采 ID，别当性能问题。
 
 读路径客户端（`src/api/worker-svc/trade/query.js`）与写路径客户端（`create.js`）代码分离，
 原因是读场景不应加载 create 用例池与 dat 二进制——两者互不 import。

@@ -1,4 +1,6 @@
 {
   "query": { "name": "GET /api/v1/trades", "p95": 300, "p99": 800 },
+  "detail": { "name": "GET /api/v1/trades/{id}", "p95": 300, "p99": 800 },
+  "riskMetrics": { "name": "GET /api/v1/trades/{tradeId}/risk-metrics", "p95": 500, "p99": 1500 },
   "create": { "name": "POST /api/v1/trades/create", "p95": 800, "p99": 2000 }
 }

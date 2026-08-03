@@ -1,0 +1,4 @@
+{
+  "_comment": "detail 与 risk-metrics 共享的 trade ID 池。ID 随环境失效，换环境重新采集（见 README）；仓库内保持占位符——setup 阶段 preflight 会拦住占位符并中止（PREFLIGHT FAILED）。",
+  "ids": ["TBC-REPLACE-WITH-REAL-TRADE-ID"]
+}

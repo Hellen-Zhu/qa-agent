@@ -9,7 +9,8 @@ run.sh 真实运行（summary 写盘、verdict/退出码、preflight 提示）�
 - [ ] SLA 目标值与业务方确认，替换 `config/slas/` 占位水位（遗留问题 #2）
 - [ ] 压测数据识别与清理依赖"专用 PERF portfolio + 状态 + 时间窗"（payload 不接受额外字段，clientRef 方案已废除）；专用 portfolio 真实值建立后填入用例池各行 portfolioId（遗留问题 #3）
 - [ ] 用例池同源采集：系统 Web 界面建单 + DevTools 对 POST /trades/create Copy as cURL，逐行填入 `data/worker-svc/trade/trades-create.json`（归属三字段整组同源，勿拼装；真实 .dat 按同名约定另存为 `data/datfiles/products/<productType>/<productType>.dat`（行内只写 productType，框架自动定位）；每换 productType/counterparty 采一次；采集样本放 `_samples/` 不入库）；验证同一 dat 高频重复提交是否触发幂等/去重/日期校验（遗留问题 #4）
-- [ ] create/query 响应契约核对：create 成功契约按校准版实现（code=200 + status='PENDING APPROVAL' + data.trade.id ~ TRD-\d+），首跑确认版本未变；query 假设响应含 `trades` 数组且行数>0（perf_trades_rows 空库守卫）
+- [ ] 响应契约核对（全部为占位假设，首跑逐一校准）：create 成功契约按校准版实现（code=200 + status='PENDING APPROVAL' + data.trade.id ~ TRD-\d+），首跑确认版本未变；query 假设响应含 `trades` 数组且行数>0（perf_trades_rows 空库守卫）；detail 假设含 `data.trade` 且 id 回显一致；risk-metrics 与 unread-count 仅假设含 `data` 键（结构采集后收紧）
+- [ ] trade ID 池采集：查询专用 PERF portfolio 下的 trade，id 填入 `data/worker-svc/trade/trade-ids.json`（detail/risk-metrics 共享；ID 随环境失效，成片 http-404 = ID 过期先重采）
 - [ ] 压测机 k6 版本 ≥ 0.55（与本地验证版本行为一致：experimental-prometheus-rw 输出名、K6_PROMETHEUS_RW_TREND_STATS、web dashboard 导出）；Windows 机器装 Git Bash 跑同一份 run.sh
 - [ ] 5 个微服务清单（服务名/地址/模块）补入 `config/environments/` 与 `src/api/`（遗留问题 #6）
 - [ ] X-User-Id 身份（maker/checker 真实账号）填入环境文件并确认在目标环境有效

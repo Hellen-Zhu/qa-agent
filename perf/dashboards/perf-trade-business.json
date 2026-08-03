@@ -107,7 +107,7 @@
     {
       "id": 2,
       "type": "stat",
-      "title": "OK (business success)",
+      "title": "OK",
       "description": "Exact caliber: counter final value via max_over_time — must match this run's summary line by line.",
       "datasource": {
         "type": "prometheus",
@@ -165,7 +165,7 @@
     {
       "id": 17,
       "type": "stat",
-      "title": "Errors (technical / business / script)",
+      "title": "Errors by Class",
       "description": "Exact caliber: counter final value via max_over_time — must match this run's summary line by line. Technical = THE performance conclusion; business = usually a data problem; script > 0 voids the run.",
       "datasource": {
         "type": "prometheus",
@@ -274,7 +274,7 @@
     {
       "id": 6,
       "type": "stat",
-      "title": "Business Success Rate",
+      "title": "Success Rate",
       "description": "Exact caliber: counter final value via max_over_time — must match this run's summary line by line. Computed from counters — more exact than the windowed rate metric.",
       "datasource": {
         "type": "prometheus",

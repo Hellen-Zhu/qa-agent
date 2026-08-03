@@ -230,10 +230,10 @@ export function buildTextSummary(data, meta, cmp) {
         );
       });
       if (cmp.regressions.length > 0) {
-        L.push(`  ✗ ${cmp.regressions.length} regression(s) beyond tolerance (latency +${cmp.tolPct}%, biz-success -1.0pp)`);
+        L.push(`  ✗ ${cmp.regressions.length} regression(s) beyond tolerance (response time +${cmp.tolPct}%, biz-success -1.0pp)`);
         L.push('    informational only — verdict comes from thresholds, not baseline');
       } else {
-        L.push(`  ✓ all within tolerance (latency +${cmp.tolPct}%, biz-success -1.0pp)`);
+        L.push(`  ✓ all within tolerance (response time +${cmp.tolPct}%, biz-success -1.0pp)`);
       }
     }
     L.push('');

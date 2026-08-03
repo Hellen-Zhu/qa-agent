@@ -3,7 +3,7 @@
     {
       "name": "DS_PROMETHEUS",
       "label": "Prometheus",
-      "description": "k6 remote write 写入的那个 Prometheus 实例",
+      "description": "The Prometheus instance k6 remote write pushes to",
       "type": "datasource",
       "pluginId": "prometheus",
       "pluginName": "Prometheus"
@@ -11,7 +11,7 @@
   ],
   "title": "Perf - Trade Overview",
   "uid": "perf-trade-biz",
-  "description": "对账区（精确，=summary）+ 趋势区（5s 窗口口径）。结论数字以 summary 为准；判定权威是阈值。",
+  "description": "Reconciliation zone (exact, = summary) + trend zone (5s push windows). Authoritative numbers come from summary; the verdict comes from thresholds.",
   "schemaVersion": 39,
   "tags": [
     "k6",
@@ -24,7 +24,7 @@
   "links": [
     {
       "type": "link",
-      "title": "官方 k6 总览 (19665)",
+      "title": "Official k6 Overview (19665)",
       "url": "/d/ccbb2351-2ae2-462f-ae0e-f2c893ad1028",
       "keepTime": true,
       "includeVars": true
@@ -49,8 +49,8 @@
     {
       "id": 1,
       "type": "stat",
-      "title": "total 请求",
-      "description": "精确口径：counter 终值（max_over_time），应与该轮 summary 逐项一致。",
+      "title": "Total Requests",
+      "description": "Exact caliber: counter final value via max_over_time — must match this run's summary line by line.",
       "datasource": {
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
@@ -107,8 +107,8 @@
     {
       "id": 2,
       "type": "stat",
-      "title": "ok（业务成功）",
-      "description": "精确口径：counter 终值（max_over_time），应与该轮 summary 逐项一致。",
+      "title": "OK (business success)",
+      "description": "Exact caliber: counter final value via max_over_time — must match this run's summary line by line.",
       "datasource": {
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
@@ -165,8 +165,8 @@
     {
       "id": 3,
       "type": "stat",
-      "title": "technical",
-      "description": "精确口径：counter 终值（max_over_time），应与该轮 summary 逐项一致。 technical 是性能结论。",
+      "title": "Errors: Technical",
+      "description": "Exact caliber: counter final value via max_over_time — must match this run's summary line by line. Connect failure / timeout / 5xx — THE performance conclusion.",
       "datasource": {
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
@@ -227,8 +227,8 @@
     {
       "id": 4,
       "type": "stat",
-      "title": "business",
-      "description": "精确口径：counter 终值（max_over_time），应与该轮 summary 逐项一致。 business 通常是数据问题。",
+      "title": "Errors: Business",
+      "description": "Exact caliber: counter final value via max_over_time — must match this run's summary line by line. HTTP 200 but business rejection — usually a test-data problem, not performance.",
       "datasource": {
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
@@ -289,8 +289,8 @@
     {
       "id": 5,
       "type": "stat",
-      "title": "script",
-      "description": "精确口径：counter 终值（max_over_time），应与该轮 summary 逐项一致。 script>0 本轮作废。",
+      "title": "Errors: Script",
+      "description": "Exact caliber: counter final value via max_over_time — must match this run's summary line by line. Script defect — any value > 0 voids this run.",
       "datasource": {
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
@@ -351,8 +351,8 @@
     {
       "id": 6,
       "type": "stat",
-      "title": "业务成功率",
-      "description": "精确口径：counter 终值（max_over_time），应与该轮 summary 逐项一致。 由 counter 算出，比窗口 rate 指标精确。",
+      "title": "Business Success Rate",
+      "description": "Exact caliber: counter final value via max_over_time — must match this run's summary line by line. Computed from counters — more exact than the windowed rate metric.",
       "datasource": {
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
@@ -417,8 +417,8 @@
     {
       "id": 7,
       "type": "stat",
-      "title": "业务 TPS",
-      "description": "精确口径。分母是看板时间范围——请用 run.sh 打印的深链（精确 from/to），手动放宽范围会稀释此值。",
+      "title": "Business TPS",
+      "description": "Exact numerator; denominator is the dashboard time range — open via the run's deep link (exact from/to). Widening the range dilutes this value.",
       "datasource": {
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
@@ -475,8 +475,8 @@
     {
       "id": 8,
       "type": "timeseries",
-      "title": "施压速率：RPS vs dropped",
-      "description": "dropped/s 一旦 >0：压力机跟不上目标速率（maxVUs 不足/机器瓶颈），本轮速率失真、所有结论打折。",
+      "title": "Load Delivery: RPS vs dropped",
+      "description": "dropped/s > 0 means the load generator cannot sustain the target rate (maxVUs too low / generator bottleneck) — the delivered rate is distorted and every conclusion of this run is discounted.",
       "datasource": {
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
@@ -544,7 +544,7 @@
       "id": 9,
       "type": "timeseries",
       "title": "VUs",
-      "description": "open 模型下 VU 数是\"为维持速率付出的并发\"；逼近 maxVUs 上限 = 速率即将失真的前兆。",
+      "description": "Open model: VU count is the concurrency paid to sustain the target rate; approaching the cap is an early warning of rate distortion.",
       "datasource": {
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
@@ -572,7 +572,7 @@
           },
           "expr": "k6_vus_max{testid=\"$testid\"}",
           "refId": "B",
-          "legendFormat": "maxVUs 上限"
+          "legendFormat": "maxVUs cap"
         }
       ],
       "options": {
@@ -611,8 +611,8 @@
     {
       "id": 10,
       "type": "timeseries",
-      "title": "success duration 分位数（按 API）",
-      "description": "趋势口径（5s 推送窗口），回答\"何时/形状\"——结论数字以 summary 为准。 SLA 观测对象（只含业务成功样本）；P95/P50 发散点=慢路径出现时刻；按 name 分线为 journey 预留。",
+      "title": "Success Duration Percentiles (per API)",
+      "description": "Trend caliber (5s push windows) — answers when/shape only; authoritative numbers live in summary. SLA source (business-successful samples only). p95/p50 divergence marks slow-path onset; per-name lines reserved for journeys.",
       "datasource": {
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
@@ -688,8 +688,8 @@
     {
       "id": 11,
       "type": "timeseries",
-      "title": "全请求 vs 成功 p95",
-      "description": "趋势口径（5s 推送窗口），回答\"何时/形状\"——结论数字以 summary 为准。 两线差距拉大 = 快速失败开始混入的时刻。",
+      "title": "All vs Success p95",
+      "description": "Trend caliber (5s push windows) — answers when/shape only; authoritative numbers live in summary. A widening gap marks the moment fast failures start mixing in.",
       "datasource": {
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
@@ -708,7 +708,7 @@
           },
           "expr": "avg(k6_http_req_duration_p95{testid=\"$testid\"})",
           "refId": "A",
-          "legendFormat": "all p95（含失败）"
+          "legendFormat": "all p95 (incl. failures)"
         },
         {
           "datasource": {
@@ -717,7 +717,7 @@
           },
           "expr": "avg(k6_perf_success_duration_p95{testid=\"$testid\"})",
           "refId": "B",
-          "legendFormat": "success p95（SLA 对象）"
+          "legendFormat": "success p95 (SLA source)"
         }
       ],
       "options": {
@@ -756,8 +756,8 @@
     {
       "id": 12,
       "type": "timeseries",
-      "title": "错误速率（按类）",
-      "description": "趋势口径（5s 推送窗口），回答\"何时/形状\"——结论数字以 summary 为准。 错误何时开始、哪类先出现。",
+      "title": "Error Rate by Class",
+      "description": "Trend caliber (5s push windows) — answers when/shape only; authoritative numbers live in summary. When errors start and which class appears first.",
       "datasource": {
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
@@ -833,8 +833,8 @@
     {
       "id": 13,
       "type": "timeseries",
-      "title": "technical 按 reason",
-      "description": "趋势口径（5s 推送窗口），回答\"何时/形状\"——结论数字以 summary 为准。 劣化模式识别：超时（net-*）和 5xx 是完全不同的故事；http-409 先怀疑身份池配置。",
+      "title": "Technical Errors by Reason",
+      "description": "Trend caliber (5s push windows) — answers when/shape only; authoritative numbers live in summary. Degradation fingerprint: timeouts (net-*) and 5xx are different stories; on http-409 suspect identity-pool misconfiguration first.",
       "datasource": {
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
@@ -892,8 +892,8 @@
     {
       "id": 14,
       "type": "timeseries",
-      "title": "business 按数据行定位",
-      "description": "趋势口径（5s 推送窗口），回答\"何时/形状\"——结论数字以 summary 为准。 哪行数据坏了、什么原因——直接指向 data 文件行号。",
+      "title": "Business Errors by Data Row",
+      "description": "Trend caliber (5s push windows) — answers when/shape only; authoritative numbers live in summary. Which data row is bad and why — points straight at the data-file line.",
       "datasource": {
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
@@ -951,8 +951,8 @@
     {
       "id": 15,
       "type": "timeseries",
-      "title": "query 返回行数（空库守卫）",
-      "description": "趋势口径（5s 推送窗口），回答\"何时/形状\"——结论数字以 summary 为准。 恒为 0 = 空库或过滤字段名猜错，本轮查询数字无证明力；仅 query 场景有数。",
+      "title": "Query Rows (empty-DB guard)",
+      "description": "Trend caliber (5s push windows) — answers when/shape only; authoritative numbers live in summary. Constantly 0 = empty DB or wrong filter field names, so query numbers carry no evidence; populated by query scenarios only.",
       "datasource": {
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
@@ -971,7 +971,7 @@
           },
           "expr": "k6_perf_trades_rows_avg{testid=\"$testid\"}",
           "refId": "A",
-          "legendFormat": "rows/响应（窗口 avg）"
+          "legendFormat": "rows/response (window avg)"
         }
       ],
       "options": {
@@ -1010,7 +1010,7 @@
     {
       "id": 16,
       "type": "text",
-      "title": "服务端关联区（内网启用项）",
+      "title": "Server-side Correlation (intranet placeholder)",
       "gridPos": {
         "h": 6,
         "w": 12,
@@ -1019,7 +1019,7 @@
       },
       "options": {
         "mode": "markdown",
-        "content": "此区按 env-checklist 在内网补齐（PromQL 参照现网服务端 dashboard，按 service 过滤）：\n\n- CPU / 内存 / GC / 线程池 / DB 连接池 —— 与上方压测曲线同屏按时间对齐\n- 板顶链接可跳官方 19665 看 k6 内置指标全集（传输/连接细节）\n\n**口径提醒**：头部大卡为精确对账区（=summary）；曲线均为 5s 窗口趋势口径，结论数字以 summary 为准。"
+        "content": "Fill in on the intranet per env-checklist (PromQL mirrors the existing server-side dashboards, filtered by service):\n\n- CPU / memory / GC / thread pools / DB connection pools — time-aligned with the load curves above\n- The top link jumps to the official 19665 board for the full set of k6 built-in metrics (transfer/connection details)\n\n**Caliber reminder**: the header stat row is the exact reconciliation zone (= summary); all curves are 5s-window trend caliber — authoritative numbers live in summary."
       }
     }
   ]

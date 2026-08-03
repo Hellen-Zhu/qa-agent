@@ -11,7 +11,7 @@
   ],
   "title": "Perf - Trade Overview",
   "uid": "perf-trade-biz",
-  "description": "Persona-layered: reconciliation (exact = summary) → live → load delivery → latency trend → attribution → capacity analysis → run history. Authoritative numbers come from summary; the verdict comes from thresholds.",
+  "description": "Persona-layered: reconciliation (exact = summary) → live → load delivery → response time trend → attribution → capacity analysis → run history. Authoritative numbers come from summary; the verdict comes from thresholds.",
   "schemaVersion": 39,
   "tags": [
     "k6",
@@ -801,7 +801,7 @@
     {
       "id": 17,
       "type": "timeseries",
-      "title": "Load / Throughput / Latency (over time)",
+      "title": "Load / Throughput / Response Time (over time)",
       "description": "Capacity analysis — only meaningful for ladder/stress runs (load ramps within the run). Knee point: RPS plateaus while VUs keep climbing and p95 takes off. In ladder runs load ramps monotonically, so the time axis doubles as the load axis.",
       "datasource": {
         "type": "prometheus",
@@ -839,7 +839,7 @@
           },
           "expr": "avg(k6_perf_success_duration_p95{testid=~\"$testid\"})",
           "refId": "C",
-          "legendFormat": "success p95 (latency)"
+          "legendFormat": "success p95 (response time)"
         }
       ],
       "options": {
@@ -876,7 +876,7 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "success p95 (latency)"
+              "options": "success p95 (response time)"
             },
             "properties": [
               {
@@ -895,8 +895,8 @@
     {
       "id": 18,
       "type": "xychart",
-      "title": "Latency vs Load (XY)",
-      "description": "Capacity analysis — only meaningful for ladder/stress runs (load ramps within the run). Knee point: RPS plateaus while VUs keep climbing and p95 takes off. Classic latency-load curve: each point is one 5s window.",
+      "title": "Response Time vs Load (XY)",
+      "description": "Capacity analysis — only meaningful for ladder/stress runs (load ramps within the run). Knee point: RPS plateaus while VUs keep climbing and p95 takes off. Classic response time-load curve: each point is one 5s window.",
       "datasource": {
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"

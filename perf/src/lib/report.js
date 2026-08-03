@@ -127,8 +127,8 @@ export function buildTextSummary(data, meta, cmp) {
     L.push('');
   }
 
-  // ── 延迟 ──────────────────────────────────────────────────
-  L.push('── Latency (ms) ───────────────────────────────────');
+  // ── 响应时间（完整往返，非 TTFB——JMeter 语境的 Latency 指 TTFB，勿混）──
+  L.push('── Response time (ms) ─────────────────────────────');
   if (succ && succ.count > 0) {
     L.push('    ' + padR('', 10) + PCT_COLS.map((c) => padL(c, 8)).join(''));
     L.push(pctRow('success', 10, succ));
@@ -163,7 +163,7 @@ export function buildTextSummary(data, meta, cmp) {
     .sort((a, b) => (a.label < b.label ? -1 : 1));
   if (apiRows.length > 0) {
     const w = Math.max.apply(null, apiRows.map((r) => r.label.length).concat([8])) + 2;
-    L.push('── Per-API latency (ms, success samples) ──────────');
+    L.push('── Per-API response time (ms, success samples) ────');
     L.push('    ' + padR('', w) + PCT_COLS.map((c) => padL(c, 8)).join('') + padL('n', 8));
     apiRows.forEach((r) => L.push(pctRow(r.label, w, r.vals) + padL(r.vals.count, 8)));
     L.push('');

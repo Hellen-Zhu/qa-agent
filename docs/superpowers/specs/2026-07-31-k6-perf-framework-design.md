@@ -13,7 +13,7 @@
 
 | 优先级 | 内容 |
 |---|---|
-| P0 | 单接口压测清单 11 个（2026-08-03 定稿，分两阶段）。**Phase-R（GET，先行）**：`GET /trades`✓、`GET /trades/{id}`✓、`GET /trades/{tradeId}/risk-metrics`✓、`GET /notifications/unread-count`✓；**Phase-W（POST，后续）**：`create`✓、`trigger-event`（P1b 机制承载）、`{id}/calculate-risk`、`{id}/calculate-partial-novation-risk`、`calculate-risk-for-new`、`checker/tasks/bulk-approve`、`bulk-reject`。原 P0（query+create 跑通全链路）已于 2026-07-31 交付 |
+| P0 | 单接口压测清单 11 个（2026-08-03 定稿，分两阶段）。**Phase-R（GET，先行）**：`GET /trades`✓、`GET /trades/{id}`✓、`GET /trades/{tradeId}/risk-metrics`✓、`GET /notifications/unread-count`✓；**Phase-W（POST，后续）**：`create`✓、`trigger-event`（P1b 机制承载）、`{id}/calculate-risk`、`{id}/calculate-partial-novation-risk`、`calculate-risk-for-new`、`checker/tasks/{taskId}/approve`、`{taskId}/reject`（单笔；bulk 端点 2026-08-03 移出 P0）。原 P0（query+create 跑通全链路）已于 2026-07-31 交付 |
 | P1 | lifecycle：P1b trigger-event 单 API 事件场景 + seeding（PENDING 池）+ 基线对比；P1c checker-task 审批链客户端 + LIVE 池自动铺底 + E2E journey |
 | P2 | 端到端混合场景（按流量配比）、WebSocket 支持、CI 集成 |
 | 远期 | Web 平台化、分布式施压（迁移 k6-operator） |
@@ -89,7 +89,7 @@ perf/
 
 | 服务 | 已知模块 | 框架内状态 |
 |---|---|---|
-| worker-svc | trade、product-management、checker-flow | trade 已实现（P0/P1a，2026-08-03 增 detail/risk-metrics）；checker-flow P0 含 bulk-approve/bulk-reject（Phase-W） |
+| worker-svc | trade、product-management、checker-flow | trade 已实现（P0/P1a，2026-08-03 增 detail/risk-metrics）；checker-flow P0 为单笔 {taskId}/approve、/reject（Phase-W） |
 | refdata-svc | counterparty、portfolio、marketers | 未实现（查询类候选） |
 | uc-svc | 待补 | 未实现 |
 | notification-svc | notifications | unread-count 已实现（P0 Phase-R，2026-08-03） |
@@ -164,7 +164,7 @@ perf/
 - **读路径：字段池模型（`data/worker-svc/trade/trades-query.json`）**：查询过滤条件组合（日期区间、状态、counterparty），字段间无有效性关联，池内自由轮换即可；覆盖多样条件防缓存热点造成虚假乐观结果。
 - **唯一性与标记**：payload **不接受额外自定义字段**（trade-performance 已实测——原设计的 clientRef 注入字段作废），客户端唯一标识机制列入 P1b（当前 payload 不接受额外字段，无逐请求标识落盘）；压测数据识别与清理依赖"专用 PERF portfolio + 状态 + 时间窗"组合，专用 portfolio 的真实值在环境启用时确认。
 - **lifecycle 事件数据（P1b/P1c，2026-08-02 需求评审定稿）**：
-  - **状态机前置**：`create（maker）→ PENDING APPROVAL → checker 审批通过 → LIVE`，全部 trigger-event 事件只能发生在 **LIVE** trade 上。审批是独立的 checker-task API（`GET /api/v1/checker/tasks/pending`、`POST /api/v1/checker/tasks/{taskId}/approve` 与 `.../reject`；另有 **bulk 端点 `bulk-approve`/`bulk-reject`**——2026-08-03 列入 P0 Phase-W 压测清单，seed 流水线也可用 bulk 一次批 N 笔简化 LIVE 池铺底），**以 taskId 而非 tradeId 寻址**——自动化审批须先查 pending 清单做 tradeId→taskId 映射（P1c）。
+  - **状态机前置**：`create（maker）→ PENDING APPROVAL → checker 审批通过 → LIVE`，全部 trigger-event 事件只能发生在 **LIVE** trade 上。审批是独立的 checker-task API（`GET /api/v1/checker/tasks/pending`、`POST /api/v1/checker/tasks/{taskId}/approve` 与 `.../reject`；另有 bulk 端点 `bulk-approve`/`bulk-reject`——不在 P0（2026-08-03 定），但 P1c 的 seed 流水线可选用 bulk 一次批 N 笔简化 LIVE 池铺底；P0 Phase-W 压测对象是**单笔** `{taskId}/approve`/`reject`，其契约与 seed/journey 复用同一原子操作），**以 taskId 而非 tradeId 寻址**——自动化审批须先查 pending 清单做 tradeId→taskId 映射（P1c）。
   - **事件清单（8 类，语义与终态性待内网确认，§11-9）**：cancellation、partial termination、early termination、portfolio reassignment、partial novation remaining、novation remaining、stepout full、stepout partial。疑似非终态（事件后 trade 仍 LIVE → 可重复压测候选，soak 可用单 API 形态）：partial termination、portfolio reassignment、partial novation；疑似终态（消耗 LIVE 池）：cancellation、early termination、stepout full。
   - **LIVE 池获取（P1b，approve 客户端未实现前）**：查询圈定——`GET /trades` 按 `status=LIVE` + **专用 PERF portfolio** 过滤生成事件目标清单；池量不足时经系统 Web 界面人工批量审批补池。P1c 实现 checker-task 客户端后 seed 全自动：create（maker）→ 查 pending 映射 taskId → approve（checker）→ 输出 LIVE 清单。
   - **安全红线**：事件是破坏性操作（cancellation/termination 会终结 trade），比 create 危险一级——事件目标清单的生成与 preflight **双重校验目标 trade 属于专用 PERF portfolio，绝不对非 PERF 数据触发事件**。

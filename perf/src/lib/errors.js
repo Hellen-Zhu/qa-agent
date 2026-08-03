@@ -85,6 +85,14 @@ export function recordOutcome(errClass, tags, res, reason) {
   check(ok, { 'business success': (v) => v }, tags);
 }
 
+/** 现场日志的响应体摘录：技术类排障第一线索（400 的校验详情、503 的网关页特征）。
+ *  截断 200 字符 + LOG_CAP 限流双保险，不反噬压力机；响应体含真实业务数据的
+ *  权衡与 business 类 msg 摘录相同（k6.log 本就按敏感产物管理）。 */
+function bodySnippet(res) {
+  const b = res && res.body ? String(res.body).replace(/\s+/g, ' ').trim() : '';
+  return b ? ` body=${b.slice(0, 200)}` : '';
+}
+
 /** 通用分类引擎。分支顺序即分类优先级（technical → not-json → business → shape），勿调整 */
 export function classifyResponse(res, tags, spec) {
   const s = spec || {};
@@ -92,7 +100,7 @@ export function classifyResponse(res, tags, spec) {
 
   if (res.status !== 200) {
     const reason = techReason(res);
-    const detail = `technical: HTTP ${res.status}${res.error ? ' ' + res.error : ''}`;
+    const detail = `technical: HTTP ${res.status}${res.error ? ' ' + res.error : ''}${bodySnippet(res)}`;
     recordOutcome(ERR.TECHNICAL, t, res, reason);
     logFailure(ERR.TECHNICAL, reason, detail, t);
     return { errClass: ERR.TECHNICAL, detail, reason, body: null };
@@ -102,7 +110,7 @@ export function classifyResponse(res, tags, spec) {
   try {
     body = res.json();
   } catch (e) {
-    const detail = `script: 响应不是 JSON — ${e.message}`;
+    const detail = `script: 响应不是 JSON — ${e.message}${bodySnippet(res)}`;
     recordOutcome(ERR.SCRIPT, t, res, 'not-json');
     logFailure(ERR.SCRIPT, 'not-json', detail, t);
     return { errClass: ERR.SCRIPT, detail, reason: 'not-json', body: null };

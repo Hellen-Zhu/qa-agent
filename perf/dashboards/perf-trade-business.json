@@ -909,7 +909,7 @@
       "id": 12,
       "type": "timeseries",
       "title": "Error Rate by Class",
-      "description": "Trend caliber (5s push windows) — answers when/shape only; authoritative numbers live in summary. When errors start and which class appears first.",
+      "description": "Trend caliber (5s push windows) — answers when/shape only; authoritative numbers live in summary. When errors start and which class appears first. Note: rate() needs ≥2 samples per window — a handful of sparse errors may not render here; exact counts always show in Request Failures and the attribution panels.",
       "datasource": {
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
@@ -984,9 +984,9 @@
     },
     {
       "id": 13,
-      "type": "timeseries",
+      "type": "bargauge",
       "title": "Technical Errors by Reason",
-      "description": "Trend caliber (5s push windows) — answers when/shape only; authoritative numbers live in summary. Degradation fingerprint: timeouts (net-*) and 5xx are different stories; on http-409 suspect identity-pool misconfiguration first.",
+      "description": "Exact per-reason totals (counter final value — matches summary caliber; renders even for a single sparse error, unlike rate curves). Timing: see Error Rate by Class; per-request detail: result.csv / k6.log. Fingerprint: net-* = timeouts/connect, http-5xx = server errors, http-409 = suspect identity-pool misconfig first.",
       "datasource": {
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
@@ -1003,36 +1003,36 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "sum by (reason)(rate(k6_perf_err_technical_total{testid=~\"$testid\"}[$__rate_interval]))",
+          "expr": "sum by (reason)(max_over_time(k6_perf_err_technical_total{testid=~\"$testid\"}[$__range]))",
           "refId": "A",
-          "legendFormat": "{{reason}}"
+          "legendFormat": "{{reason}}",
+          "instant": true,
+          "range": false
         }
       ],
       "options": {
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
         },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
+        "orientation": "horizontal",
+        "displayMode": "basic",
+        "showUnfilled": true,
+        "valueMode": "color"
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "reqps",
-          "custom": {
-            "drawStyle": "line",
-            "lineWidth": 1,
-            "fillOpacity": 8,
-            "showPoints": "never"
-          },
+          "unit": "none",
+          "decimals": 0,
+          "min": 0,
           "thresholds": {
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
+                "color": "red",
                 "value": null
               }
             ]
@@ -1043,9 +1043,9 @@
     },
     {
       "id": 14,
-      "type": "timeseries",
+      "type": "bargauge",
       "title": "Business Errors by Data Row",
-      "description": "Trend caliber (5s push windows) — answers when/shape only; authoritative numbers live in summary. Which data row is bad and why — points straight at the data-file line.",
+      "description": "Exact per-row/reason totals (counter final value — matches summary caliber; renders even for a single sparse error, unlike rate curves). Timing: see Error Rate by Class; per-request detail: result.csv / k6.log. Points straight at the data-file line.",
       "datasource": {
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
@@ -1062,36 +1062,36 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "sum by (row, reason) (rate(k6_perf_err_business_total{testid=~\"$testid\"}[$__rate_interval]))",
+          "expr": "sum by (row, reason)(max_over_time(k6_perf_err_business_total{testid=~\"$testid\"}[$__range]))",
           "refId": "A",
-          "legendFormat": "row {{row}} · {{reason}}"
+          "legendFormat": "row {{row}} · {{reason}}",
+          "instant": true,
+          "range": false
         }
       ],
       "options": {
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
         },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
+        "orientation": "horizontal",
+        "displayMode": "basic",
+        "showUnfilled": true,
+        "valueMode": "color"
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "reqps",
-          "custom": {
-            "drawStyle": "line",
-            "lineWidth": 1,
-            "fillOpacity": 8,
-            "showPoints": "never"
-          },
+          "unit": "none",
+          "decimals": 0,
+          "min": 0,
           "thresholds": {
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
+                "color": "orange",
                 "value": null
               }
             ]

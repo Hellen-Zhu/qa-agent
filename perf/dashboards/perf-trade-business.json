@@ -28,6 +28,14 @@
       "url": "/d/ccbb2351-2ae2-462f-ae0e-f2c893ad1028",
       "keepTime": true,
       "includeVars": true
+    },
+    {
+      "type": "link",
+      "title": "Server Metrics (backend)",
+      "tooltip": "Backend service dashboard — replace TBC uid at import; keepTime carries the test window over",
+      "url": "/d/TBC-SERVER-DASHBOARD-UID",
+      "keepTime": true,
+      "includeVars": false
     }
   ],
   "templating": {

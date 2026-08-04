@@ -41,9 +41,39 @@
   "templating": {
     "list": [
       {
-        "name": "testid",
+        "name": "env",
+        "label": "env",
         "type": "query",
         "query": "label_values(k6_http_reqs_total, testid)",
+        "regex": "/^[^_]+_([^_]+)_[^_]+_/",
+        "refresh": 2,
+        "sort": 1,
+        "multi": true,
+        "includeAll": true,
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${DS_PROMETHEUS}"
+        }
+      },
+      {
+        "name": "profile",
+        "label": "profile",
+        "type": "query",
+        "query": "label_values(k6_http_reqs_total, testid)",
+        "regex": "/^[^_]+_[^_]+_([^_]+)_/",
+        "refresh": 2,
+        "sort": 1,
+        "multi": true,
+        "includeAll": true,
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${DS_PROMETHEUS}"
+        }
+      },
+      {
+        "name": "testid",
+        "type": "query",
+        "query": "label_values(k6_http_reqs_total{testid=~\"^[^_]+_(${env:regex})_(${profile:regex})_.*\"}, testid)",
         "refresh": 2,
         "sort": 2,
         "multi": true,

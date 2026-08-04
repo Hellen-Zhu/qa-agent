@@ -52,6 +52,19 @@
           "type": "prometheus",
           "uid": "${DS_PROMETHEUS}"
         }
+      },
+      {
+        "name": "service",
+        "type": "query",
+        "query": "label_values(jvm_cpu_recent_utilization_ratio, service_name)",
+        "refresh": 2,
+        "sort": 1,
+        "multi": true,
+        "includeAll": true,
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${DS_PROMETHEUS}"
+        }
       }
     ]
   },
@@ -1261,17 +1274,100 @@
     },
     {
       "id": 22,
-      "type": "text",
-      "title": "Server-side Correlation (intranet placeholder)",
+      "type": "timeseries",
+      "title": "Server Utilization / Saturation",
+      "description": "Capacity's missing lines — same time window as the load curves above. cpu = jvm_cpu_recent_utilization_ratio (process view, Utilization; red line 90%); db-pending = HikariCP pending connections (Saturation — queueing starts before CPU tops out). The resource that climbs first at the knee is the bottleneck suspect. Server caliber: 30s scrape, not k6 5s push.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
       "gridPos": {
         "h": 8,
         "w": 6,
         "x": 18,
         "y": 36
       },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "jvm_cpu_recent_utilization_ratio{service_name=~\"$service\"}",
+          "refId": "A",
+          "legendFormat": "cpu {{service_name}}"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "hikaricp_connections_pending{service_name=~\"$service\"}",
+          "refId": "B",
+          "legendFormat": "db-pending {{service_name}}"
+        }
+      ],
       "options": {
-        "mode": "markdown",
-        "content": "Fill in per env-checklist (PromQL mirrors server-side dashboards, filtered by service):\n\n- CPU / memory / GC / thread & DB pools — time-aligned with the load curves above; the resource that saturates first at the knee is the bottleneck suspect\n- Top link → official 19665 for k6 built-in metrics\n\n**Caliber**: header row exact (= summary); curves are 5s-window trend caliber."
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "axisSoftMin": 0,
+            "axisSoftMax": 1,
+            "thresholdsStyle": {
+              "mode": "line"
+            }
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 0.9
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "db-pending.*"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "short"
+              },
+              {
+                "id": "custom.axisPlacement",
+                "value": "right"
+              },
+              {
+                "id": "custom.axisSoftMax",
+                "value": 10
+              }
+            ]
+          }
+        ]
       }
     }
   ]

@@ -239,6 +239,7 @@ echo "── Result (${VERDICT}) ───────────────�
 [[ -f "$RUN_DIR/summary.txt" ]] && echo "summary:   $RUN_DIR/summary.txt   ← three-class / dual-latency text summary (same as terminal), the verdict authority"
 [[ -f "$RUN_DIR/summary.json" ]] && echo "raw:       $RUN_DIR/summary.json  ← machine-readable (verdict / baseline-comparison input)"
 [[ -f "$RUN_DIR/dashboard.html" ]] && echo "dashboard: $RUN_DIR/dashboard.html ← time-series curves (not used for the verdict)"
+[[ -f "$RUN_DIR/report.html" ]] && echo "report:    $RUN_DIR/report.html    ← single-file share-out for business/leadership (exact caliber, presentation only)"
 echo "csv:       $RUN_DIR/result.csv"
 echo "k6 log:    $RUN_DIR/k6.log"
 echo "manifest:  $MANIFEST"

@@ -8,6 +8,7 @@
 import { parseEnvConfig } from './config.js';
 import { buildThresholds } from './sla.js';
 import { summarize, buildTextSummary, compareBaseline } from './report.js';
+import { htmlReport } from '../vendor/k6-reporter.js';
 
 export const ENV = __ENV.ENV || 'local';
 export const PROFILE = __ENV.PROFILE || 'smoke';
@@ -134,6 +135,11 @@ export function stdHandleSummary(data) {
   if (dir) {
     out[`${dir}/summary.txt`] = text;
     out[`${dir}/summary.json`] = JSON.stringify(s, null, 2);
+    // Shareable single-file report for business/leadership readers (vendored k6-reporter).
+    // Same exact end-of-test caliber as summary.txt; presentation only — verdict authority
+    // stays with summary.json. The checks bridge surfaces business success rate in its
+    // Checks section; three-class counters appear as custom metrics rows.
+    out[`${dir}/report.html`] = htmlReport(data, { title: TESTID });
   }
   return out;
 }

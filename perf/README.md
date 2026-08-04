@@ -15,6 +15,7 @@ Design doc: `../docs/superpowers/specs/2026-07-31-k6-perf-framework-design.md`.
 #   summary.txt   three-class / dual-latency text summary (same as terminal), the verdict authority
 #   summary.json  machine-readable (runner extracts verdict for the exit code; baseline-comparison input)
 #   dashboard.html k6 web dashboard time-series export (not used for the verdict; skipped on very short runs)
+#   report.html   single-file share-out for business/leadership (vendored k6-reporter; exact end-of-test caliber, presentation only)
 #   result.csv    per-request detail (with all tags)
 #   manifest.txt  full environment snapshot of this run; k6.log full log (UTC, reconcilable against server logs)
 

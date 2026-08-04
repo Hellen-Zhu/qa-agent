@@ -1214,65 +1214,6 @@
       }
     },
     {
-      "id": 21,
-      "type": "timeseries",
-      "title": "Query Rows (empty-DB guard)",
-      "description": "Trend caliber (5s push windows) — answers when/shape only; authoritative numbers live in summary. Constantly 0 = empty DB or wrong filter field names; query scenarios only.",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 6,
-        "x": 12,
-        "y": 36
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
-          },
-          "expr": "k6_perf_trades_rows_avg{testid=~\"$testid\"}",
-          "refId": "A",
-          "legendFormat": "rows/response (window avg)"
-        }
-      ],
-      "options": {
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short",
-          "custom": {
-            "drawStyle": "line",
-            "lineWidth": 1,
-            "fillOpacity": 8,
-            "showPoints": "never"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          }
-        },
-        "overrides": []
-      }
-    },
-    {
       "id": 22,
       "type": "timeseries",
       "title": "Server Utilization / Saturation",
@@ -1283,8 +1224,8 @@
       },
       "gridPos": {
         "h": 8,
-        "w": 6,
-        "x": 18,
+        "w": 12,
+        "x": 12,
         "y": 36
       },
       "targets": [

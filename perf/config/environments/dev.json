@@ -1,6 +1,9 @@
 {
   "name": "dev",
-  "whitelist": ["localhost", "127.0.0.1"],
+  "whitelist": [
+    "localhost",
+    "127.0.0.1"
+  ],
   "promRwUrl": "",
   "grafanaDashboard": "",
   "services": {
@@ -11,7 +14,30 @@
     "ops-svc": "http://localhost:9093"
   },
   "users": {
-    "maker": ["maker1@example.com", "maker2@example.com"],
-    "checker": ["checker1@example.com"]
+    "maker": [
+      "maker01@example.com",
+      "maker02@example.com",
+      "maker03@example.com",
+      "maker04@example.com",
+      "maker05@example.com",
+      "maker06@example.com",
+      "maker07@example.com",
+      "maker08@example.com",
+      "maker09@example.com",
+      "maker10@example.com",
+      "maker11@example.com",
+      "maker12@example.com",
+      "maker13@example.com",
+      "maker14@example.com",
+      "maker15@example.com",
+      "maker16@example.com",
+      "maker17@example.com",
+      "maker18@example.com",
+      "maker19@example.com",
+      "maker20@example.com"
+    ],
+    "checker": [
+      "checker1@example.com"
+    ]
   }
 }

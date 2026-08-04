@@ -1,7 +1,7 @@
 {
   "name": "load",
-  "description": "预期流量下是否满足 SLA。升-稳-降，稳态段为 SLA 观测窗。",
-  "_override": "命令行覆盖仅作用于标量键：本 profile 的 stages 为字面量，换目标速率请编辑本文件或复制变体。速率档位应从生产真实流量推导，推导过程写在这里。阈值按全程评估（含升降段），非仅稳态段。",
+  "description": "Does the system meet the SLA under expected traffic. Ramp-up / steady / ramp-down; the steady segment is the SLA observation window.",
+  "_override": "Command-line overrides only apply to scalar keys: this profile's stages are literals, so to change the target rate edit this file or copy a variant. Rate tiers should be derived from real production traffic; record the derivation here. Thresholds are evaluated over the whole run (including ramp segments), not just the steady segment.",
   "scenario": {
     "executor": "ramping-arrival-rate",
     "startRate": 0, "timeUnit": "1s",
@@ -13,7 +13,7 @@
     ]
   },
   "thresholds": {
-    "_circuitBreaker": "两级线：严格线是跑完后的 verdict；宽松线+abortOnFail 是熔断器，只杀整体性业务拒绝（数据失效）的必死之局。宽松是刻意的——低吞吐下零星合法瞬时失败不能中止长跑；delayAbortEval 先让样本量积起来。",
+    "_circuitBreaker": "Two-tier lines: the strict line is the end-of-run verdict; the lenient line + abortOnFail is the breaker, which only kills the unwinnable case of wholesale business rejection (stale data). The leniency is deliberate — at low throughput, scattered legitimate transient failures must not abort a long run; delayAbortEval lets the sample size accumulate first.",
     "perf_business_success": [
       { "threshold": "rate>0.99" },
       { "threshold": "rate>0.50", "abortOnFail": true, "delayAbortEval": "3m" }

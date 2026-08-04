@@ -2,7 +2,7 @@ import { cfg, buildOptions } from '../lib/bootstrap.js';
 import { pickUser } from '../lib/users.js';
 import { getUnreadCount } from '../api/notification-svc/notifications/unread-count.js';
 
-// P0 · notification-svc/notifications · 读路径（未读数；无参数无数据池，身份轮换即数据轮换）
+// P0 · notification-svc/notifications · read path (unread count; no parameters, no data pool — identity rotation is the data rotation)
 
 export const options = buildOptions('notification-svc/notifications', 'unreadCount');
 

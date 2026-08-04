@@ -1,8 +1,10 @@
-// k6 场景装配层：集中 init 阶段的配置加载与 options/handleSummary 组装，
-// 让场景文件只剩业务编排（meta + 数据 + 一次业务动作）。
-// 本模块使用 k6 运行时全局量（open()/__ENV），只能被 k6 加载——
-// 纯逻辑模块（config.js/sla.js/report.js/rows.js）保持 Node 可加载，职责勿混淆。
-// open() 路径一律经 import.meta.resolve() 锚定到本文件。
+// k6 scenario assembly layer: centralizes init-phase config loading and options/handleSummary
+// assembly, so scenario files contain nothing but business orchestration (meta + data + one
+// business action).
+// This module uses k6 runtime globals (open()/__ENV) and can only be loaded by k6 —
+// the pure-logic modules (config.js/sla.js/report.js/rows.js) stay Node-loadable; do not mix
+// up the responsibilities.
+// All open() paths are anchored to this file via import.meta.resolve().
 import { parseEnvConfig } from './config.js';
 import { buildThresholds } from './sla.js';
 import { summarize, buildTextSummary, compareBaseline } from './report.js';
@@ -10,13 +12,15 @@ import { summarize, buildTextSummary, compareBaseline } from './report.js';
 export const ENV = __ENV.ENV || 'local';
 export const PROFILE = __ENV.PROFILE || 'smoke';
 export const TESTID = __ENV.TESTID || 'local-run';
-// runner 传入（run.sh -e SCENARIO）；裸 k6 run 无此值 → 跳过基线对比
+// Passed in by the runner (run.sh -e SCENARIO); a bare k6 run has no value → baseline comparison is skipped
 const SCENARIO = __ENV.SCENARIO || '';
 
-// ── 基线加载：baselines/<scenario>_<env>_<profile>.json ─────
-// 基线就是某轮可信运行晋升来的 summary.json（spec §9）。组合键含 env+profile——
-// 跨环境或跨负载档的对比没有意义。无基线是常态（open 抛错→null，静默跳过）；
-// 有文件但损坏则响亮失败（JSON.parse 抛出，init 报错拒跑），坏基线不许静默降级。
+// ── Baseline loading: baselines/<scenario>_<env>_<profile>.json ─────
+// A baseline is just the summary.json promoted from some trusted run (spec §9). The composite
+// key includes env+profile — comparisons across environments or load profiles are meaningless.
+// Having no baseline is the normal case (open throws → null, silently skipped); a file that
+// exists but is corrupt fails loudly (JSON.parse throws, init errors out and refuses to run) —
+// a bad baseline must never silently degrade.
 function loadBaseline() {
   if (!SCENARIO) return null;
   let raw = null;
@@ -31,17 +35,20 @@ const BASELINE = loadBaseline();
 
 const HARD_MAX_VUS = 500;
 
-// 每次 k6 运行只有一个环境：cfg 在 init 阶段一次性加载，场景直接 import 使用。
-// baseUrl 不在此导出——场景不接触 URL，服务地址由 api 层经 serviceBaseUrl(cfg, svc) 解析。
+// Each k6 run has exactly one environment: cfg is loaded once in the init phase and scenarios
+// import it directly.
+// baseUrl is not exported here — scenarios never touch URLs; service addresses are resolved by
+// the api layer via serviceBaseUrl(cfg, svc).
 export const cfg = parseEnvConfig(open(import.meta.resolve(`../../config/environments/${ENV}.json`)));
 
-// data/<path>.json 数据文件（仅 init 阶段可调用——open() 在 VU 阶段不可用）
+// data/<path>.json data files (callable only in the init phase — open() is unavailable in the VU phase)
 export function loadData(path) {
   return JSON.parse(open(import.meta.resolve(`../../data/${path}.json`)));
 }
 
-/** JSON 无注释语法，约定 _ 开头的键是注释，进 k6 前必须剥除——
- *  k6 把 thresholds 下每个键当指标名，留着 _comment 会直接报错 */
+/** JSON has no comment syntax; by convention keys starting with _ are comments and must be
+ *  stripped before reaching k6 — k6 treats every key under thresholds as a metric name, so a
+ *  leftover _comment errors out immediately */
 export function stripComments(obj) {
   const out = {};
   Object.keys(obj || {}).forEach((k) => {
@@ -54,12 +61,13 @@ function intEnv(key) {
   const v = __ENV[key];
   if (v === undefined || v === '') return undefined;
   const n = parseInt(v, 10);
-  if (isNaN(n)) throw new Error(`-e ${key}=${v} 不是整数`);
+  if (isNaN(n)) throw new Error(`-e ${key}=${v} is not an integer`);
   return n;
 }
 
-// 覆盖仅作用于 profile scenario 中存在的同名标量键（stages 字面量不受覆盖影响，
-// 见各 profile 的 _override 注释）；maxVUs 施加全局硬上限，防误配置打挂共享环境
+// Overrides apply only to same-named scalar keys that already exist in the profile scenario
+// (stages literals are unaffected by overrides; see each profile's _override comment); maxVUs
+// enforces a global hard cap, keeping a misconfiguration from knocking over a shared environment
 function applyOverrides(sc) {
   const rate = intEnv('RATE');
   const vus = intEnv('VUS');
@@ -73,13 +81,16 @@ function applyOverrides(sc) {
 }
 
 /*
- * 标准 options 组装。thresholds 三层叠加（spec §4/§7）：
- *   1. 底线（任何 profile 都必须成立）：perf_err_script count==0——脚本错误=本轮作废
- *   2. profile 级（profiles/<name>.json 的 thresholds 块）：业务成功率 verdict/熔断两级线
- *   3. API 级（config/slas/）：perf_success_duration 分位数 SLA——探索型 profile（拐点/
- *      崩塌形态是测量目标本身）可用顶层 "apiSla": false 豁免这一层，仍强制校验 slaKey
- *      存在（配错 key 必须快速失败，不因豁免而被掩盖）
- *   4. extra：场景专属附加（如 query 的空库守卫）
+ * Standard options assembly. Thresholds are stacked in three layers (spec §4/§7):
+ *   1. Bottom line (must hold under any profile): perf_err_script count==0 — a script error
+ *      voids this run
+ *   2. Profile level (the thresholds block of profiles/<name>.json): the two-tier business
+ *      success-rate lines — verdict and abort threshold (breaker)
+ *   3. API level (config/slas/): perf_success_duration percentile SLAs — exploratory profiles
+ *      (where the knee / collapse shape is itself the measurement target) may exempt this layer
+ *      with top-level "apiSla": false; slaKey existence is still enforced (a misconfigured key
+ *      must fail fast, not be masked by the exemption)
+ *   4. extra: scenario-specific additions (e.g. query's empty-DB guard)
  */
 export function buildOptions(slaFile, slaKey, extraThresholds) {
   const profile = JSON.parse(open(import.meta.resolve(`../../profiles/${PROFILE}.json`)));
@@ -96,19 +107,22 @@ export function buildOptions(slaFile, slaKey, extraThresholds) {
       apiSla ? buildThresholds(entry) : {},
       extraThresholds || {},
     ),
-    // 文本摘要各列（P50/P90/P95/P99/max/avg + 样本数）都要有值，缺谁谁列空
+    // Every text-summary column (P50/P90/P95/P99/max/avg + sample count) needs a value; any stat missing here leaves its column empty
     summaryTrendStats: ['avg', 'min', 'med', 'p(90)', 'p(95)', 'p(99)', 'max', 'count'],
   };
 }
 
-// 标准 handleSummary（导出后 k6 不再打默认摘要，本函数负责全部输出）：
-//   stdout 文本摘要；RESULT_DIR（runner 传入）非空时由 k6 直接写盘
-//   summary.txt（同文本）+ summary.json（机读，runner 提取 verdict 定退出码）。
-// 裸 `k6 run` 不传 RESULT_DIR，只打终端——行为与 trade-performance 一致。
-// 场景以 `export { stdHandleSummary as handleSummary } from '../lib/bootstrap.js'` 复用。
+// Standard handleSummary (once exported, k6 no longer prints its default summary; this function
+// owns all output):
+//   stdout text summary; when RESULT_DIR (passed in by the runner) is non-empty, k6 writes
+//   summary.txt (same text) + summary.json (machine-readable; the runner extracts verdict to
+//   set the exit code) directly to disk.
+// A bare `k6 run` passes no RESULT_DIR and prints to the terminal only — same behavior as
+// trade-performance.
+// Scenarios reuse it via `export { stdHandleSummary as handleSummary } from '../lib/bootstrap.js'`.
 export function stdHandleSummary(data) {
   const s = summarize(data, TESTID);
-  // 基线对比：只提示不改判定（verdict 权威=阈值；BASELINE_TOL_PCT 覆盖延迟容差）
+  // Baseline comparison: advisory only, never changes the verdict (verdict authority = thresholds; BASELINE_TOL_PCT overrides the latency tolerance)
   let cmp = null;
   if (BASELINE) {
     cmp = compareBaseline(s, BASELINE, parseInt(__ENV.BASELINE_TOL_PCT || '', 10));

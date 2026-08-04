@@ -1,11 +1,11 @@
 {
   "_comment": [
-    "create 用例池：一行 = 一个完整可跑用例（productType + 归属字段内嵌同一行）。",
-    "纪律：整行必须同源采集自同一份真实 curl（系统 Web 界面建单 + DevTools Copy as cURL），",
-    "禁止跨行/跨文件拼装字段——手工组合可能是现实中不存在的归属关系（见本目录 README.md）。",
-    "dat 按同名约定定位：data/datfiles/products/<productType>/<productType>.dat，行内不写路径。",
-    "当前为本地联调占位假值（形式合法、可过 preflight），内网启用时逐行替换为真实采集值，",
-    "并在 note 记录采集时间与来源。"
+    "create case pool: one row = one complete runnable case (productType + ownership fields embedded in the same row).",
+    "Discipline: every row must be same-source captured from a single real curl (create the order in the system's web UI + DevTools Copy as cURL);",
+    "assembling fields across rows/files is forbidden — a hand-built combination may be an ownership relationship that does not exist in reality (see README.md in this directory).",
+    "The dat file is located by the same-name convention: data/datfiles/products/<productType>/<productType>.dat; rows do not carry paths.",
+    "Current values are local-integration placeholder fakes (well-formed, pass preflight); when enabling on the intranet, replace them row by row with real captured values,",
+    "and record the capture time and source in note."
   ],
   "rows": [
     {
@@ -14,7 +14,7 @@
       "portfolioId": "PERF-PF-A",
       "counterpartyFmId": "CP-000001",
       "counterpartyName": "PERF CP A",
-      "note": "本地占位（2026-07-31），非真实采集"
+      "note": "Local placeholder (2026-07-31), not a real capture"
     },
     {
       "productType": "FX_TRF",
@@ -22,7 +22,7 @@
       "portfolioId": "PERF-PF-A",
       "counterpartyFmId": "CP-000002",
       "counterpartyName": "PERF CP B",
-      "note": "本地占位（2026-07-31），非真实采集"
+      "note": "Local placeholder (2026-07-31), not a real capture"
     }
   ]
 }

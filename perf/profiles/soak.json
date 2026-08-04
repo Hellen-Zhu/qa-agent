@@ -1,7 +1,7 @@
 {
   "name": "soak",
-  "description": "长时间中等负载 ≥2 小时——泄漏/资源耗尽类劣化。",
-  "_data": "静态数据失效表现为整体性业务拒绝——宽松熔断线无论失效发生在启动时还是第 3 小时都会在几分钟内止损（preflight 只管'填没填'，不管'今天还有效吗'）。",
+  "description": "Sustained moderate load for >=2 hours — degradation of the leak / resource-exhaustion kind.",
+  "_data": "Stale static data manifests as wholesale business rejection — the lenient abort-threshold line cuts losses within minutes whether the failure happens at startup or in hour 3 (preflight only checks 'is it filled in', not 'is it still valid today').",
   "scenario": {
     "executor": "constant-arrival-rate",
     "rate": 10, "timeUnit": "1s", "duration": "2h",

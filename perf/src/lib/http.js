@@ -1,10 +1,13 @@
 import k6http from 'k6/http';
 import { serviceBaseUrl } from './config.js';
 
-// 统一 HTTP 管道：所有 API 调用唯一出口，只负责"把请求发出去"——
-// baseUrl 解析、默认请求头、低基数指标 tag。响应分类是 api 层的契约职责
-// （lib/errors.js），因此返回 {res, tags} 交给调用方送入分类引擎。
-// opts: { name(必填,指标tag), module, user, params(query对象), headers, tags(附加低基数tag) }
+// Unified HTTP pipeline: the single exit point for all API calls, responsible only for
+// "getting the request out the door" — baseUrl resolution, default request headers,
+// low-cardinality metric tags. Response classification is the api layer's contract duty
+// (lib/errors.js), so this returns {res, tags} for the caller to feed into the classification
+// engine.
+// opts: { name (required, metric tag), module, user, params (query object), headers,
+//         tags (additional low-cardinality tags) }
 function request(method, cfg, service, path, body, opts) {
   if (!opts || !opts.name) throw new Error('http: opts.name tag is required');
   const entries = opts.params ? Object.entries(opts.params) : [];
@@ -38,7 +41,8 @@ export function postJson(cfg, service, path, body, opts) {
 }
 
 export function postMultipart(cfg, service, path, formData, opts) {
-  // 含 http.file() 的对象 body 由 k6 自动编码 multipart 并生成 boundary；
-  // 严禁手写 Content-Type——手写值没有 boundary，会覆盖生成值导致服务端无法分包
+  // An object body containing http.file() is multipart-encoded by k6 automatically, boundary
+  // included; never hand-write Content-Type — a hand-written value has no boundary and would
+  // override the generated one, leaving the server unable to split the parts
   return request('POST', cfg, service, path, formData, opts);
 }

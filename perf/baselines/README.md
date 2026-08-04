@@ -1,29 +1,29 @@
-# baselines — 性能基线
+# baselines — performance baselines
 
-基线 = 某轮可信运行**晋升**而来的 `summary.json`，不是新格式：
+A baseline = the `summary.json` of some trusted run, **promoted** — it is not a new format:
 
 ```bash
-cp results/<UTC日>/<runId>/summary.json baselines/<scenario>_<env>_<profile>.json
+cp results/<UTC-date>/<runId>/summary.json baselines/<scenario>_<env>_<profile>.json
 ```
 
-文件名三段组合键缺一不可——跨环境或跨负载档的对比没有意义。之后每次同组合运行，
-k6 会在 summary 里自动附加 **Baseline comparison** 段（run.sh 在无基线且本轮 PASS 时
-会打印现成的晋升命令）。
+All three segments of the filename's composite key are indispensable — comparisons across environments or across load tiers are meaningless. Afterwards, every run of the same combination
+gets a **Baseline comparison** section automatically appended to its summary by k6 (when no baseline exists and the current run PASSes, run.sh
+prints a ready-made promote command).
 
-## 对比维度与容差
+## Comparison dimensions and tolerances
 
-| 维度 | 容差 | 说明 |
+| Dimension | Tolerance | Notes |
 |---|---|---|
-| 成功延迟 P50/P95/P99 增幅 | +10%（`BASELINE_TOL_PCT=15` 单次覆盖） | 只看 perf_success_duration（业务成功请求） |
-| 业务成功率降幅 | -1.0pp | |
-| technical 从无到有 | 基线 0 而本轮 >0 即标红 | |
-| ok-samples | 不设容差，并排展示 | 分位数可信度随样本量走，双方悬殊时读者要看见 |
+| Success-latency P50/P95/P99 increase | +10% (`BASELINE_TOL_PCT=15` for a one-off override) | Only looks at perf_success_duration (business-successful requests) |
+| Business success rate decrease | -1.0pp | |
+| technical going from none to some | Baseline 0 while current run >0 is flagged red | |
+| ok-samples | No tolerance; shown side by side | Percentile credibility tracks sample size — when the two sides are wildly apart, the reader must see it |
 
-rps 刻意不比：open 模型下速率是 profile 配置出来的，比它没有信息量。
+rps is deliberately not compared: under the open model the rate is whatever the profile configured, so comparing it carries no information.
 
-## 纪律
+## Discipline
 
-- **超容差只标红不改判定**——verdict 的权威永远是阈值（spec §7/§9）；基线对比是回归发现机制，要做门禁等 P2 接 CI 时再议。
-- **只晋升样本量够的运行**：summary 的 Sample size 段没有告警（P95 ≥200 样本）才配当基线；用 smoke 当基线是拿随机数当参照物。
-- 基线随环境失效（数据、机器、版本变了就该重新晋升），晋升即入库——git 历史就是基线变更史，无需另记。
-- 基线损坏（非法 JSON）会让下轮 init 响亮失败而不是静默跳过——修复或删除该文件。
+- **Exceeding tolerance only flags red, never changes the verdict** — the authority on the verdict is always the thresholds (spec §7/§9); baseline comparison is a regression-discovery mechanism, and making it a gate is a discussion for when P2 wires up CI.
+- **Only promote runs with sufficient sample size**: a run qualifies as a baseline only if the summary's Sample size section has no warnings (P95 >= 200 samples); using a smoke run as a baseline is using a random number as a reference point.
+- Baselines go stale with the environment (when data, machine, or version changes, re-promote); promotion means committing to the repo — git history is the baseline change history, no separate log needed.
+- A corrupted baseline (invalid JSON) makes the next run's init fail loudly rather than silently skip — fix or delete the file.

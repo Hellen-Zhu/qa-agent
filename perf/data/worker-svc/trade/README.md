@@ -1,44 +1,44 @@
-# worker-svc / trade 数据文件
+# worker-svc / trade data files
 
-- `trades-query.json` — 查询字段池：`{ filters: [...] }`。字段间无有效性关联，池内自由轮换。
-- `trades-create.json` — create 用例池：一行 = 一个完整可跑用例。行号 `__row` 装载时自动注入，
-  作为指标 tag（哪行数据坏了直接从指标切出）；无人工维护的 id 列。
-- `trade-ids.json` — trade ID 池：`{ ids: [...] }`，detail 与 risk-metrics 场景共享。
-  采集：`GET /api/v1/trades` 查一把（或界面复制），取 **专用 PERF portfolio** 下的 trade id 填入；
-  ID 随环境失效，换环境重采。占位符由 setup 阶段 preflight 拦截。
-  ⚠ ID 过期的表现是 **http-404 落 technical 类**——见到成片 http-404 先重采 ID，别当性能问题。
+- `trades-query.json` — query field pool: `{ filters: [...] }`. Fields have no validity coupling between them; rotate freely within the pool.
+- `trades-create.json` — create case pool: one row = one complete runnable case. The row number `__row` is injected automatically at load time
+  and serves as a metric tag (a bad data row can be sliced out directly from the metrics); there is no manually maintained id column.
+- `trade-ids.json` — trade ID pool: `{ ids: [...] }`, shared by the detail and risk-metrics scenarios.
+  Capture: run one `GET /api/v1/trades` query (or copy from the UI) and fill in trade ids from the **dedicated PERF portfolio**;
+  IDs go stale with the environment — re-capture when switching environments. Placeholders are intercepted by the setup-phase preflight.
+  ⚠ Expired IDs show up as **http-404 falling into the technical class** — if you see a wall of http-404, re-capture the IDs first; do not treat it as a performance problem.
 
-读路径客户端（`src/api/worker-svc/trade/query.js`）与写路径客户端（`create.js`）代码分离，
-原因是读场景不应加载 create 用例池与 dat 二进制——两者互不 import。
+The read-path client (`src/api/worker-svc/trade/query.js`) and the write-path client (`create.js`) are separate code,
+because read scenarios should not load the create case pool or the dat binaries — the two never import each other.
 
-## 为什么归属字段内嵌一行，且必须同源
+## Why ownership fields are embedded per row, and must be same-source
 
-静态供数没有 live 查询兜底，**任何手工拼装都可能造出现实中不存在的组合**——
-portfolio 属于 A 台、counterparty 未在 A 台开户。服务端业务拒绝在报告里呈现为
-"错误率升高"，看起来像性能问题，实际是数据问题，极难定位。因此：
+Static data supply has no live-query fallback, so **any hand assembly can produce combinations that do not exist in reality** —
+a portfolio belonging to desk A while the counterparty has no account on desk A. Server-side business rejections show up in the report as
+"elevated error rate": it looks like a performance problem, but it is actually a data problem, and it is extremely hard to pin down. Therefore:
 
-- `counterpartyFmId` 与 `counterpartyName` 服务端做一致性校验，禁止两处拼凑；
-- 三个归属字段必须**整组来自同一份真实 curl**（系统 Web 界面建单，DevTools 对
-  `POST /trades/create` Copy as cURL）——这一份 curl 同时给出：配对的归属真值、
-  真实 .dat 文件（按同名约定另存为 `../datfiles/products/<productType>/<productType>.dat`——
-  行内不写路径，框架按 productType 自动定位）、payload 结构与 header 集合。
+- `counterpartyFmId` and `counterpartyName` are consistency-checked server side; stitching them together from two places is forbidden;
+- the three ownership fields must come **as one group from a single real curl** (create the order in the system's web UI, then in
+  DevTools do Copy as cURL on `POST /trades/create`) — this one curl simultaneously yields: the paired ownership ground truth,
+  the real .dat file (save it under the same-name convention as `../datfiles/products/<productType>/<productType>.dat` —
+  rows do not carry paths; the framework locates it automatically by productType), and the payload structure and header set.
 
-## 数据有效性由两层机制守护（preflight 不发请求）
+## Data validity is guarded by two layers of mechanism (preflight sends no requests)
 
-- 开跑前：大轮次同一会话先跑 `smoke`——真实建一笔，这才是"API 此刻接受这份数据"的验证；
-- 跑起来后：长时 profile 的业务成功率宽松熔断线（`rate>0.50` + abortOnFail）——
-  数据失效表现为整体性业务拒绝，无论发生在启动时还是第 3 小时，几分钟内自动止损。
+- Before the run: in the same session before any big round, run `smoke` first — it genuinely creates one trade, and that is the real verification that "the API accepts this data right now";
+- While running: the lenient abort-threshold line on business success rate for long profiles (`rate>0.50` + abortOnFail) —
+  stale data manifests as wholesale business rejection, and whether it happens at startup or in hour 3, losses are cut automatically within minutes.
 
-## 刷新时机
+## When to refresh
 
-不定期刷新，但以下情况必须重新采集：换环境（id 不跨环境）；smoke 的 create 开始失败或
-长跑被业务成功率熔断；错误里出现大量 "counterparty not found / not entitled" 类拒绝。
-采集时间与来源记在 `note` 字段。
+There is no periodic refresh, but re-capture is mandatory in these cases: switching environments (ids do not cross environments); smoke's create starts failing or
+a long run is aborted by the business-success-rate breaker; the errors contain a flood of "counterparty not found / not entitled"-style rejections.
+Record the capture time and source in the `note` field.
 
-## 变体池（对照实验）
+## Variant pools (controlled experiments)
 
-如 portfolio 级锁竞争：复制 `trades-create.json` 为变体（全部行填同一组归属值），
-`CREATE_DATA_FILE=data/worker-svc/trade/<变体>.json` 覆盖切换，不改脚本。
+E.g. portfolio-level lock contention: copy `trades-create.json` as a variant (fill every row with the same ownership group), then switch via the
+`CREATE_DATA_FILE=data/worker-svc/trade/<variant>.json` override — no script changes.
 
-⚠ 采集来的 curl/响应样本放本目录 `_samples/`（已 gitignore）——DevTools 导出含会话
-cookie 与真实业务数据，**不入库**。
+⚠ Captured curl/response samples go in `_samples/` in this directory (already gitignored) — DevTools exports contain session
+cookies and real business data; **they must never enter the repo**.

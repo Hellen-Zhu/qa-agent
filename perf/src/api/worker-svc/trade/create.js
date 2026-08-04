@@ -6,23 +6,26 @@ import { getDat, datName } from './create-data.js';
 const SVC = 'worker-svc';
 const MOD = 'trade';
 
-// 读路径（queryTrades / perf_trades_rows）在 ./query.js（终审 #4 的 init 图隔离）：
-// 本文件只有 create + 其 ./create-data.js 数据图，压其他 API 不会传递性加载用例池与 dat。
+// The read path (queryTrades / perf_trades_rows) lives in ./query.js (init-graph isolation, final review #4):
+// this file holds only create + its ./create-data.js data graph, so load-testing other APIs does not
+// transitively load the case pool and the dat binaries.
 
 /*
- * ── create 的响应契约（trade-performance 实测校准版；业务分类属于本文件，
- *    lib/errors.js 只是引擎）──
- * 成功 = HTTP 200 + code=200 + status='PENDING APPROVAL' + data.trade.id ~ TRD-\d+
- * 内网首跑须确认契约未随版本变化（env-checklist）。
+ * ── Response contract for create (calibrated against live trade-performance measurements;
+ *    business classification belongs to this file, lib/errors.js is only the engine) ──
+ * Success = HTTP 200 + code=200 + status='PENDING APPROVAL' + data.trade.id ~ TRD-\d+
+ * On the first intranet run, confirm the contract has not changed with the release (env-checklist).
  */
 const REJECT_PATTERNS = [
-  // 服务端上传临时文件按时间戳命名，同一瞬间并发上传互删临时文件 → "dat not found"
-  //（撞上时的绕行开关与归因见 spec §11-4；正则匹配真实服务端报错，可能含中文，勿翻译）
-  { reason: 'dat-missing', re: /(dat|file).*(not\s*found|missing|不存在)|找不到/i },
+  // The server names uploaded temp files by timestamp; concurrent uploads in the same instant delete
+  // each other's temp files → "dat not found"
+  // (workaround switch and attribution when this is hit: spec §11-4; the regex matches real server error
+  //  text, which may contain Chinese — the escapes below are "does not exist" / "cannot find", keep them)
+  { reason: 'dat-missing', re: /(dat|file).*(not\s*found|missing|\u4e0d\u5b58\u5728)|\u627e\u4e0d\u5230/i },
 ];
 
-/** trade 字段（multipart 的普通表单字段）。必须 JSON.stringify——
- *  真实 counterparty 名称含 * 与非 ASCII，手拼字符串迟早产出非法 JSON */
+/** trade fields (the plain form fields of the multipart body). Must JSON.stringify —
+ *  real counterparty names contain * and non-ASCII; hand-built strings will sooner or later produce invalid JSON */
 export function buildTradePayload(caseRow) {
   return JSON.stringify({
     basic: {
@@ -34,25 +37,27 @@ export function buildTradePayload(caseRow) {
   });
 }
 
-// 占位符模式：不含 PERF 前缀——专用 PERF portfolio 是合法真值（spec §6）
-const PLACEHOLDER = /^\s*(tbc|todo|xxx+|n\/a|待定|placeholder)\s*$/i;
+// Placeholder patterns: deliberately no PERF prefix — the dedicated PERF portfolio is a legitimate
+// real value (spec §6). The escape is the Chinese for "TBD", kept so Chinese placeholders still match.
+const PLACEHOLDER = /^\s*(tbc|todo|xxx+|n\/a|\u5f85\u5b9a|placeholder)\s*$/i;
 
-/** 静态供数模式下不可省：字段未解析/占位符照发请求 → 服务端业务拒绝 →
- *  报告呈现为"错误率升高"而非"脚本错了"，最难排查的失败类 */
+/** Not optional under static data supply: unresolved/placeholder fields would still be sent →
+ *  server-side business rejection → the report shows "elevated error rate" instead of
+ *  "the script is wrong" — the hardest failure class to debug */
 export function validateInputs(caseRow) {
   const problems = [];
   ['portfolioId', 'counterpartyFmId', 'counterpartyName'].forEach((k) => {
     const v = caseRow[k];
-    if (!v || !String(v).trim()) problems.push(`${k} 未解析（检查数据文件路径与字段名，见 ./trades-data.js）`);
-    else if (PLACEHOLDER.test(v)) problems.push(`${k}='${v}' 仍是占位符（见 data/worker-svc/trade/README.md）`);
+    if (!v || !String(v).trim()) problems.push(`${k} unresolved (check the data file path and field names, see ./trades-data.js)`);
+    else if (PLACEHOLDER.test(v)) problems.push(`${k}='${v}' is still a placeholder (see data/worker-svc/trade/README.md)`);
   });
   if (!caseRow.productType || !String(caseRow.productType).trim()) {
-    problems.push('productType 未解析（dat 按 productType 同名约定定位，见 ./trades-data.js）');
+    problems.push('productType unresolved (the dat is located by the same-name-as-productType convention, see ./trades-data.js)');
   }
   return problems;
 }
 
-/** 发送一笔 create。唯一请求出口——preflight 与主循环共享本契约。 */
+/** Send one create. The single request outlet — preflight and the main loop share this contract. */
 export function createTrade(cfg, caseRow, user, runPhase) {
   const body = {
     trade: buildTradePayload(caseRow),
@@ -60,7 +65,8 @@ export function createTrade(cfg, caseRow, user, runPhase) {
   };
   const { res, tags } = client.postMultipart(cfg, SVC, '/api/v1/trades/create', body, {
     name: 'POST /api/v1/trades/create', module: MOD, user,
-    // 低基数 tag：row=数据行号（__row），坏行直接从指标切出；严禁 tradeId 类唯一值
+    // Low-cardinality tags: row = data row number (__row), so a bad row can be sliced straight out
+    // of the metrics; unique values like tradeId are strictly forbidden
     tags: {
       runPhase: runPhase || 'main',
       row: String(caseRow.__row || 0),
@@ -77,7 +83,7 @@ export function createTrade(cfg, caseRow, user, runPhase) {
         : null,
     shape: (b) => {
       const id = b.data && b.data.trade ? String(b.data.trade.id || '') : '';
-      return /^TRD-\d+$/.test(id) ? null : `tradeId 格式异常 — '${id}'`;
+      return /^TRD-\d+$/.test(id) ? null : `unexpected tradeId format — '${id}'`;
     },
   });
 }

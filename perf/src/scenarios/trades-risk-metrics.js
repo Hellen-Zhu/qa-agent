@@ -4,7 +4,7 @@ import { pickUser } from '../lib/users.js';
 import { pickTradeId, tradeIdsPreflight } from '../api/worker-svc/trade/ids-data.js';
 import { getRiskMetrics } from '../api/worker-svc/trade/risk-metrics.js';
 
-// P0 · worker-svc/trade · 读路径（风险指标）
+// P0 · worker-svc/trade · read path (risk metrics)
 
 export const options = buildOptions('worker-svc/trade', 'riskMetrics');
 

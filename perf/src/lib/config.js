@@ -1,6 +1,6 @@
-// 纯配置解析与白名单校验。文件读取发生在场景脚本的 init 阶段（k6 open()），
-// 这里只处理文本 —— 因此本模块可同时被 k6 与 Node 加载。
-// 注意：k6 运行时没有 WHATWG URL，主机名用字符串解析。
+// Pure config parsing and whitelist validation. File reading happens in the scenario script's
+// init phase (k6 open()); this module handles text only — so it can be loaded by both k6 and Node.
+// Note: the k6 runtime has no WHATWG URL, so hostnames are parsed with string operations.
 function hostOf(url) {
   return url.replace(/^https?:\/\//, '').split('/')[0].split(':')[0];
 }

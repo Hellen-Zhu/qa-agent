@@ -4,7 +4,7 @@ import { pickUser } from '../lib/users.js';
 import { pickTradeId, tradeIdsPreflight } from '../api/worker-svc/trade/ids-data.js';
 import { getTrade } from '../api/worker-svc/trade/detail.js';
 
-// P0 · worker-svc/trade · 读路径（单笔详情）
+// P0 · worker-svc/trade · read path (single-trade detail)
 
 export const options = buildOptions('worker-svc/trade', 'detail');
 

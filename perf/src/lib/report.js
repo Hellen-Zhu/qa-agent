@@ -1,11 +1,11 @@
-// 报告纯逻辑（不依赖 k6 全局量，Node 亦可直接加载做离线验证）。
-// 输出由 bootstrap.stdHandleSummary 组装成两路（机制取自 trade-performance）：
-//   stdout                    人读文本摘要——导出 handleSummary 后 k6 不再打印
-//                             默认摘要，本文件负责全部终端输出
-//   $RESULT_DIR/summary.txt   同一份文本落盘
-//   $RESULT_DIR/summary.json  机器可读——runner 提取 verdict 定退出码，
-//                             也是后续基线对比（P1）的输入
-// 文件由 k6 自己写盘（handleSummary 返回 {路径: 内容} 映射），runner 零后处理。
+// Pure report logic (no dependency on k6 globals; Node can load it directly for offline verification).
+// Output is assembled by bootstrap.stdHandleSummary into two channels (mechanism taken from trade-performance):
+//   stdout                    human-readable text summary — once handleSummary is exported, k6 no
+//                             longer prints its default summary; this file owns all terminal output
+//   $RESULT_DIR/summary.txt   the same text written to disk
+//   $RESULT_DIR/summary.json  machine-readable — the runner extracts verdict to set the exit code;
+//                             also the input for later baseline comparison (P1)
+// k6 writes the files itself (handleSummary returns a {path: content} map); the runner does zero post-processing.
 
 function val(data, name, key, dflt) {
   const m = data.metrics[name];
@@ -17,17 +17,17 @@ export function summarize(data, testid) {
   const thresholdFailures = buildThresholdFailures(data, requests);
   return {
     testid,
-    // runner（run.sh）用 sed 从 summary.json 提取本字段定 PASS/FAIL——改名须同步 run.sh
+    // The runner (run.sh) uses sed to extract this field from summary.json to decide PASS/FAIL — renaming it requires updating run.sh in sync
     verdict: thresholdFailures.length === 0 ? 'PASS' : 'FAIL',
     requests,
     rps: val(data, 'http_reqs', 'rate', 0),
-    // 三分类：报告必须分开呈现——混成一个错误率无法回答"是开发问题还是数据问题"
+    // Three-class: the report must present them separately — blended into a single error rate they cannot answer "is this a dev problem or a data problem"
     ok: val(data, 'perf_ok', 'count', 0),
     errTechnical: val(data, 'perf_err_technical', 'count', 0),
     errBusiness: val(data, 'perf_err_business', 'count', 0),
     errScript: val(data, 'perf_err_script', 'count', 0),
     businessSuccessRate: val(data, 'perf_business_success', 'rate', null),
-    // 全请求延迟（含失败）与业务成功延迟并列——两者差距本身就是信号
+    // All-request latency (failures included) side by side with business-success latency — the gap between the two is itself a signal
     latencyMs: {
       p50: val(data, 'http_req_duration', 'med', null),
       p95: val(data, 'http_req_duration', 'p(95)', null),
@@ -43,10 +43,11 @@ export function summarize(data, testid) {
   };
 }
 
-// thresholdFailures 驱动 runner 的 PASS/FAIL（长度是否为 0）。0 请求（如 preflight
-// abort：exec.test.abort 后仍会跑 handleSummary）时没有任何指标越过阈值——数组天然
-// 为空，会被判 PASS，假绿放行本该失败的一轮。合成一条 'no-samples(0-requests)'
-// 标记，让"0 样本"本身成为一种 FAIL。
+// thresholdFailures drives the runner's PASS/FAIL (whether its length is 0). With 0 requests
+// (e.g. a preflight abort: handleSummary still runs after exec.test.abort) no metric crosses any
+// threshold — the array is naturally empty, the run would be judged PASS, and a false green would
+// wave through a round that should have failed. Synthesize a 'no-samples(0-requests)' marker so
+// that "0 samples" is itself a kind of FAIL.
 function buildThresholdFailures(data, requests) {
   const failures = Object.entries(data.metrics)
     .filter(([, m]) => m.thresholds && Object.values(m.thresholds).some((t) => !t.ok))
@@ -55,9 +56,10 @@ function buildThresholdFailures(data, requests) {
   return failures;
 }
 
-// ── 文本摘要（参考 trade-performance lib/summary.js，按本框架指标名改写）────
-// ⚠ 表格标签只用 ASCII：CJK 字符 String.length=1 但占 2 终端列，padL 对齐必错
-//   （tp 为此写了按显示宽度补齐的 padD——标签不含 CJK 就用不上那套）。
+// ── Text summary (modeled on trade-performance lib/summary.js, rewritten for this framework's metric names) ────
+// ⚠ Table labels use ASCII only: a CJK character has String.length=1 but occupies 2 terminal
+//   columns, so padL alignment is guaranteed wrong (tp wrote a display-width-aware padD for
+//   that — with no CJK in labels, none of that machinery is needed).
 
 function num(v, digits) {
   if (v === undefined || v === null || isNaN(v)) return '-';
@@ -74,7 +76,7 @@ function padR(s, w) {
   return s.length >= w ? s : s + ' '.repeat(w - s.length);
 }
 
-// 超过 10 秒切换为秒显示：一个 60000 会把整行挤歪，而超时样本恰是最需要可读的行
+// Switch to seconds display above 10s: one 60000 would skew the whole line, and timeout samples are exactly the rows that most need to stay readable
 function fmtMs(v) {
   if (v === undefined || v === null || isNaN(v)) return padL('-', 8);
   return v < 10000 ? padL(v.toFixed(0), 8) : padL((v / 1000).toFixed(1) + 's', 8);
@@ -111,7 +113,7 @@ export function buildTextSummary(data, meta, cmp) {
   L.push('══════════════════════════════════════════════════════════');
   L.push('');
 
-  // ── 三分类 ────────────────────────────────────────────────
+  // ── Three-class classification ────────────────────────────
   L.push('── Result classification ──────────────────────────');
   L.push(`  ${padR('ok', 12)}${padL(ok, 8)}   business success`);
   L.push(`  ${padR('technical', 12)}${padL(tech, 8)}   connect fail/timeout/5xx <- THE performance conclusion`);
@@ -127,7 +129,7 @@ export function buildTextSummary(data, meta, cmp) {
     L.push('');
   }
 
-  // ── 响应时间（完整往返，非 TTFB——JMeter 语境的 Latency 指 TTFB，勿混）──
+  // ── Response time (full round trip, NOT TTFB — in JMeter parlance "Latency" means TTFB, do not conflate) ──
   L.push('── Response time (ms) ─────────────────────────────');
   if (succ && succ.count > 0) {
     L.push('    ' + padR('', 10) + PCT_COLS.map((c) => padL(c, 8)).join(''));
@@ -150,9 +152,10 @@ export function buildTextSummary(data, meta, cmp) {
   }
   L.push('');
 
-  // ── 按 API 延迟（SLA 子指标）─────────────────────────────
-  // config/slas/ 的分位数阈值挂在 perf_success_duration{name:...} 上，k6 只为
-  // 声明了阈值的 tag 组合生成子指标——SLA 挂在哪，哪里就自动出现一行。
+  // ── Per-API latency (SLA sub-metrics) ────────────────────
+  // The percentile thresholds from config/slas/ hang off perf_success_duration{name:...}; k6
+  // generates sub-metrics only for tag combinations with declared thresholds — wherever an SLA
+  // is attached, a row appears automatically.
   const apiRows = Object.keys(data.metrics)
     .filter((k) => k.startsWith('perf_success_duration{'))
     .map((k) => {
@@ -169,7 +172,7 @@ export function buildTextSummary(data, meta, cmp) {
     L.push('');
   }
 
-  // ── 吞吐 ──────────────────────────────────────────────────
+  // ── Throughput ────────────────────────────────────────────
   L.push('── Throughput ─────────────────────────────────────');
   L.push(`  duration          ${padL(num(durSec, 1), 8)} s`);
   L.push(`  business-ok TPS   ${padL(durSec > 0 ? (ok / durSec).toFixed(3) : '-', 8)}`);
@@ -177,10 +180,11 @@ export function buildTextSummary(data, meta, cmp) {
   if (vusMax !== null) L.push(`  peak VU           ${padL(vusMax, 8)}`);
   L.push('');
 
-  // ── 样本量纪律 ────────────────────────────────────────────
-  // 经验法则：分位数 p 可信需 ~10 个样本落在其外 → n ≥ 10/(1-p)
-  //     P95 → 200 样本    P99 → 1000 样本
-  // 低吞吐经典陷阱：样本不足时分位数就是随机数，且报告上毫无迹象。
+  // ── Sample-size discipline ────────────────────────────────
+  // Rule of thumb: for percentile p to be trustworthy, ~10 samples must fall beyond it → n ≥ 10/(1-p)
+  //     P95 → 200 samples    P99 → 1000 samples
+  // Classic low-throughput trap: with too few samples the percentile is just a random number,
+  // and the report shows no trace of it.
   const n = succ ? succ.count : 0;
   if (n > 0 && succ.med > 0) {
     const vuBase = Math.max(1, vusMax || 1);
@@ -195,7 +199,7 @@ export function buildTextSummary(data, meta, cmp) {
     }
   }
 
-  // ── 阈值清单与判定 ────────────────────────────────────────
+  // ── Threshold list and verdict ────────────────────────────
   const thr = Object.keys(data.metrics)
     .filter((k) => data.metrics[k].thresholds)
     .flatMap((k) =>
@@ -215,7 +219,7 @@ export function buildTextSummary(data, meta, cmp) {
     L.push('');
   }
 
-  // ── 基线对比（有基线才出现）────────────────────────────
+  // ── Baseline comparison (appears only when a baseline exists) ──
   if (cmp) {
     L.push('── Baseline comparison ────────────────────────────');
     L.push(`  vs ${cmp.baselineTestid}`);
@@ -246,14 +250,17 @@ export function buildTextSummary(data, meta, cmp) {
   return L.join('\n');
 }
 
-// ── 基线对比纯逻辑 ──────────────────────────────────────────
-// current/baseline 均为 summarize() 输出——基线不是新格式，就是某轮可信运行
-// 晋升（cp）而来的 summary.json。对比维度刻意收窄：
-//   成功延迟 P50/P95/P99 增幅（容差 tolPct%，默认 10）
-//   业务成功率降幅（容差 1pp）
-//   technical 从无到有（基线 0 而本轮 >0）
-// rps 不比：open 模型下速率是 profile 配置出来的，比它没有信息量。
-// 结果只提示不改判定——verdict 的权威永远是阈值（spec §9）。
+// ── Baseline comparison pure logic ──────────────────────────
+// current/baseline are both summarize() output — a baseline is not a new format, it is just the
+// summary.json of some trusted run promoted (cp) into place. The comparison dimensions are
+// deliberately narrow:
+//   success-latency P50/P95/P99 increase (tolerance tolPct%, default 10)
+//   business success-rate drop (tolerance 1pp)
+//   technical going from none to some (baseline 0 while this run >0)
+// rps is not compared: under the open model the rate is configured by the profile, so comparing
+// it carries no information.
+// The result only advises and never changes the verdict — the verdict authority is always the
+// thresholds (spec §9).
 function pct(v) {
   return (v >= 0 ? '+' : '') + v.toFixed(1) + '%';
 }
@@ -303,7 +310,7 @@ export function compareBaseline(current, baseline, tolPct) {
   cmp.rows.push({ key: 'technical', base: baseline.errTechnical || 0, cur: current.errTechnical || 0, delta: null, bad: techBad });
   if (techBad) cmp.regressions.push(`technical errors appeared (baseline had 0, current ${current.errTechnical})`);
 
-  // 样本量并排展示：分位数可信度随样本量走，对比双方样本悬殊时读者需要看见
+  // Show sample counts side by side: percentile trustworthiness tracks sample size, and the reader needs to see when the two sides' samples differ wildly
   cmp.rows.push({ key: 'ok-samples', base: baseline.ok, cur: current.ok, delta: null, bad: false });
   return cmp;
 }

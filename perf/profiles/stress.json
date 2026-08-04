@@ -1,7 +1,7 @@
 {
   "name": "stress",
-  "description": "open 模型阶梯倍增——拐点之后系统怎么塌（arrival-rate 下队列真实堆积）。",
-  "_verdict": "宽松熔断线以 perf_business_success（含技术性失败）计——拐点后若整体失败率持续超 50%，运行会在 delayAbortEval 3m 后被熔断（共享环境保护，仍能拿到 ≥3 分钟拐点后数据）；不挂 verdict 线与 API SLA（apiSla:false）。",
+  "description": "Open-model step doubling — how the system collapses beyond the knee (under arrival-rate, queues genuinely pile up).",
+  "_verdict": "The lenient abort-threshold line is evaluated on perf_business_success (which includes technical failures) — if the overall failure rate stays above 50% past the knee, the run is aborted after delayAbortEval 3m (shared-environment protection, while still capturing >=3 minutes of post-knee data); no verdict line and no API SLA are attached (apiSla:false).",
   "apiSla": false,
   "scenario": {
     "executor": "ramping-arrival-rate",

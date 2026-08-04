@@ -1,6 +1,6 @@
 {
   "name": "spike",
-  "description": "突发流量：瞬间打至高位再回落（如行情剧烈波动时的集中交易）。",
+  "description": "Burst traffic: spike to a high level instantly, then fall back (e.g. concentrated trading during violent market moves).",
   "scenario": {
     "executor": "ramping-arrival-rate",
     "startRate": 0, "timeUnit": "1s",

@@ -1,6 +1,6 @@
 {
   "name": "smoke",
-  "description": "脚本、数据、链路此刻通不通。大轮次前同一会话必跑——这同时是静态数据仍然有效的真实验证。",
+  "description": "Are the script, data, and pipeline working right now. Mandatory in the same session before any big round — this doubles as the real verification that the static data is still valid.",
   "scenario": {
     "executor": "constant-arrival-rate",
     "rate": 2, "timeUnit": "1s", "duration": "1m",

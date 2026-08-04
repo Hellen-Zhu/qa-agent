@@ -5,9 +5,10 @@ const SVC = 'worker-svc';
 const MOD = 'trade';
 
 /*
- * GET /api/v1/trades/{id}——id 进 URL 路径，name tag 用花括号占位符归一化
- * （动态 id 进 tag 会引爆 Prometheus 基数，README 纪律）。
- * 契约假设（内网首跑校准，env-checklist）：响应含 data.trade 且 id 回显一致。
+ * GET /api/v1/trades/{id} — the id goes into the URL path; the name tag is normalized with a
+ * curly-brace placeholder (dynamic ids in tags would blow up Prometheus cardinality — README discipline).
+ * Contract assumptions (calibrate on the first intranet run, env-checklist): the response contains
+ * data.trade and echoes the id back unchanged.
  */
 export function getTrade(cfg, id, user) {
   const { res, tags } = client.get(cfg, SVC, `/api/v1/trades/${encodeURIComponent(id)}`, {
@@ -15,8 +16,8 @@ export function getTrade(cfg, id, user) {
   });
   return classifyRead(res, tags, (body) => {
     const t = body && body.data && body.data.trade;
-    if (!t) return `响应缺少 data.trade — keys=${Object.keys(body || {}).slice(0, 8).join(',')}`;
-    // 拿回的必须是请求的那笔——串号是服务端或脚本缺陷，不是性能问题
-    return String(t.id) === String(id) ? null : `返回 trade.id='${t.id}' ≠ 请求 '${id}'`;
+    if (!t) return `response missing data.trade — keys=${Object.keys(body || {}).slice(0, 8).join(',')}`;
+    // What comes back must be the trade that was requested — a mismatched id is a server or script defect, not a performance problem
+    return String(t.id) === String(id) ? null : `returned trade.id='${t.id}' ≠ requested '${id}'`;
   });
 }

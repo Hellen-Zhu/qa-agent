@@ -1,15 +1,18 @@
 /*
- * lib/errors.js — 错误三分类引擎（k6 侧模块）
+ * lib/errors.js — three-class error engine (k6-side module)
  *
- * 本系统业务失败也返回 HTTP 200（业务状态在 body 的 code/status 字段），
- * 只看状态码的报告会显示"0% 错误"而实际一笔未成。三类必须分开呈现：
- *   technical  连接失败/超时/5xx → 系统扛不住，这才是性能结论
- *   business   HTTP 200 但业务拒绝 → 通常是测试数据失效，不是性能问题
- *   script     响应非 JSON/结构不符 → 脚本缺陷，本轮结果作废
+ * In this system business failures also return HTTP 200 (the business status lives in the
+ * body's code/status fields), so a report that only looks at status codes would show
+ * "0% errors" while in reality not a single transaction succeeded. The three classes must be
+ * presented separately:
+ *   technical  connect failure/timeout/5xx → the system cannot cope; THIS is the performance conclusion
+ *   business   HTTP 200 but business rejection → usually stale test data, not a performance problem
+ *   script     response not JSON / shape mismatch → script defect; this run's results are void
  *
- * 引擎不认识任何具体 API：业务契约（成功判据、拒绝归因模式表）由 api 层
- * 经 spec 回调注入。tag 只允许有界取值——reason 来自模式表槽位 + 服务端
- * code 枚举 + HTTP 状态码；严禁把自由文本 msg 或 tradeId 类唯一值当 tag。
+ * The engine knows no concrete API: the business contract (success criteria, rejection-attribution
+ * pattern table) is injected by the api layer via the spec callbacks. Tags may only take bounded
+ * values — reason comes from pattern-table slots + the server-side code enum + HTTP status codes;
+ * never use free-text msg or unique values like tradeId as tags.
  */
 import { check } from 'k6';
 import { Counter, Rate, Trend } from 'k6/metrics';
@@ -19,10 +22,10 @@ export const cTechnical = new Counter('perf_err_technical');
 export const cBusiness = new Counter('perf_err_business');
 export const cScript = new Counter('perf_err_script');
 
-// verdict 与熔断都看它，而不是 http_req_failed
+// Both the verdict and the abort threshold (breaker) watch this, not http_req_failed
 export const rBusinessSuccess = new Rate('perf_business_success');
 
-// 只统计业务成功请求的耗时：快速拒绝会拉低分位数使容量虚高，SLA 以此为准
+// Durations of business-successful requests only: fast rejections would drag percentiles down and inflate apparent capacity; the SLA is judged against this
 export const tSuccessDuration = new Trend('perf_success_duration', true);
 
 export const ERR = {
@@ -32,7 +35,7 @@ export const ERR = {
   SCRIPT: 'script',
 };
 
-/** 业务拒绝归因：模式表槽位 → 服务端 code 枚举兜底（均有界） */
+/** Business-rejection attribution: pattern-table slots → server-side code enum as fallback (both bounded) */
 export function reasonFrom(body, patterns) {
   const msg = String((body && body.msg) || '');
   for (let i = 0; i < (patterns || []).length; i++) {
@@ -43,14 +46,16 @@ export function reasonFrom(body, patterns) {
 }
 
 export function techReason(res) {
-  // status=0 是连接层失败（超时/拒绝/DNS）；error_code 是 k6 的有界错误枚举
+  // status=0 is a connection-layer failure (timeout/refused/DNS); error_code is k6's bounded error enum
   return res.status > 0 ? 'http-' + res.status : 'net-' + (res.error_code || 0);
 }
 
 /*
- * 限流现场日志：每 VU 每 (errClass, reason) 组合只完整打印前 3 条——
- * 高并发大面积失败时日志 I/O 不反噬压力机；计数看指标（逐请求明细导出机制列入 P1b）。
- * 每 VU 一个 JS VM，模块级对象天然按 VU 隔离。
+ * Rate-limited on-scene logs: each VU fully prints only the first 3 entries per
+ * (errClass, reason) combination — under high concurrency with widespread failures, log I/O
+ * must not backfire on the load generator; counts live in the metrics (a per-request detail
+ * export mechanism is slated for P1b).
+ * Each VU has its own JS VM, so a module-level object is naturally isolated per VU.
  */
 const LOG_CAP = 3;
 const logSeen = {};
@@ -60,11 +65,11 @@ export function logFailure(errClass, reason, detail, tags) {
   const n = (logSeen[key] = (logSeen[key] || 0) + 1);
   if (n > LOG_CAP) return;
   const t = tags || {};
-  const tail = n === LOG_CAP ? `（该类日志达 ${LOG_CAP} 条上限，此后静默；计数看指标）` : '';
+  const tail = n === LOG_CAP ? ` (reached the ${LOG_CAP}-entry cap for this log class; silent from now on — see metrics for counts)` : '';
   console.warn(`✗ [${errClass}/${reason}] ${t.name || 'NA'} vu=${__VU} row=${t.row || 'NA'} ${detail}${tail}`);
 }
 
-/** 每请求的分类结果统一入账：新 api 不得自建 Counter 复刻三分类，一律走这里 */
+/** Single entry point for recording each request's classification outcome: new apis must not build their own Counters replicating the three-class scheme — everything goes through here */
 export function recordOutcome(errClass, tags, res, reason) {
   const t = Object.assign({}, tags, { errClass });
   if (reason && errClass !== ERR.OK) t.reason = reason;
@@ -78,22 +83,26 @@ export function recordOutcome(errClass, tags, res, reason) {
   rBusinessSuccess.add(ok, tags);
   if (ok) tSuccessDuration.add(res.timings.duration, tags);
 
-  // 官方 19665 板桥接：其 Checks 面板读 k6_checks_rate，而本框架不以 check() 作
-  // 断言（三分类才是判定权威）。这里仅把业务成败镜像成一条 check，让 19665 的
-  // Checks Success Rate 大卡直接显示业务成功率——它的 failed rate 是 http_req_failed
-  // （HTTP 层），本系统业务失败也返回 200，没有这条桥官方板讲不了业务层的故事。
+  // Bridge to the official dashboard 19665: its Checks panel reads k6_checks_rate, while this
+  // framework does not use check() for assertions (the three-class scheme is the verdict
+  // authority). Here we merely mirror business success/failure into a single check so that
+  // 19665's Checks Success Rate big card directly shows the business success rate — its failed
+  // rate is http_req_failed (HTTP layer), and since this system returns 200 even on business
+  // failures, without this bridge the official dashboard cannot tell the business-layer story.
   check(ok, { 'business success': (v) => v }, tags);
 }
 
-/** 现场日志的响应体摘录：技术类排障第一线索（400 的校验详情、503 的网关页特征）。
- *  截断 200 字符 + LOG_CAP 限流双保险，不反噬压力机；响应体含真实业务数据的
- *  权衡与 business 类 msg 摘录相同（k6.log 本就按敏感产物管理）。 */
+/** Response-body excerpt for on-scene logs: the first troubleshooting clue for technical-class
+ *  failures (validation details on a 400, gateway-page signatures on a 503).
+ *  Double safeguard of 200-char truncation + LOG_CAP rate limiting so it does not backfire on
+ *  the load generator; the trade-off of the body containing real business data is the same as
+ *  for business-class msg excerpts (k6.log is already managed as a sensitive artifact). */
 function bodySnippet(res) {
   const b = res && res.body ? String(res.body).replace(/\s+/g, ' ').trim() : '';
   return b ? ` body=${b.slice(0, 200)}` : '';
 }
 
-/** 通用分类引擎。分支顺序即分类优先级（technical → not-json → business → shape），勿调整 */
+/** Generic classification engine. Branch order IS the classification priority (technical → not-json → business → shape); do not reorder */
 export function classifyResponse(res, tags, spec) {
   const s = spec || {};
   const t = tags || {};
@@ -110,7 +119,7 @@ export function classifyResponse(res, tags, spec) {
   try {
     body = res.json();
   } catch (e) {
-    const detail = `script: 响应不是 JSON — ${e.message}${bodySnippet(res)}`;
+    const detail = `script: response is not JSON — ${e.message}${bodySnippet(res)}`;
     recordOutcome(ERR.SCRIPT, t, res, 'not-json');
     logFailure(ERR.SCRIPT, 'not-json', detail, t);
     return { errClass: ERR.SCRIPT, detail, reason: 'not-json', body: null };
@@ -139,7 +148,7 @@ export function classifyResponse(res, tags, spec) {
   return { errClass: ERR.OK, detail: 'ok', reason: '', body };
 }
 
-/** 只读端点简写：暂无可断言的业务拒绝形态，契约只有结构校验（结构不符=script 类） */
+/** Shorthand for read-only endpoints: no assertable business-rejection shape yet; the contract is shape validation only (shape mismatch = script class) */
 export function classifyRead(res, tags, validate) {
   return classifyResponse(res, tags, { shape: validate });
 }

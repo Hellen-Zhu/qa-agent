@@ -5,9 +5,11 @@ const SVC = 'notification-svc';
 const MOD = 'notifications';
 
 /*
- * GET /api/v1/notifications/unread-count——notification-svc 首个客户端（P0 清单，2026-08-03）。
- * 未读数按身份（X-User-Id）计，无请求参数、无数据池——身份轮换即数据轮换。
- * 契约假设宽松（响应含 data 键），真实结构内网首跑校准（env-checklist）。
+ * GET /api/v1/notifications/unread-count — first client for notification-svc (P0 list, 2026-08-03).
+ * The unread count is per identity (X-User-Id); no request parameters, no data pool — identity
+ * rotation is the data rotation.
+ * Contract assumption is loose (response contains a data key); calibrate the real structure on
+ * the first intranet run (env-checklist).
  */
 export function getUnreadCount(cfg, user) {
   const { res, tags } = client.get(cfg, SVC, '/api/v1/notifications/unread-count', {
@@ -16,6 +18,6 @@ export function getUnreadCount(cfg, user) {
   return classifyRead(res, tags, (body) =>
     body && body.data !== undefined
       ? null
-      : `响应缺少 data — keys=${Object.keys(body || {}).slice(0, 8).join(',')}`
+      : `response missing data — keys=${Object.keys(body || {}).slice(0, 8).join(',')}`
   );
 }

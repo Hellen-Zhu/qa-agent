@@ -40,6 +40,14 @@ export function postJson(cfg, service, path, body, opts) {
   return request('POST', cfg, service, path, JSON.stringify(body), o);
 }
 
+export function postEmpty(cfg, service, path, opts) {
+  // Empty-body POST (checker task actions take no payload — calibrated curl sends -d '').
+  // Content-Type still json to mirror the captured request exactly.
+  const o = Object.assign({}, opts);
+  o.headers = Object.assign({ 'Content-Type': 'application/json' }, o.headers || {});
+  return request('POST', cfg, service, path, '', o);
+}
+
 export function postMultipart(cfg, service, path, formData, opts) {
   // An object body containing http.file() is multipart-encoded by k6 automatically, boundary
   // included; never hand-write Content-Type — a hand-written value has no boundary and would

@@ -1,6 +1,7 @@
 import http from 'k6/http';
 import * as client from '../../../lib/http.js';
 import { classifyResponse, reasonFrom } from '../../../lib/errors.js';
+import { extractTaskId } from '../checker-flow/tasks.js';
 import { getDat, datName } from './create-data.js';
 
 const SVC = 'worker-svc';
@@ -13,7 +14,10 @@ const MOD = 'trade';
 /*
  * ── Response contract for create (calibrated against live trade-performance measurements;
  *    business classification belongs to this file, lib/errors.js is only the engine) ──
- * Success = HTTP 200 + code=200 + status='PENDING APPROVAL' + data.trade.id ~ TRD-\d+
+ * Success = HTTP 200 + code=200 + status='PENDING APPROVAL' + data.trade.id ~ TRD-[A-Za-z0-9]+
+ * (id relaxed from TRD-\d+ on 2026-08-05: real dev data contains hex-suffixed ids.)
+ * msg carries the checker TaskId ("Submitted for checker approval. TaskId: CHK-...") — the
+ * classify result is returned with `taskId` attached so the seed pipeline can approve directly.
  * On the first intranet run, confirm the contract has not changed with the release (env-checklist).
  */
 const REJECT_PATTERNS = [
@@ -73,7 +77,7 @@ export function createTrade(cfg, caseRow, user, runPhase) {
       productType: caseRow.productType || 'NA',
     },
   });
-  return classifyResponse(res, tags, {
+  const out = classifyResponse(res, tags, {
     business: (b) =>
       b.code !== 200 || b.status !== 'PENDING APPROVAL'
         ? {
@@ -83,7 +87,12 @@ export function createTrade(cfg, caseRow, user, runPhase) {
         : null,
     shape: (b) => {
       const id = b.data && b.data.trade ? String(b.data.trade.id || '') : '';
-      return /^TRD-\d+$/.test(id) ? null : `unexpected tradeId format — '${id}'`;
+      return /^TRD-[A-Za-z0-9]+$/.test(id) ? null : `unexpected tradeId format — '${id}'`;
     },
   });
+  // Business success without a parsable TaskId is NOT a failure (taskId stays null);
+  // the seed pipeline drops such rows and logs a warning — measurement rounds ignore it.
+  out.tradeId = out.body && out.body.data && out.body.data.trade ? String(out.body.data.trade.id || '') : '';
+  out.taskId = out.body ? extractTaskId(out.body.msg) : null;
+  return out;
 }

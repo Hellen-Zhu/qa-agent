@@ -1,0 +1,10 @@
+{
+  "_comment": "Partial-update payload rows for the trades-update scenario. RED LINE: a payload must never move a trade OUT of the dedicated PERF portfolio \u2014 keep portfolioId pointing at the PERF portfolio (replace the placeholder with the real PERF portfolio id on the intranet copy only, same discipline as trades-create.json). Only keys whitelisted in update.js#buildUpdatePayload are sent; loader bookkeeping (__row) never reaches the wire.",
+  "cases": [
+    {
+      "basic": {
+        "portfolioId": "PERF-PF-A"
+      }
+    }
+  ]
+}

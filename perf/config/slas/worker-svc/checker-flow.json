@@ -1,0 +1,12 @@
+{
+  "approve": {
+    "name": "POST /api/v1/checker/tasks/{taskId}/approve",
+    "p95": 500,
+    "p99": 1500
+  },
+  "reject": {
+    "name": "POST /api/v1/checker/tasks/{taskId}/reject",
+    "p95": 500,
+    "p99": 1500
+  }
+}

@@ -21,6 +21,12 @@ Design doc: `../docs/superpowers/specs/2026-07-31-k6-perf-framework-design.md`.
 
 # Local static validation (sends no load)
 k6 inspect -e ENV=local src/scenarios/trades-query.js
+
+# Consumable-pool workflow (update / approve measurements consume one id per request):
+./run.sh seed-update-pool dev seed ITERATIONS=1500   # create -> approve, harvest LIVE ids
+cp results/<day>/<runId>/seed-pool.json data/worker-svc/trade/update-ids.json
+./run.sh trades-update dev load RATE=2               # pool preflight checks volume (>= planned x1.2)
+# approve measurement: seed-approve-pool -> approve-tasks.json -> checker-approve, same shape
 ```
 
 No dependencies beyond k6 (no Node/jq/python); the summary is written to disk directly by k6's handleSummary.

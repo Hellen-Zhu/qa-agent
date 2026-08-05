@@ -38,6 +38,7 @@ usage() {
   echo "Usage: $0 <scenario>[.js] [env] [profile] [KEY=value ...]" >&2
   echo "" >&2
   echo "scenarios: $(ls src/scenarios/*.js 2>/dev/null | xargs -n1 basename 2>/dev/null | sed 's/\.js$//' | tr '\n' ' ')" >&2
+  echo "seed:      $(ls src/seed/*.js 2>/dev/null | xargs -n1 basename 2>/dev/null | sed 's/\.js$//' | tr '\n' ' ')" >&2
   echo "envs:      $(ls config/environments/*.json 2>/dev/null | xargs -n1 basename 2>/dev/null | sed 's/\.json$//' | tr '\n' ' ')" >&2
   echo "profiles:  $(ls profiles/*.json 2>/dev/null | xargs -n1 basename 2>/dev/null | sed 's/\.json$//' | tr '\n' ' ')" >&2
   exit 2
@@ -68,10 +69,16 @@ for o in ${RAW_OVERRIDES[@]+"${RAW_OVERRIDES[@]}"}; do
   OVERRIDE_ARGS+=(-e "$o")
 done
 
-SCENARIO_FILE="src/scenarios/${SCENARIO}.js"
+# Entry lookup order: measurement scenarios first, then seed producers (spec §10.1)
+SCENARIO_FILE=""
+IS_SEED=0
+for dir in src/scenarios src/seed; do
+  if [[ -f "$dir/${SCENARIO}.js" ]]; then SCENARIO_FILE="$dir/${SCENARIO}.js"; break; fi
+done
+[[ "$SCENARIO_FILE" == src/seed/* ]] && IS_SEED=1
 ENV_FILE="config/environments/${ENV_NAME}.json"
 PROFILE_FILE="profiles/${PROFILE}.json"
-[[ -f "$SCENARIO_FILE" ]] || { echo "ERROR: scenario not found: ${SCENARIO} (${SCENARIO_FILE})" >&2; usage; }
+[[ -n "$SCENARIO_FILE" ]] || { echo "ERROR: scenario not found: ${SCENARIO} (looked in src/scenarios/ and src/seed/)" >&2; usage; }
 [[ -f "$ENV_FILE" ]] || { echo "ERROR: environment not found: ${ENV_NAME} (${ENV_FILE}) — argument order is <scenario> <env> <profile>" >&2; usage; }
 [[ -f "$PROFILE_FILE" ]] || { echo "ERROR: profile not found: ${PROFILE} (${PROFILE_FILE}) — argument order is <scenario> <env> <profile>" >&2; usage; }
 
@@ -240,6 +247,23 @@ echo "── Result (${VERDICT}) ───────────────�
 [[ -f "$RUN_DIR/summary.json" ]] && echo "raw:       $RUN_DIR/summary.json  ← machine-readable (verdict / baseline-comparison input)"
 [[ -f "$RUN_DIR/dashboard.html" ]] && echo "dashboard: $RUN_DIR/dashboard.html ← time-series curves (not used for the verdict)"
 [[ -f "$RUN_DIR/report.html" ]] && echo "report:    $RUN_DIR/report.html    ← single-file share-out for business/leadership (exact caliber, presentation only)"
+# ── Seed harvest: collect SEEDID lines (emitted by src/seed/ scenarios, captured in k6.log
+#    via the tee above / K6_LOG_OUTPUT in debug mode) into a ready-to-activate pool file.
+#    Deliberately NOT copied into data/ automatically — overwriting a pool is a human decision.
+if [[ "$IS_SEED" == 1 && -f "$RUN_DIR/k6.log" ]]; then
+  POOL_FILE="$RUN_DIR/seed-pool.json"
+  {
+    echo '{'
+    echo '  "_comment": "Harvested by run.sh from SEEDID lines. Activate: cp this file over data/worker-svc/trade/update-ids.json (from seed-update-pool) or approve-tasks.json (from seed-approve-pool). Pools are single-use — re-seed after each measurement round.",'
+    echo '  "ids": ['
+    sed -n 's/.*SEEDID \([A-Za-z0-9-]\{1,\}\).*/    "\1",/p' "$RUN_DIR/k6.log" | sed '$ s/,$//'
+    echo '  ]'
+    echo '}'
+  } > "$POOL_FILE"
+  SEED_N=$(sed -n 's/.*SEEDID .*/x/p' "$RUN_DIR/k6.log" | wc -l | tr -d ' ')
+  echo "seed pool: $POOL_FILE   ← $SEED_N ids harvested"
+  echo "  activate: cp $POOL_FILE data/worker-svc/trade/<update-ids|approve-tasks>.json"
+fi
 echo "csv:       $RUN_DIR/result.csv"
 echo "k6 log:    $RUN_DIR/k6.log"
 echo "manifest:  $MANIFEST"

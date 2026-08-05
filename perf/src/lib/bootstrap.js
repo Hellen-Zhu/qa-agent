@@ -73,12 +73,36 @@ function applyOverrides(sc) {
   const rate = intEnv('RATE');
   const vus = intEnv('VUS');
   const maxVUs = intEnv('MAX_VUS');
+  const iterations = intEnv('ITERATIONS');
   if (sc.rate !== undefined && rate !== undefined) sc.rate = rate;
   if (sc.vus !== undefined && vus !== undefined) sc.vus = vus;
   if (sc.duration !== undefined && __ENV.DURATION) sc.duration = __ENV.DURATION;
+  if (sc.iterations !== undefined && iterations !== undefined) sc.iterations = iterations;
+  // shared-iterations refuses iterations < vus — shrink vus for small trial seeds (ITERATIONS=5)
+  if (sc.iterations !== undefined && sc.vus !== undefined && sc.vus > sc.iterations) sc.vus = sc.iterations;
   if (sc.maxVUs !== undefined && maxVUs !== undefined) sc.maxVUs = maxVUs;
   if (sc.maxVUs !== undefined) sc.maxVUs = Math.min(sc.maxVUs, HARD_MAX_VUS);
   return sc;
+}
+
+function durationSeconds(d) {
+  let total = 0;
+  const re = /(\d+)(h|m|s)/g;
+  let m;
+  while ((m = re.exec(String(d))) !== null) {
+    total += parseInt(m[1], 10) * (m[2] === 'h' ? 3600 : m[2] === 'm' ? 60 : 1);
+  }
+  return total;
+}
+
+/** Planned iteration count for this round — consumable-pool preflights size against it.
+ *  Returns 0 when the executor's volume is unknowable up front (e.g. ramping-vus): the
+ *  volume check is skipped and only the placeholder check applies. */
+export function plannedIterations(opts) {
+  const sc = opts.scenarios.main;
+  if (sc.iterations !== undefined) return sc.iterations;
+  if (sc.rate !== undefined && sc.duration) return Math.ceil(sc.rate * durationSeconds(sc.duration));
+  return 0;
 }
 
 /*

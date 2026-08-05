@@ -9,7 +9,7 @@ run.sh 真实运行（summary 写盘、verdict/退出码、preflight 提示）�
 - [ ] SLA 目标值与业务方确认，替换 `config/slas/` 占位水位（遗留问题 #2）
 - [ ] 压测数据识别与清理依赖"专用 PERF portfolio + 状态 + 时间窗"（payload 不接受额外字段，clientRef 方案已废除）；专用 portfolio 真实值建立后填入用例池各行 portfolioId（遗留问题 #3）
 - [ ] 用例池同源采集：系统 Web 界面建单 + DevTools 对 POST /trades/create Copy as cURL，逐行填入 `data/worker-svc/trade/trades-create.json`（归属三字段整组同源，勿拼装；真实 .dat 按同名约定另存为 `data/datfiles/products/<productType>/<productType>.dat`（行内只写 productType，框架自动定位）；每换 productType/counterparty 采一次；采集样本放 `_samples/` 不入库）；验证同一 dat 高频重复提交是否触发幂等/去重/日期校验（遗留问题 #4）
-- [ ] 响应契约核对（全部为占位假设，首跑逐一校准）：create 成功契约按校准版实现（code=200 + status='PENDING APPROVAL' + data.trade.id ~ TRD-\d+），首跑确认版本未变；query 假设响应含 `trades` 数组且行数>0（perf_trades_rows 空库守卫）；detail 假设含 `data.trade` 且 id 回显一致；risk-metrics 与 unread-count 仅假设含 `data` 键（结构采集后收紧）
+- [ ] 响应契约核对（全部为占位假设，首跑逐一校准）：create 成功契约按校准版实现（code=200 + status='PENDING APPROVAL' + data.trade.id ~ TRD-\d+），首跑确认版本未变；query **已按真实响应校准（2026-08-05）**：信封 `code=200/status='SUCCESS'/msg` + 行数组在 `data.data[]`（行结构 `{trade:{id,basic}}`），业务拒绝回调已补（信封非 SUCCESS → business 类）；⚠ 该轮真实数据中见到 `TRD-<hex>` 形态的 id（非纯数字），create 契约的 `TRD-\d+` 断言与 'PENDING APPROVAL' 状态字样（实际列表中见 'Pending Approval Draft'）首跑时重点核对；detail 假设含 `data.trade` 且 id 回显一致；risk-metrics 与 unread-count 仅假设含 `data` 键（结构采集后收紧）
 - [ ] trade ID 池采集：查询专用 PERF portfolio 下的 trade，id 填入 `data/worker-svc/trade/trade-ids.json`（detail/risk-metrics 共享；ID 随环境失效，成片 http-404 = ID 过期先重采）
 - [ ] 压测机 k6 版本 ≥ 0.55（与本地验证版本行为一致：experimental-prometheus-rw 输出名、K6_PROMETHEUS_RW_TREND_STATS、web dashboard 导出）；Windows 机器装 Git Bash 跑同一份 run.sh
 - [ ] 5 个微服务清单（服务名/地址/模块）补入 `config/environments/` 与 `src/api/`（遗留问题 #6）
@@ -19,4 +19,4 @@ run.sh 真实运行（summary 写盘、verdict/退出码、preflight 提示）�
 - [ ] 服务端指标串联（k6 与服务端指标同一 Prometheus 实例，2026-08-04 已确认）：Server Utilization/Saturation 面板已就位（`jvm_cpu_recent_utilization_ratio` + `hikaricp_connections_pending`，`$service` 变量自动发现 service_name 取值，真实服务名不入库），导入后确认变量出值即可；板顶 "Server Metrics (backend)" 链接把占位 uid `TBC-SERVER-DASHBOARD-UID` 替换为现网服务端 dashboard 真实 uid 即通；后端板错误面板仅画 5xx——限流 429 属 4xx 不可见，需请板主补 4xx/429 序列以便与 k6 侧 http-429 对账
 - [ ] 压测环境 trade 表存量数据接近生产量级（空表查询无参考价值）
 - [ ] 首跑顺序：smoke（1 分钟）→ 确认 Grafana 出数、报告生成、服务端无异常 → 再 load
-- [ ] 首跑核对三分类归因：故意用一行错误数据跑 smoke，确认报告中 business 类与 row tag 正确归因后再恢复；query 的业务拒绝当前会落入 script 类并触发 perf_err_script count==0 作废本轮——首跑若出现，需为 query 补业务契约回调
+- [ ] 首跑核对三分类归因：故意用一行错误数据跑 smoke，确认报告中 business 类与 row tag 正确归因后再恢复；query 业务契约回调已补（2026-08-05，信封校准的副产品）——业务拒绝正常归入 business 类，不再落 script 作废

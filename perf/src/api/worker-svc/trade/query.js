@@ -4,11 +4,14 @@
  * at module top level, so the trades-query scenario transitively loaded the whole create case pool and all
  * dat binaries via trades.js — any broken create data dragged down the query scenario's init, and every
  * query VU pointlessly carried an extra copy of the dat memory.
- * This file covers read-only endpoints only: queries have no assertable business-rejection shape, so the
- * contract is structure validation only.
+ *
+ * Contract calibrated against a real dev response (2026-08-05):
+ *   { code: 200, status: "SUCCESS", msg: "", data: { data: [ { trade: { id, basic: {...} } }, ... ] } }
+ * — standard envelope + a nested data.data row array. The envelope makes business rejection assertable
+ * (code/status), so this client uses the full classifier, not the structure-only classifyRead.
  */
 import * as client from '../../../lib/http.js';
-import { classifyRead, ERR } from '../../../lib/errors.js';
+import { classifyResponse, reasonFrom, ERR } from '../../../lib/errors.js';
 import { Trend } from 'k6/metrics';
 
 const SVC = 'worker-svc';
@@ -19,13 +22,26 @@ const MOD = 'trade';
 // was guessed wrong; either way the round proves nothing
 export const tradesRows = new Trend('perf_trades_rows');
 
+// No known rejection-message patterns yet — attribution falls back to the server's code enum (code-N)
+const REJECT_PATTERNS = [];
+
 export function queryTrades(cfg, filter, user) {
   const { res, tags } = client.get(cfg, SVC, '/api/v1/trades', {
     name: 'GET /api/v1/trades', module: MOD, user, params: filter,
   });
-  const out = classifyRead(res, tags, (body) =>
-    Array.isArray(body.trades) ? null : `response missing trades array — keys=${Object.keys(body || {}).slice(0, 8).join(',')}`
-  );
-  if (out.errClass === ERR.OK) tradesRows.add(out.body.trades.length, tags);
+  const out = classifyResponse(res, tags, {
+    business: (b) =>
+      b.code !== 200 || b.status !== 'SUCCESS'
+        ? {
+            reason: reasonFrom(b, REJECT_PATTERNS),
+            detail: `business: code=${b.code} status=${b.status} msg=${String(b.msg || '').slice(0, 160)}`,
+          }
+        : null,
+    shape: (b) =>
+      b.data && Array.isArray(b.data.data)
+        ? null
+        : `rows array missing at data.data — keys=${Object.keys(b || {}).slice(0, 8).join(',')} data.keys=${Object.keys((b && b.data) || {}).slice(0, 8).join(',')}`,
+  });
+  if (out.errClass === ERR.OK) tradesRows.add(out.body.data.data.length, tags);
   return out;
 }

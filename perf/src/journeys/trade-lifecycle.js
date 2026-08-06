@@ -12,9 +12,13 @@
  * LIVE trade that update amends, and both TaskIds are harvested from the response msg. It does burn
  * BOTH identity pools' rate-limit budget (maker: create+update, checker: 2× approve per journey).
  *
- * Pacing: steps run back-to-back with no think time (server-capacity caliber, not user-experience
- * simulation). One iteration ≈ 4 chained requests — with arrival-rate profiles pick a rate ≈ 1/4 of
- * a single-API round and mind preAllocatedVUs; closed-model profiles (smoke/ladder) need no change.
+ * ROLE: measurement probe, NOT a load model. Synchronized chains match no real traffic shape
+ * (real approval gaps are human latency, and chaining hits just-written hot data), so this
+ * scenario is never scaled up for capacity verdicts — those belong to single-API and mixed
+ * rounds. Intended runs: smoke (zero-seed full-chain contract check), baseline (single-user
+ * whole-transaction machine time; journey_duration − Σ single-API baselines = orchestration
+ * overhead), and a low-rate probe (~1–2/min) riding on a concurrent trade-mix peak round.
+ * Steps run back-to-back with no think time — deliberately measuring machine time only.
  */
 import exec from 'k6/execution';
 import { Trend, Rate } from 'k6/metrics';

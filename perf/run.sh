@@ -254,9 +254,16 @@ echo "── Result (${VERDICT}) ───────────────�
 #    Deliberately NOT copied into data/ automatically — overwriting a pool is a human decision.
 if [[ "$IS_SEED" == 1 && -f "$RUN_DIR/k6.log" ]]; then
   POOL_FILE="$RUN_DIR/seed-pool.json"
+  # Producer → pool-file mapping keeps the activation hint copy-pasteable;
+  # an unmapped future producer falls back to the generic hint
+  case "$SCENARIO" in
+    seed-update-pool)  POOL_TARGET="data/worker-svc/trade/update-ids.json" ;;
+    seed-approve-pool) POOL_TARGET="data/worker-svc/trade/approve-tasks.json" ;;
+    *)                 POOL_TARGET="" ;;
+  esac
   {
     echo '{'
-    echo '  "_comment": "Harvested by run.sh from SEEDID lines. Activate: cp this file over data/worker-svc/trade/update-ids.json (from seed-update-pool) or approve-tasks.json (from seed-approve-pool). Pools are single-use — re-seed after each measurement round.",'
+    echo "  \"_comment\": \"Harvested by run.sh (${SCENARIO}) from SEEDID lines. Activate: cp this file over ${POOL_TARGET:-the matching pool file under data/worker-svc/trade/}. Pools are single-use — re-seed after each measurement round.\","
     echo '  "ids": ['
     sed -n 's/.*SEEDID \([A-Za-z0-9-]\{1,\}\).*/    "\1",/p' "$RUN_DIR/k6.log" | sed '$ s/,$//'
     echo '  ]'
@@ -264,7 +271,13 @@ if [[ "$IS_SEED" == 1 && -f "$RUN_DIR/k6.log" ]]; then
   } > "$POOL_FILE"
   SEED_N=$(sed -n 's/.*SEEDID .*/x/p' "$RUN_DIR/k6.log" | wc -l | tr -d ' ')
   echo "seed pool: $POOL_FILE   ← $SEED_N ids harvested"
-  echo "  activate: cp $POOL_FILE data/worker-svc/trade/<update-ids|approve-tasks>.json"
+  if [[ "$SEED_N" == 0 ]]; then
+    echo "  ⚠ 0 ids harvested — do NOT activate this file; check k6.log for why the pipeline produced nothing"
+  elif [[ -n "$POOL_TARGET" ]]; then
+    echo "  activate: cp $POOL_FILE $POOL_TARGET"
+  else
+    echo "  activate: cp $POOL_FILE data/worker-svc/trade/<matching-pool>.json"
+  fi
 fi
 echo "csv:       $RUN_DIR/result.csv"
 echo "k6 log:    $RUN_DIR/k6.log"

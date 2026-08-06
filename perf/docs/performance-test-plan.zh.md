@@ -10,7 +10,7 @@
 
 本文档阐述本平台性能测试的范围、方法与计划。本计划一经签核，即作为干系人对本次发布性能测试方法与范围的最终确认与批准。
 
-本次发布的性能测试针对平台的 **API 层**（HTTP，服务端），按三个场景层级递进：**单 API 轮次**——容量摸底、目标负载下的 SLA 达标验证与回归基线，每轮只压一个端点以保证归因清晰；**混合 API 负载（mixed-API workload）**——按生产流量配比并发注入 §6.1 的 workmix（请求相互独立、无步骤间依赖），测量跨端点资源争抢下的容量；**端到端业务旅程（E2E journey）**——按依赖顺序串联 API（create → approve → update → approve），测量整笔业务的时延与业务吞吐（§6.4 E2E Peak）。韧性特征测试（stress / spike / soak）叠加在上述各层级之上。UI 渲染与 WebSocket 通道不在本周期范围内（见 §5）。
+本次发布的性能测试针对平台的 **API 层**（HTTP，服务端），按三个场景层级递进：**单 API 轮次**——容量摸底、目标负载下的 SLA 达标验证与回归基线，每轮只压一个端点以保证归因清晰；**混合 API 负载（mixed-API workload）**——按生产流量配比并发注入 §6.1 的 workmix（请求相互独立、无步骤间依赖），测量跨端点资源争抢下的容量；**端到端业务旅程（E2E journey，测量探针而非负载模型）**——串联流程（create → approve → update → approve）只在 smoke/单用户 baseline 下测整笔业务的机器侧时延，峰值下以低速探针伴随 mixed 运行（§6.4 E2E Peak）；同步紧连的旅程在真实流量中没有对应物（真实审批间隔是人的时延），故永不作为负载放大并发，容量结论归单 API 与 mixed 层级。韧性特征测试（stress / spike / soak）叠加在负载模型之上。UI 渲染与 WebSocket 通道不在本周期范围内（见 §5）。
 
 ### 项目 / 发布概述（Project / Release Overview）
 
@@ -167,7 +167,7 @@ create (maker) ──► PENDING APPROVAL ──► approve (checker) ──► 
 
 | 场景 | 动作 | 动作 | 动作 | 动作 |
 |---|---|---|---|---|
-| 交易生命周期（E2E，P1） | Create（Maker） | Approve（Checker） | Update（Maker） | Approve（Checker） |
+| 交易生命周期（E2E 探针，P1） | Create（Maker） | Approve（Checker） | Update（Maker） | Approve（Checker） |
 | 单 API 轮次 | 每场景单一动作（隔离以保证归因） | | | |
 
 ### 6.2 数据需求（Data Requirements）
@@ -191,7 +191,7 @@ create (maker) ──► PENDING APPROVAL ──► approve (checker) ──► 
 | 测试类型 | 描述 | 用户/线程设置 |
 |---|---|---|
 | Peak（峰值） | 生产峰值 × 1.5–2 安全系数下的 SLA 达标验证（目标待业务量确定）；连续 3 轮稳定为基线晋升门槛 | open 模型（恒定到达率），速率 = 目标值；每轮约 10 分钟 |
-| E2E Peak（端到端峰值） | 峰值配比下的完整生命周期旅程（create→approve→update→approve） | P1 阶段；双身份旅程场景 |
+| E2E Peak（端到端峰值） | 峰值下的整笔业务时延：mixed workmix 提供真实背景负载，低速 journey 流伴随其上作测量探针；journey 永不作为负载放大——同步紧连链条不对应任何真实流量形态 | P1 阶段；mix profile + 双身份旅程探针（约 1–2 条/分钟） |
 | Stress（压力） | 越过拐点后的行为：失效模式、错误起始点、卸载后恢复 | open 模型爬坡越过实测拐点；熔断器保护共享环境 |
 | Soak（浸泡） | 峰值量运行 8 小时；p95 无漂移、无泄漏（heap/GC 趋势平稳） | open 模型按峰值速率；消耗池按全时长备足 |
 | 容量摸底（附加） | Peak 目标确定前，用阶梯式 closed 模型定位拐点 | ramping-vus 10/20/40/80，每台阶 5 分钟 |

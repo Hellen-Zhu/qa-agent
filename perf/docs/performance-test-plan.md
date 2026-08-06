@@ -10,7 +10,7 @@
 
 This document outlines the scope, approach and plan for performance testing to be undertaken for the trading platform. This plan, once signed off, serves as the final confirmation that the approach and scope of performance testing for the release is confirmed and approved by the stakeholders.
 
-This release's performance testing targets the **API layer** (HTTP, service-side) of the platform, progressing through three scenario levels: **single-API rounds** — capacity probing, SLA compliance at target load and regression baselining, one endpoint per run for clean attribution; **mixed-API workload** — the §6.1 workmix injected concurrently at production traffic ratios (independent requests, no inter-step dependency), measuring capacity under cross-endpoint resource contention; and **end-to-end business journeys** — APIs chained in dependency order (create → approve → update → approve), measuring whole-transaction latency and business throughput (§6.4 E2E Peak). Resilience characterisation (stress / spike / soak) applies across these levels. UI rendering and WebSocket channels are out of scope for this cycle (see §5).
+This release's performance testing targets the **API layer** (HTTP, service-side) of the platform, progressing through three scenario levels: **single-API rounds** — capacity probing, SLA compliance at target load and regression baselining, one endpoint per run for clean attribution; **mixed-API workload** — the §6.1 workmix injected concurrently at production traffic ratios (independent requests, no inter-step dependency), measuring capacity under cross-endpoint resource contention; and **end-to-end business journeys** — a measurement probe, NOT a load model: the chained flow (create → approve → update → approve) runs at smoke/single-user baseline for whole-transaction machine-side latency, and as a low-rate probe riding on the mixed peak (§6.4 E2E Peak). Synchronized chains match no real traffic shape (real approval gaps are human latency), so journeys are never scaled up as load — capacity verdicts stay with the single-API and mixed levels. Resilience characterisation (stress / spike / soak) applies to the load models. UI rendering and WebSocket channels are out of scope for this cycle (see §5).
 
 ### Project / Release Overview
 
@@ -167,7 +167,7 @@ Observed component fan-out under load (backend dashboards): Gateway → Workers 
 
 | Scenario | Action | Action | Action | Action |
 |---|---|---|---|---|
-| Trade lifecycle (E2E, P1) | Create (Maker) | Approve (Checker) | Update (Maker) | Approve (Checker) |
+| Trade lifecycle (E2E probe, P1) | Create (Maker) | Approve (Checker) | Update (Maker) | Approve (Checker) |
 | Single-API rounds | one action per scenario (isolation for attribution) | | | |
 
 ### 6.2 Data Requirements
@@ -191,7 +191,7 @@ Observed component fan-out under load (backend dashboards): Gateway → Workers 
 | Test Types | Description | User/Thread Setup |
 |---|---|---|
 | Peak | SLA compliance at production peak × 1.5–2 safety factor (target TBC per volumetrics); 3 consecutive stable rounds gate baseline promotion | Open model (constant arrival rate), rate = target; ~10 min per round |
-| E2E Peak | Full lifecycle journey (create→approve→update→approve) at peak mix | P1 phase; dual-identity journey scenario |
+| E2E Peak | Whole-transaction latency under peak: the mixed workmix supplies the realistic background load; a low-rate journey stream rides on it as a measurement probe. Journeys are never scaled as load — synchronized chains match no real traffic shape | P1 phase; mix profile + dual-identity journey probe (~1–2/min) |
 | Stress | Beyond-knee behaviour: failure mode, error onset, recovery on load removal | Open model ramp past measured knee; breakers guard shared env |
 | Soak | 8h at peak volume; no p95 drift, no leak (heap/GC trend flat) | Open model at peak rate; consumable pools sized for full duration |
 | Capacity probe (additional) | Stepped closed-model ladder to locate the knee before Peak targets exist | ramping-vus 10/20/40/80, 5-min plateaus |

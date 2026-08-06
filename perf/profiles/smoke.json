@@ -1,6 +1,8 @@
 {
   "name": "smoke",
   "description": "Single-user single-shot pipeline check: one VU, one iteration — verifies script, data, contract and wiring end to end. A link test, not a load test. Mandatory in the same session before any big round (doubles as the live check that static data is still valid). Need a few more samples ad hoc? Override with ITERATIONS=5 VUS=1.",
+  "_apiSla": "Exempt on purpose: a percentile over 1-2 cold samples is statistically void (sample-size doctrine) — a first-hit >SLA would fail the run and block the smoke gate for no reason. Smoke's verdict = three-class cleanliness only; latency judgment starts with baseline/load rounds. SLA keys are still existence-checked, so a misconfigured key fails fast.",
+  "apiSla": false,
   "scenario": {
     "executor": "shared-iterations",
     "vus": 1,

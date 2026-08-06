@@ -10,7 +10,7 @@
 
 This document outlines the scope, approach and plan for performance testing to be undertaken for the trading platform. This plan, once signed off, serves as the final confirmation that the approach and scope of performance testing for the release is confirmed and approved by the stakeholders.
 
-This release's performance testing targets the **API layer** (HTTP, service-side) of the platform: single-API capacity probing, SLA compliance at target load, regression baselining, and resilience characterisation (stress / spike / soak). UI rendering and WebSocket channels are out of scope for this cycle (see §5).
+This release's performance testing targets the **API layer** (HTTP, service-side) of the platform, progressing through three scenario levels: **single-API rounds** — capacity probing, SLA compliance at target load and regression baselining, one endpoint per run for clean attribution; **mixed-API workload** — the §6.1 workmix injected concurrently at production traffic ratios (independent requests, no inter-step dependency), measuring capacity under cross-endpoint resource contention; and **end-to-end business journeys** — APIs chained in dependency order (create → approve → update → approve), measuring whole-transaction latency and business throughput (§6.4 E2E Peak). Resilience characterisation (stress / spike / soak) applies across these levels. UI rendering and WebSocket channels are out of scope for this cycle (see §5).
 
 ### Project / Release Overview
 

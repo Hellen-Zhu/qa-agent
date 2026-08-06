@@ -14,7 +14,9 @@
 
 ### 项目 / 发布概述（Project / Release Overview）
 
-**全新上线：本次是平台首次生产投产，非增量发布。** 由此：①目标业务量来自业务量预估/承接渠道量——无生产历史可读（§2）；②范围内 API 全部为新增——取舍仍按风险×流量（§5），只是没有"已被生产验证"的豁免子集；本周期晋升的基线即平台首份性能参考。
+> **全新项目上线——本次发布是平台首次投产：没有上一版本、没有生产历史、没有既有性能基线。**
+
+推论：目标业务量来自业务量预估/承接渠道量（§2）；范围内 API 全部为新增，无"已被生产验证"的豁免子集（§5）；本周期晋升的基线即平台首份性能参考。
 
 组件：Gateway、Workers Backend、User Center、Notification Service、Refdata Service、Ops Service、Risk Engine、Trade Composer UI。
 

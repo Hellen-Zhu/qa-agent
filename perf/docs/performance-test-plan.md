@@ -14,7 +14,9 @@ This release's performance testing targets the **API layer** (HTTP, service-side
 
 ### Project / Release Overview
 
-**Greenfield: this is the platform's first production go-live, not an incremental release.** Hence (1) target volumetrics come from business projections / taken-over channel volumes — no production history exists (§2); (2) all in-scope APIs are new — scope selection stays risk- and traffic-driven (§5), with no production-proven subset to exempt; the baselines promoted this cycle are the platform's first performance reference.
+> **NEW-PROJECT GO-LIVE — this release puts a brand-new platform into production for the first time: no prior version, no production history, no existing performance baseline.**
+
+Consequences: target volumetrics come from business projections / taken-over channel volumes (§2); every in-scope API is new, with no production-proven subset to exempt (§5); the baselines promoted this cycle become the platform's first performance reference.
 
 Components: Gateway, Workers Backend, User Center, Notification Service, Refdata Service, Ops Service, Risk Engine, Trade Composer UI.
 

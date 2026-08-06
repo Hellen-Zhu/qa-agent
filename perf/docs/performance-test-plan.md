@@ -14,7 +14,9 @@ This release's performance testing targets the **API layer** (HTTP, service-side
 
 ### Project / Release Overview
 
-(Keep the template's standard platform description and component list: Gateway, Workers Backend, User Center, Notification Service, Refdata Service, Ops Service, Risk Engine, Trade Composer UI.)
+This is the **initial production go-live of a new platform**, not an incremental release. Two consequences shape the whole plan: (1) **no production history exists** — target volumetrics cannot be read from monitoring; they must come from business projections and, where applicable, the volumes of the channels/workflows this platform takes over (the formal input request in §2); (2) **every API in scope is NEW in this release** — corporate new-API governance (interface + soak + stress coverage) applies to the full API surface, and the PASS baselines promoted this cycle become the platform's first-ever performance reference, from which all future regression comparison starts.
+
+Platform components (standard description): Gateway, Workers Backend, User Center, Notification Service, Refdata Service, Ops Service, Risk Engine, Trade Composer UI.
 
 Testing entry point is the gateway; the primary system under test is the Workers Backend (trade composition, approval workflow) with its downstream fan-out to the Risk Engine (gRPC), Notification Service and the database layer.
 
@@ -35,7 +37,7 @@ Testing entry point is the gateway; the primary system under test is the Workers
 
 | SN | Volumetric / Flow description | Type | Volume | Information Source |
 |---|---|---|---|---|
-| 1 | Trade creation (maker) per peak hour | API | **TBC — production traffic profile required** | Owner: Business/Architecture. Blocking input for §6.1 workmix |
+| 1 | Trade creation (maker) per peak hour | API | **TBC — target volumetrics required (greenfield: business projection / taken-over channel volumes; no production history to read)** | Owner: Business/Architecture. Blocking input for §6.1 workmix |
 | 2 | Trade amendment (update) per peak hour — flagged by management as the future high-frequency operation | API | **TBC** | Same source |
 | 3 | Checker approvals per peak hour | API | **TBC** (≈ create + update volume) | Derived once 1–2 are known |
 | 4 | Trade queries / detail views per peak hour | API | **TBC** | Same source |
@@ -199,7 +201,7 @@ Observed component fan-out under load (backend dashboards): Gateway → Workers 
 | Soak | 8h at peak volume; no p95 drift, no leak (heap/GC trend flat) | Open model at peak rate; consumable pools sized for full duration |
 | Capacity probe (additional) | Stepped closed-model ladder to locate the knee before Peak targets exist | ramping-vus 10/20/40/80, 5-min plateaus |
 
-All four corporate-required types are run — no justification-for-omission needed. NEW APIs in this release are covered at interface, soak and stress levels per API governance.
+All four corporate-required types are run — no justification-for-omission needed. This is a greenfield first release: the ENTIRE in-scope API surface is new, so new-API governance coverage (interface, soak and stress levels) applies to all of it.
 
 ### 6.5 Tooling and Monitoring
 

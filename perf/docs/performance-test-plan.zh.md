@@ -14,7 +14,9 @@
 
 ### 项目 / 发布概述（Project / Release Overview）
 
-（沿用模板中标准的平台描述与组件清单：Gateway、Workers Backend、User Center、Notification Service、Refdata Service、Ops Service、Risk Engine、Trade Composer UI。）
+本次是**全新平台的首次生产上线**，不是既有系统的增量发布。两个推论贯穿整份计划：（1）**没有生产历史**——目标业务量无法从监控读出，只能来自业务量预估以及本平台承接的既有渠道/流程的量（即 §2 的正式输入请求）；（2）**范围内全部 API 均为本次发布新增**——公司新 API 治理要求（接口 + soak + stress 覆盖）适用于整个 API 面；本周期晋升的 PASS 基线将是平台**首份**性能参考，此后所有回归对比自此起算。
+
+平台组件（沿用标准描述）：Gateway、Workers Backend、User Center、Notification Service、Refdata Service、Ops Service、Risk Engine、Trade Composer UI。
 
 测试入口为平台 Gateway；主要被测系统（SUT）为 Workers Backend（交易组合、审批工作流），及其向下游的扇出：Risk Engine（gRPC）、Notification Service 与数据库层。
 
@@ -35,7 +37,7 @@
 
 | SN | 业务量 / 流量描述 | 类型 | 量级 | 信息来源 |
 |---|---|---|---|---|
-| 1 | 峰值小时建单量（maker create） | API | **TBC——需生产流量画像** | Owner：业务/架构。§6.1 workmix 的阻塞性输入 |
+| 1 | 峰值小时建单量（maker create） | API | **TBC——需目标业务量（全新上线无生产历史：只能来自业务量预估/承接渠道的既有量）** | Owner：业务/架构。§6.1 workmix 的阻塞性输入 |
 | 2 | 峰值小时改单量（update）——管理层已定调为未来高频操作 | API | **TBC** | 同上 |
 | 3 | 峰值小时 checker 审批量 | API | **TBC**（≈ create + update 量之和） | 1–2 确定后可推导 |
 | 4 | 峰值小时查询/详情浏览量 | API | **TBC** | 同上 |
@@ -199,7 +201,7 @@ create (maker) ──► PENDING APPROVAL ──► approve (checker) ──► 
 | Soak（浸泡） | 峰值量运行 8 小时；p95 无漂移、无泄漏（heap/GC 趋势平稳） | open 模型按峰值速率；消耗池按全时长备足 |
 | 容量摸底（附加） | Peak 目标确定前，用阶梯式 closed 模型定位拐点 | ramping-vus 10/20/40/80，每台阶 5 分钟 |
 
-公司要求的四种类型全部执行——无需"省略理由"说明。本次发布的新增 API 按 API 治理要求覆盖接口、soak 与 stress 三个层级。
+公司要求的四种类型全部执行——无需"省略理由"说明。本次为全新首发：范围内**全部 API 均为新增**，新 API 治理的覆盖要求（接口、soak、stress 三层级）适用于整个 API 面。
 
 ### 6.5 工具与监控（Tooling and Monitoring）
 

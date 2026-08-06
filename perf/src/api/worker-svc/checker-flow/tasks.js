@@ -8,10 +8,15 @@
  * reject is implemented symmetrically but NOT yet calibrated (env-checklist item — it may
  * require a reason payload).
  *
- * Role exclusivity is server-enforced: a maker identity calling these endpoints gets HTTP 409 —
- * that is an identity-pool configuration problem, not a performance signal (check config first).
- * A 409 on an already-consumed task is the state-conflict variant (spec §11-10); the consumable
- * pool's unique cursor exists precisely so we never self-inflict those.
+ * Error semantics measured 2026-08-06 (both bodies are error/message/timestamp, NOT the standard
+ * envelope — they classify as technical with the reason carrying the status code):
+ *   http-403 = permission ("does not have CHECKER permission for product=... event=...") — an
+ *     identity-pool configuration problem, not a performance signal; note permission is
+ *     PER-PRODUCT, so checker accounts must cover every productType in the case pool.
+ *   http-400 = state conflict ("Task ... is not PENDING (current: APPROVED)") — the write-path
+ *     analog of the read pools' http-404: a consumed/stale pool, re-seed first. The consumable
+ *     pool's exactly-once cursor exists precisely so a run never self-inflicts these.
+ * (The earlier 409-for-permission assumption is dead; 409 has not been observed on this system.)
  */
 import * as client from '../../../lib/http.js';
 import { classifyResponse, reasonFrom } from '../../../lib/errors.js';

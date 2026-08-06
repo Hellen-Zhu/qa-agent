@@ -777,7 +777,7 @@
       "id": 15,
       "type": "bargauge",
       "title": "Failure Attribution (by reason)",
-      "description": "Exact caliber: counter final value via max_over_time — must match this run's summary totals. Top 10 per class (long tail: result.csv / k6.log). technical: net-* = timeout/connect, http-5xx = server error, http-409 → suspect identity-pool misconfig first; business row-level detail lives in summary/k6.log/result.csv.",
+      "description": "Exact caliber: counter final value via max_over_time — must match this run's summary totals. Top 10 per class (long tail: result.csv / k6.log). technical: net-* = timeout/connect, http-5xx = server error, http-403 = identity/permission misconfig (wrong pool or missing per-product CHECKER permission), http-400 on write paths = consumed/stale consumable pool (re-seed; measured 2026-08-06), http-404 on read paths = stale ID pool; business row-level detail lives in summary/k6.log/result.csv.",
       "datasource": {
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"

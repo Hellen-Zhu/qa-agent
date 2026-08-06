@@ -8,7 +8,7 @@
 
 - [ ] `services.worker-svc` 真实地址；
 - [ ] `users.maker` 真实账号（20 个）；
-- [ ] **`users.checker` 至少 1 个真实 checker 账号**——seed 的 approve 段用 checker 身份；占位账号会得到 401/403/409 类拒绝。长期需扩池 20（env-checklist）。
+- [ ] **`users.checker` 至少 1 个真实 checker 账号**——seed 的 approve 段用 checker 身份；占位/无权限账号得到 **http-403**（消息形如 "does not have CHECKER permission for product=... "）。注意 **checker 权限按 product 维度**：账号必须覆盖用例池的所有 productType。长期需扩池 20（env-checklist）。
 
 ## 1. 试铺（首次 20 笔，验证流水线）
 
@@ -23,7 +23,8 @@
 3. 三种典型偏差：
    - **N=0 但 create 有 ok** → k6.log 搜 `no TaskId in msg`（msg 格式漂移，需调 extractTaskId 正则）；
    - **http-429 涌现** → checker 单账号被 10 VU 并发打限流：重试加 `VUS=2` 压低并发，同时推进 checker 扩池申请；
-   - **http-409** → 先查身份池配置（maker/checker 是否填反），不是性能信号。
+   - **http-403** → 身份/权限问题：身份池配错（maker/checker 填反）或 checker 账号缺该 productType 权限——配置问题，不是性能信号；
+   - **http-400 "Task ... is not PENDING"** → 池子已消费/过期（写路径版的 http-404）——重新铺底。
 
 ## 2. 激活池子
 
@@ -61,6 +62,9 @@ seed 的 `ITERATIONS` 建议 = 目标池量 × 1.3：部分迭代会因业务拒
 
 将来若流程跑熟、日常化到嫌手动烦，可以做 opt-in 的三连 wrapper（seed → cp → run），但默认永远显式分步。
 
-## 6. 顺手实验：409 语义（一次性，关 spec §11-10 悬案）
+## 6. 错误语义实测结论（2026-08-06，实验已完成，spec §11-10 已关）
 
-试铺后从 k6.log 挑一个已批过的 `CHK-…`，手工 curl 再 approve 一次，记录响应状态码与 body——这就是"409 是否兼作状态冲突"的裁决证据，拿到后更新 spec §11 与错误引擎的 409 归因注释。
+- **重复 approve（状态冲突）= http-400**，body `{"error":"Bad Request","message":"Task ... is not PENDING (current: APPROVED)"}`；
+- **maker 越权 approve（权限）= http-403**，body `{"error":"Forbidden","message":"User ... does not have CHECKER permission for product=... event=..."}`；
+- 两者 body 均为 `error/message/timestamp` 形态（非标准业务信封），按引擎规则归 technical，reason 即状态码——k6.log 的 body 摘录足以区分两义，无需引擎特例；
+- 早期"权限错误 = 409"假设作废；409 在本系统未被观察到。

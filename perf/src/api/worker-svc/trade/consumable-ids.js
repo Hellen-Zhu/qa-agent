@@ -5,7 +5,7 @@
  * Differs from ids-data.js (reusable rotation) in three deliberate ways:
  *  1. takeUnique() never wraps: exec.scenario.iterationInTest indexes the pool exactly once
  *     per id, across all VUs with zero coordination — two VUs can never consume the same id,
- *     so the run cannot self-inflict 409 state conflicts.
+ *     so the run cannot self-inflict http-400 state conflicts ("Task ... is not PENDING").
  *  2. Pool exhaustion returns null; the scenario records it and skips the request instead of
  *     recycling ids (a second write to the same id measures the state machine, not the system).
  *  3. Preflight checks VOLUME, not just placeholders: pool >= planned iterations × 1.2 —

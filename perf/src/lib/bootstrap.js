@@ -118,18 +118,33 @@ export function plannedIterations(opts) {
  *   4. extra: scenario-specific additions (e.g. query's empty-DB guard)
  */
 export function buildOptions(slaFile, slaKey, extraThresholds) {
+  return buildOptionsMulti([[slaFile, slaKey]], extraThresholds);
+}
+
+/** Multi-API variant for journey/mixed entries that exercise several endpoints in one run:
+ *  slaPairs = [[slaFile, slaKey], ...] — each pair contributes its per-API percentile
+ *  thresholds (name-tagged, so they never collide). Key existence is always enforced;
+ *  apiSla:false profiles exempt the thresholds for ALL pairs, same as the single-API path. */
+export function buildOptionsMulti(slaPairs, extraThresholds) {
   const profile = JSON.parse(open(import.meta.resolve(`../../profiles/${PROFILE}.json`)));
   const scenario = applyOverrides(stripComments(profile.scenario));
-  const sla = JSON.parse(open(import.meta.resolve(`../../config/slas/${slaFile}.json`)));
-  const entry = sla[slaKey];
-  if (!entry) throw new Error(`unknown SLA key: ${slaKey} in ${slaFile}`);
   const apiSla = profile.apiSla !== false;
+  const slaCache = {};
+  const apiThresholds = {};
+  for (const [slaFile, slaKey] of slaPairs) {
+    if (!slaCache[slaFile]) {
+      slaCache[slaFile] = JSON.parse(open(import.meta.resolve(`../../config/slas/${slaFile}.json`)));
+    }
+    const entry = slaCache[slaFile][slaKey];
+    if (!entry) throw new Error(`unknown SLA key: ${slaKey} in ${slaFile}`);
+    if (apiSla) Object.assign(apiThresholds, buildThresholds(entry));
+  }
   return {
     scenarios: { main: scenario },
     thresholds: Object.assign(
       { perf_err_script: ['count==0'] },
       stripComments(profile.thresholds || {}),
-      apiSla ? buildThresholds(entry) : {},
+      apiThresholds,
       extraThresholds || {},
     ),
     // Every text-summary column (P50/P90/P95/P99/max/avg + sample count) needs a value; any stat missing here leaves its column empty

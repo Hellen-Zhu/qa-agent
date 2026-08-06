@@ -1,10 +1,11 @@
 {
   "name": "smoke",
-  "description": "Are the script, data, and pipeline working right now. Mandatory in the same session before any big round — this doubles as the real verification that the static data is still valid.",
+  "description": "Single-user single-shot pipeline check: one VU, one iteration — verifies script, data, contract and wiring end to end. A link test, not a load test. Mandatory in the same session before any big round (doubles as the live check that static data is still valid). Need a few more samples ad hoc? Override with ITERATIONS=5 VUS=1.",
   "scenario": {
-    "executor": "constant-arrival-rate",
-    "rate": 2, "timeUnit": "1s", "duration": "1m",
-    "preAllocatedVUs": 5, "maxVUs": 10
+    "executor": "shared-iterations",
+    "vus": 1,
+    "iterations": 1,
+    "maxDuration": "2m"
   },
   "thresholds": {
     "perf_business_success": ["rate>0.99"]

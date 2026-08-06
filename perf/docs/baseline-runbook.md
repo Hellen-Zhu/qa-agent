@@ -12,7 +12,7 @@
 
 ## 第 0 步：前置确认（一次性）
 
-- [ ] `./run.sh trades-create dev smoke`（1 分钟）：无 technical/http-429（身份池生效，见 env-checklist 身份池匹配项）；business 失败原因可解释（Failure Attribution 面板 + k6.log body 摘录）；Grafana 头部对账区与该轮 summary 三分类逐项相等
+- [ ] `./run.sh trades-create dev smoke`（单用户单次链路检查；多打几发用 ITERATIONS=5）：无 technical/http-429（身份池生效，见 env-checklist 身份池匹配项）；business 失败原因可解释（Failure Attribution 面板 + k6.log body 摘录）；Grafana 头部对账区与该轮 summary 三分类逐项相等
 - [ ] 写接口专项：摸底全程真实建单——确认 PERF portfolio 清理方案吃得下量（ladder 一轮可达数十万笔 PENDING），下游（审批队列、通知）不会被灌爆影响他人
 - [ ] 数据池循环复用同一批 payload：确认高频重复提交不触发幂等/去重拒绝（env-checklist 遗留问题 #4），否则 business 失败率随轮次爬升会污染摸底数据
 

@@ -10,7 +10,7 @@
 
 This document outlines the scope, approach and plan for performance testing to be undertaken for the trading platform. This plan, once signed off, serves as the final confirmation that the approach and scope of performance testing for the release is confirmed and approved by the stakeholders.
 
-This release's performance testing targets the **API layer** (HTTP, service-side) of the platform, progressing through three scenario levels: **single-API rounds** — capacity probing, SLA compliance at target load and regression baselining, one endpoint per run for clean attribution; **mixed-API workload** — the §6.1 workmix injected concurrently at production traffic ratios (independent requests, no inter-step dependency), measuring capacity under cross-endpoint resource contention; and **end-to-end business journeys** — a measurement probe, NOT a load model: the chained flow (create → approve → update → approve) runs at smoke/single-user baseline for whole-transaction machine-side latency, and as a low-rate probe riding on the mixed peak (§6.4 E2E Peak). Synchronized chains match no real traffic shape (real approval gaps are human latency), so journeys are never scaled up as load — capacity verdicts stay with the single-API and mixed levels. Resilience characterisation (stress / spike / soak) applies to the load models. UI rendering and WebSocket channels are out of scope for this cycle (see §5).
+This release's performance testing targets the **API layer** (HTTP, service-side) of the platform, organised in three scenario levels: **single-API rounds** — capacity probing, SLA compliance at target load and regression baselining, one endpoint per run for clean attribution; **business journeys** — one actor's complete operational flow for one business action, i.e. the main API plus the auxiliary calls the screen actually fires (booking: refdata lookups → risk calc → dat-to-JSON → create; checker workflow: pending list → approve → status check; lifecycle event: read trade → trigger event → verify state, P1). Journeys are the realistic unit of load — production concurrency IS N independent actors running such flows; and **mixed workload** — flows injected concurrently at production ratios (§6.1 workmix; journey-ratio mix once auxiliary-call contracts are captured, API-ratio mix as the interim), measuring capacity under cross-endpoint contention. The cross-role lifecycle chain (create → approve → update → approve) is NOT a journey but a measurement probe (§6.4 E2E Peak): synchronized cross-role chains match no real traffic shape, so it is never scaled as load. Resilience characterisation (stress / spike / soak) applies to the load models. UI rendering and WebSocket channels are out of scope for this cycle (see §5).
 
 ### Project / Release Overview
 
@@ -167,7 +167,10 @@ Observed component fan-out under load (backend dashboards): Gateway → Workers 
 
 | Scenario | Action | Action | Action | Action |
 |---|---|---|---|---|
-| Trade lifecycle (E2E probe, P1) | Create (Maker) | Approve (Checker) | Update (Maker) | Approve (Checker) |
+| Trade booking journey (Maker) | Refdata lookups (contracts TBC) | Risk calc (calculate-risk) | dat-to-JSON conversion (contract TBC) | Create trade |
+| Checker workflow journey (Checker) | Pending-task list (contract TBC) | Approve | Trade status check (detail) | |
+| Lifecycle event journey (Maker, P1) | Read original trade | Trigger cancel / novation / termination | Verify resulting state | |
+| Trade lifecycle (E2E cross-role probe, P1) | Create (Maker) | Approve (Checker) | Update (Maker) | Approve (Checker) |
 | Single-API rounds | one action per scenario (isolation for attribution) | | | |
 
 ### 6.2 Data Requirements

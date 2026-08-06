@@ -10,7 +10,7 @@
 
 本文档阐述本平台性能测试的范围、方法与计划。本计划一经签核，即作为干系人对本次发布性能测试方法与范围的最终确认与批准。
 
-本次发布的性能测试针对平台的 **API 层**（HTTP，服务端），按三个场景层级递进：**单 API 轮次**——容量摸底、目标负载下的 SLA 达标验证与回归基线，每轮只压一个端点以保证归因清晰；**混合 API 负载（mixed-API workload）**——按生产流量配比并发注入 §6.1 的 workmix（请求相互独立、无步骤间依赖），测量跨端点资源争抢下的容量；**端到端业务旅程（E2E journey，测量探针而非负载模型）**——串联流程（create → approve → update → approve）只在 smoke/单用户 baseline 下测整笔业务的机器侧时延，峰值下以低速探针伴随 mixed 运行（§6.4 E2E Peak）；同步紧连的旅程在真实流量中没有对应物（真实审批间隔是人的时延），故永不作为负载放大并发，容量结论归单 API 与 mixed 层级。韧性特征测试（stress / spike / soak）叠加在负载模型之上。UI 渲染与 WebSocket 通道不在本周期范围内（见 §5）。
+本次发布的性能测试针对平台的 **API 层**（HTTP，服务端），按三个场景层级组织：**单 API 轮次**——容量摸底、目标负载下的 SLA 达标验证与回归基线，每轮只压一个端点以保证归因清晰；**业务 journey（单角色业务流）**——一个角色完成一次业务动作的完整调用流，即主 API + 界面实际发出的伴随调用（建单：查 refdata → risk-calc → datToJson → create；checker workflow：查待办 → approve → 查状态变更；lifecycle event：查原交易 → 触发事件 → 查后续状态，P1）。journey 是真实的负载单元——生产并发的本来面目就是 N 个独立角色各自跑流；**混合负载（mixed workload）**——按生产配比并发注入（§6.1 workmix；伴随调用契约齐后按 journey 配比混合，过渡期按 API 配比），测量跨端点资源争抢下的容量。跨角色生命周期链（create → approve → update → approve）**不是 journey 而是测量探针**（§6.4 E2E Peak）：跨角色同步紧连在真实流量中没有对应物，永不作为负载放大。韧性特征测试（stress / spike / soak）叠加在负载模型之上。UI 渲染与 WebSocket 通道不在本周期范围内（见 §5）。
 
 ### 项目 / 发布概述（Project / Release Overview）
 
@@ -167,7 +167,10 @@ create (maker) ──► PENDING APPROVAL ──► approve (checker) ──► 
 
 | 场景 | 动作 | 动作 | 动作 | 动作 |
 |---|---|---|---|---|
-| 交易生命周期（E2E 探针，P1） | Create（Maker） | Approve（Checker） | Update（Maker） | Approve（Checker） |
+| 建单 journey（Maker） | 查 refdata（契约 TBC） | risk-calc 风险计算 | datToJson 转换（契约 TBC） | Create trade |
+| checker workflow journey（Checker） | 查待办列表（契约 TBC） | Approve | 查 trade 状态变更（detail） | |
+| lifecycle event journey（Maker，P1） | 查原交易 | 触发 cancel / novation / termination | 查后续状态 | |
+| 交易生命周期（E2E 跨角色探针，P1） | Create（Maker） | Approve（Checker） | Update（Maker） | Approve（Checker） |
 | 单 API 轮次 | 每场景单一动作（隔离以保证归因） | | | |
 
 ### 6.2 数据需求（Data Requirements）

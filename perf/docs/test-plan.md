@@ -3,6 +3,8 @@
 制定日期：2026-08-04。定位：对上汇报与对内执行的同一份底稿——阶段表看进度，盘点表看现状，gap 表看阻塞。
 执行细节不在本文重复：摸底流程见 `baseline-runbook.md`，指标体系见 `metrics-theory-and-coverage.md`，看板读法见 `grafana-metrics-guide.md`，环境就绪见 `env-checklist.md`。
 
+场景三层级（与 `performance-test-plan.md` Purpose 对齐）：**单 API 轮次**——每轮一个端点，容量摸底、SLA 达标、回归基线，归因清晰（阶段 1–2）；**混合 API 负载**——按生产流量配比并发注入、请求间无依赖，测跨端点资源争抢下的容量（阶段 3，被流量画像 gap #1 阻塞）；**E2E 业务旅程**——create→approve→update→approve 按依赖串联，测整笔业务时延与业务吞吐（journeys/hour，阶段 3）。stress/spike/soak 叠加于各层级之上（阶段 4）。
+
 ## 1. 五阶段计划
 
 | 阶段 | 目标 | 退出条件（产出物） | 状态 |

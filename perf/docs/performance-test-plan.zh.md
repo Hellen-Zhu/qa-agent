@@ -14,11 +14,11 @@
 
 ### 项目 / 发布概述（Project / Release Overview）
 
-本次是**全新平台的首次生产上线**，不是既有系统的增量发布。两个推论贯穿整份计划：（1）**没有生产历史**——目标业务量无法从监控读出，只能来自业务量预估以及本平台承接的既有渠道/流程的量（即 §2 的正式输入请求）；（2）**范围内全部 API 均为本次发布新增**——全新上线不等于每个端点都要测：范围取舍（§5）仍按风险×预期流量筛选，但不存在"已被生产验证"可豁免的存量子集，故范围内每个 API 都按新 API 治理要求覆盖（接口 + soak + stress）；本周期晋升的 PASS 基线将是平台**首份**性能参考，此后所有回归对比自此起算。
+**全新上线：本次是平台首次生产投产，非增量发布。** 由此：①目标业务量来自业务量预估/承接渠道量——无生产历史可读（§2）；②范围内 API 全部为新增——取舍仍按风险×流量（§5），只是没有"已被生产验证"的豁免子集；本周期晋升的基线即平台首份性能参考。
 
-平台组件（沿用标准描述）：Gateway、Workers Backend、User Center、Notification Service、Refdata Service、Ops Service、Risk Engine、Trade Composer UI。
+组件：Gateway、Workers Backend、User Center、Notification Service、Refdata Service、Ops Service、Risk Engine、Trade Composer UI。
 
-测试入口为平台 Gateway；主要被测系统（SUT）为 Workers Backend（交易组合、审批工作流），及其向下游的扇出：Risk Engine（gRPC）、Notification Service 与数据库层。
+测试入口：Gateway。主 SUT：Workers Backend（交易组合、审批工作流），向下游扇出 Risk Engine（gRPC）、Notification Service 与数据库。
 
 ---
 

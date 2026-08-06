@@ -14,11 +14,11 @@ This release's performance testing targets the **API layer** (HTTP, service-side
 
 ### Project / Release Overview
 
-This is the **initial production go-live of a new platform**, not an incremental release. Two consequences shape the whole plan: (1) **no production history exists** — target volumetrics cannot be read from monitoring; they must come from business projections and, where applicable, the volumes of the channels/workflows this platform takes over (the formal input request in §2); (2) **every API in scope is NEW in this release** — greenfield does NOT mean testing every endpoint: scope selection (§5) stays risk- and traffic-driven, but there is no "already proven in production" subset to exempt, so each in-scope API receives the corporate new-API governance treatment (interface + soak + stress), and the PASS baselines promoted this cycle become the platform's first-ever performance reference, from which all future regression comparison starts.
+**Greenfield: this is the platform's first production go-live, not an incremental release.** Hence (1) target volumetrics come from business projections / taken-over channel volumes — no production history exists (§2); (2) all in-scope APIs are new — scope selection stays risk- and traffic-driven (§5), with no production-proven subset to exempt; the baselines promoted this cycle are the platform's first performance reference.
 
-Platform components (standard description): Gateway, Workers Backend, User Center, Notification Service, Refdata Service, Ops Service, Risk Engine, Trade Composer UI.
+Components: Gateway, Workers Backend, User Center, Notification Service, Refdata Service, Ops Service, Risk Engine, Trade Composer UI.
 
-Testing entry point is the gateway; the primary system under test is the Workers Backend (trade composition, approval workflow) with its downstream fan-out to the Risk Engine (gRPC), Notification Service and the database layer.
+Entry point: the gateway. Primary SUT: Workers Backend (trade composition, approval workflow), fanning out to the Risk Engine (gRPC), Notification Service and the database.
 
 ---
 

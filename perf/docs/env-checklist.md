@@ -18,6 +18,8 @@ run.sh 真实运行（summary 写盘、verdict/退出码、preflight 提示）�
 - [ ] 身份池与并发匹配（网关按 X-User-Id 限流，已确认）：closed 模型下每账号并发 ≈ ⌈顶阶 VU ÷ 池子⌉、每账号 QPS ≈ 顶阶 RPS ÷ 池子。20 账号安全覆盖 40 VU 台阶（每账号 2 路 / ~6-7 QPS）；**80 VU 顶阶下每账号 4 路 / ~13 QPS，跑前用已确认的限流阈值核对**，超了就把 ladder 顶阶降回 40 或继续扩池；限流阈值用"429 涌现台阶的 RPS ÷ 当时池子大小"反推并记录；若 429 在某台阶重现，该轮曲线只读到最后一个干净台阶（429 之后测的是限流器不是系统容量）
 - [ ] 导入 `perf-trade-business.json`（单板总览，日常主看板）到现网 Grafana，确认 testid 变量与各面板出数；注意 k6 Prometheus 输出把时长导出为**秒**（Prometheus 基础单位惯例，与 summary 的毫秒不同），所有 duration 面板 unit 必须配 `s`（Grafana 自动渲染成 ms），新增面板勿配 `ms`——SLA 参考线等阈值同样按秒填（300 ms → 0.3）；**跑一轮 smoke 后核对头部对账区大卡与该轮 summary 三分类逐项相等**（对账区用 counter 终值，应精确一致；曲线区是 5s 窗口趋势口径，分位数与 summary 有差属预期）；官方 19665 现网已装、仓库份仅为固定版本存档（若全新 Grafana 才需一并导入）；板顶跳转链接指向 19665 的 uid（`ccbb2351-...`），若现网实例 uid 不同需改链接；19665 的 Checks 面板显示框架桥接的 `business success`（业务成功率镜像，2026-08-02 起）——判定权威仍是 summary 三分类，Checks 大卡仅作展示
 - [ ] 服务端指标串联（k6 与服务端指标同一 Prometheus 实例，2026-08-04 已确认）：Server Utilization/Saturation 面板已就位（`jvm_cpu_recent_utilization_ratio` + `hikaricp_connections_pending`，`$service` 变量自动发现 service_name 取值，真实服务名不入库），导入后确认变量出值即可；板顶 "Server Metrics (backend)" 链接把占位 uid `TBC-SERVER-DASHBOARD-UID` 替换为现网服务端 dashboard 真实 uid 即通；后端板错误面板仅画 5xx——限流 429 属 4xx 不可见，需请板主补 4xx/429 序列以便与 k6 侧 http-429 对账
-- [ ] 压测环境 trade 表存量数据接近生产量级（空表查询无参考价值）
+- [ ] 压测环境 trade 表存量数据接近生产量级（空表查询无参考价值）；达到目标量级后转入**水位带维持**（如 100–120 万行区间，超上沿清理回下沿）；每轮压测 manifest 记录关键表水位（query API 总数即可，无需 DB 权限），跨轮对比先对水位——水位差超带宽的轮次不做同口径对比（与基线失效纪律联动）
+- [ ] 【向开发提需求】**数据工厂脚本**（DB 直插造 LIVE trade，schema 演进由开发维护）：API 铺底耗时成为瓶颈时的加速路线；**等价性验证准入**——直插 100 笔 vs API 造 100 笔各跑一轮 update，响应时间分布一致才可用（直插漏关联表会让服务端走异常分支，性能数据隐蔽失真）
+- [ ] 【向环境方提需求】**级联清理脚本**：按 PERF portfolio + 时间窗删主表及关联表（审批任务、审计链）；定期执行维持水位带；不用业务 API 清理（cancel 慢且多为软删除、水位不降）；长期最优是独占性能环境 + 快照恢复（进 Asks）
 - [ ] 首跑顺序：smoke（1 分钟）→ 确认 Grafana 出数、报告生成、服务端无异常 → 再 load
 - [ ] 首跑核对三分类归因：故意用一行错误数据跑 smoke，确认报告中 business 类与 row tag 正确归因后再恢复；query 业务契约回调已补（2026-08-05，信封校准的副产品）——业务拒绝正常归入 business 类，不再落 script 作废

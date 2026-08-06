@@ -4,25 +4,26 @@
     "Discipline: every row must be same-source captured from a single real curl (create the order in the system's web UI + DevTools Copy as cURL);",
     "assembling fields across rows/files is forbidden — a hand-built combination may be an ownership relationship that does not exist in reality (see README.md in this directory).",
     "The dat file is located by the same-name convention: data/datfiles/products/<productType>/<productType>.dat; rows do not carry paths.",
-    "Current values are local-integration placeholder fakes (well-formed, pass preflight); when enabling on the intranet, replace them row by row with real captured values,",
-    "and record the capture time and source in note."
+    "Row SHAPE calibrated against a real intranet capture (2026-08-06): notionalCurrency may legitimately be an empty string (server infers);",
+    "counterpartyFmId is an 8-digit numeric string; portfolioId may differ per row. VALUES below remain placeholder fakes (well-formed, pass preflight) —",
+    "real captured values live only in the intranet copy and are never committed; record capture time and source in note."
   ],
   "rows": [
     {
       "productType": "FX_TRF",
-      "notionalCurrency": "USD",
+      "notionalCurrency": "",
       "portfolioId": "PERF-PF-A",
-      "counterpartyFmId": "CP-000001",
+      "counterpartyFmId": "10000001",
       "counterpartyName": "PERF CP A",
-      "note": "Local placeholder (2026-07-31), not a real capture"
+      "note": "Shape-calibrated placeholder (2026-08-06), not a real capture"
     },
     {
       "productType": "FX_TRF",
-      "notionalCurrency": "USD",
-      "portfolioId": "PERF-PF-A",
-      "counterpartyFmId": "CP-000002",
+      "notionalCurrency": "",
+      "portfolioId": "PERF-PF-B",
+      "counterpartyFmId": "10000002",
       "counterpartyName": "PERF CP B",
-      "note": "Local placeholder (2026-07-31), not a real capture"
+      "note": "Shape-calibrated placeholder (2026-08-06), not a real capture"
     }
   ]
 }

@@ -1,0 +1,19 @@
+{
+  "name": "mix",
+  "description": "Mixed-API workload: ONE total arrival rate, split across endpoints by the ratio table in src/mixed/trade-mix.js (placeholder ratios pending the production traffic profile). Open model. RATE= overrides the TOTAL rate, DURATION= the window.",
+  "_pools": "A mixed round consumes BOTH consumable pools: demand per pool = ratio x total rate x duration x 1.2 (preflight-enforced). Default 10 req/s x 10m needs ~1080 update-ids and ~1080 approve-tasks; size trial runs down with RATE=4 DURATION=1m.",
+  "_override": "Command-line overrides apply to the scalar keys of this single template scenario BEFORE the per-endpoint split, so RATE= scales the whole mix proportionally.",
+  "scenario": {
+    "executor": "constant-arrival-rate",
+    "rate": 10, "timeUnit": "1s",
+    "duration": "10m",
+    "preAllocatedVUs": 30, "maxVUs": 100
+  },
+  "thresholds": {
+    "_circuitBreaker": "Two-tier lines, same rationale as load.json: strict line is the verdict, lenient line + abortOnFail is the shared-environment breaker.",
+    "perf_business_success": [
+      { "threshold": "rate>0.99" },
+      { "threshold": "rate>0.50", "abortOnFail": true, "delayAbortEval": "3m" }
+    ]
+  }
+}

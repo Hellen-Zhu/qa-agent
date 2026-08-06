@@ -6,7 +6,7 @@
 #
 #   ./run.sh <scenario>[.js] [env] [profile] [KEY=value ...]
 #
-#   scenario   scenario name under src/scenarios/ (.js suffix optional)
+#   scenario   entry name under src/scenarios|journeys|mixed|seed/ (.js suffix optional)
 #   env        environment name under config/environments/, default local
 #   profile    load profile under profiles/, default smoke
 #   KEY=value  __ENV overrides, passed through verbatim as k6 -e (no -e prefix), e.g.:
@@ -38,6 +38,8 @@ usage() {
   echo "Usage: $0 <scenario>[.js] [env] [profile] [KEY=value ...]" >&2
   echo "" >&2
   echo "scenarios: $(ls src/scenarios/*.js 2>/dev/null | xargs -n1 basename 2>/dev/null | sed 's/\.js$//' | tr '\n' ' ')" >&2
+  echo "journeys:  $(ls src/journeys/*.js 2>/dev/null | xargs -n1 basename 2>/dev/null | sed 's/\.js$//' | tr '\n' ' ')" >&2
+  echo "mixed:     $(ls src/mixed/*.js 2>/dev/null | xargs -n1 basename 2>/dev/null | sed 's/\.js$//' | tr '\n' ' ')" >&2
   echo "seed:      $(ls src/seed/*.js 2>/dev/null | xargs -n1 basename 2>/dev/null | sed 's/\.js$//' | tr '\n' ' ')" >&2
   echo "envs:      $(ls config/environments/*.json 2>/dev/null | xargs -n1 basename 2>/dev/null | sed 's/\.json$//' | tr '\n' ' ')" >&2
   echo "profiles:  $(ls profiles/*.json 2>/dev/null | xargs -n1 basename 2>/dev/null | sed 's/\.json$//' | tr '\n' ' ')" >&2
@@ -69,16 +71,16 @@ for o in ${RAW_OVERRIDES[@]+"${RAW_OVERRIDES[@]}"}; do
   OVERRIDE_ARGS+=(-e "$o")
 done
 
-# Entry lookup order: measurement scenarios first, then seed producers (spec §10.1)
+# Entry lookup order: measurement entries first (single-API, then journeys/mixed), then seed producers (spec §10.1)
 SCENARIO_FILE=""
 IS_SEED=0
-for dir in src/scenarios src/seed; do
+for dir in src/scenarios src/journeys src/mixed src/seed; do
   if [[ -f "$dir/${SCENARIO}.js" ]]; then SCENARIO_FILE="$dir/${SCENARIO}.js"; break; fi
 done
 [[ "$SCENARIO_FILE" == src/seed/* ]] && IS_SEED=1
 ENV_FILE="config/environments/${ENV_NAME}.json"
 PROFILE_FILE="profiles/${PROFILE}.json"
-[[ -n "$SCENARIO_FILE" ]] || { echo "ERROR: scenario not found: ${SCENARIO} (looked in src/scenarios/ and src/seed/)" >&2; usage; }
+[[ -n "$SCENARIO_FILE" ]] || { echo "ERROR: scenario not found: ${SCENARIO} (looked in src/scenarios/, src/journeys/, src/mixed/ and src/seed/)" >&2; usage; }
 [[ -f "$ENV_FILE" ]] || { echo "ERROR: environment not found: ${ENV_NAME} (${ENV_FILE}) — argument order is <scenario> <env> <profile>" >&2; usage; }
 [[ -f "$PROFILE_FILE" ]] || { echo "ERROR: profile not found: ${PROFILE} (${PROFILE_FILE}) — argument order is <scenario> <env> <profile>" >&2; usage; }
 

@@ -5,8 +5,9 @@
  * rounds cannot see. Verdict caliber is unchanged: per-API SLA thresholds are name-tagged, so
  * each endpoint is judged under mixed load against its own SLA.
  *
- * The profile supplies ONE total arrival rate (profiles/mix.json; RATE= overrides the total);
- * this file splits it by the ratio table below. MIX ratios are PLACEHOLDERS pending the
+ * The profile supplies ONE total volume — an arrival rate (mix.json for probing, mix-ref.json
+ * for the fixed-rate baseline reference; RATE= overrides the total) or an iterations count
+ * (smoke: one request per flow) — and this file splits it by the ratio table below. MIX ratios are PLACEHOLDERS pending the
  * production traffic profile (test-plan gap #1) — once volumetrics land, approve should track
  * create+update (every write spawns exactly one checker task).
  *
@@ -49,9 +50,15 @@ const base = buildOptionsMulti(
 );
 
 const main = base.scenarios.main;
-if (main.rate === undefined) {
+// Splittable profiles: a scalar rate (open model — mix.json / mix-ref.json) or a scalar
+// iterations count (shared-iterations — smoke's one-request-per-flow link check). Closed
+// vus-only executors (baseline/ladder) stay rejected: their iteration volume is unknowable
+// up front, so the consumable-pool preflight cannot budget and the mix ratio would silently
+// drift once a pool runs dry.
+if (main.rate === undefined && main.iterations === undefined) {
   throw new Error(
-    'trade-mix requires an open-model profile with a scalar rate (use profiles/mix.json; RATE= overrides the total rate)'
+    'trade-mix requires a profile with a scalar rate (mix/mix-ref) or iterations (smoke); ' +
+    'closed vus-only profiles cannot preflight consumable pools'
   );
 }
 
@@ -59,7 +66,12 @@ if (main.rate === undefined) {
 // at capacity caliber; the floor of 1 keeps every flow present even at tiny trial rates.
 function slice(ratio, execName) {
   const s = Object.assign({}, main);
-  s.rate = Math.max(1, Math.round(main.rate * ratio));
+  if (main.rate !== undefined) {
+    s.rate = Math.max(1, Math.round(main.rate * ratio));
+  } else {
+    s.iterations = Math.max(1, Math.round(main.iterations * ratio));
+    if (s.vus !== undefined) s.vus = Math.max(1, Math.min(Math.round(main.vus * ratio), s.iterations));
+  }
   if (s.preAllocatedVUs !== undefined) s.preAllocatedVUs = Math.max(2, Math.round(main.preAllocatedVUs * ratio));
   if (s.maxVUs !== undefined) s.maxVUs = Math.max(5, Math.round(main.maxVUs * ratio));
   s.exec = execName;

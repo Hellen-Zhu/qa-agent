@@ -1,0 +1,20 @@
+{
+  "name": "mix-ref",
+  "description": "Mixed-workload baseline REFERENCE round: the total rate is fixed IN THIS FILE on purpose — the baseline key is scenario_env_profile and command-line RATE= is not part of it, so a floating rate would let incomparable rounds share one baseline. Do not override RATE here; probing at other rates belongs to the mix profile.",
+  "_baseline": "Same doctrine as baseline.json: a measurement round, not a judgment round (apiSla:false; regression detection comes from the promoted-baseline comparison on later mix-ref runs). Promote after 3 stable PASSes: cp <run>/summary.json baselines/trade-mix_<env>_mix-ref.json",
+  "_pools": "Effective split at rate 4 = query 2/s + create/update/approve 1/s each (floor of 1 lifts the total slightly above nominal). Pool demand per 5m round: update-ids and approve-tasks ~300 planned each -> seed >= 360 per pool (seed ITERATIONS=450 covers harvest dropout). Both pools are dirty after the round — re-seed before rerun.",
+  "apiSla": false,
+  "scenario": {
+    "executor": "constant-arrival-rate",
+    "rate": 4, "timeUnit": "1s",
+    "duration": "5m",
+    "preAllocatedVUs": 20, "maxVUs": 60
+  },
+  "thresholds": {
+    "_circuitBreaker": "Strict line: a reference round with business failures is not promotable. Lenient line + abortOnFail is the shared-environment breaker.",
+    "perf_business_success": [
+      { "threshold": "rate>0.99" },
+      { "threshold": "rate>0.50", "abortOnFail": true, "delayAbortEval": "2m" }
+    ]
+  }
+}

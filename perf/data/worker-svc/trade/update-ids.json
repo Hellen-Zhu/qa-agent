@@ -1,0 +1,6 @@
+{
+  "_comment": "LIVE trade ids consumed by the trades-update scenario (one id per request). Produce with: ./run.sh seed-update-pool <env> seed ITERATIONS=<n>, then cp the extracted seed-pool.json here. Single-use: re-seed after every measurement round.",
+  "ids": [
+    "TBC-RUN-SEED-PIPELINE-FIRST"
+  ]
+}

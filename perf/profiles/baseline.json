@@ -1,0 +1,11 @@
+{
+  "name": "baseline",
+  "description": "Single-user baseline — how long one transaction takes on an idle system. The denominator for every comparison and the derivation input for concurrency targets. Without it, 'P95 is 30% slower' is meaningless.",
+  "_sample_size": "Sample count = duration / per-transaction time. At 20s per transaction, 300s yields only 15 samples and P95 is meaningless; if samples are insufficient, add -e DURATION=1800s.",
+  "apiSla": false,
+  "scenario": {
+    "executor": "constant-vus",
+    "vus": 1, "duration": "300s"
+  },
+  "thresholds": { "perf_business_success": ["rate>0.99"] }
+}

@@ -1,0 +1,22 @@
+{
+  "name": "ladder",
+  "description": "Closed-model VU step ladder — find the capacity knee (the knee is where TPS stops rising with VUs and P95 climbs steeply).",
+  "_closed_model": "Closed model: each VU sends one request and waits for the response, so when the server slows down the applied pressure decays with it, systematically understating the consequences of overload. Use this only to find the knee; for behavior beyond the knee use stress (open model).",
+  "_verdict": "The lenient abort-threshold line is evaluated on perf_business_success (which includes technical failures) — if the overall failure rate stays above 50% past the knee, the run is aborted after delayAbortEval 3m (shared-environment protection, while still capturing >=3 minutes of post-knee data); no verdict line and no API SLA are attached (apiSla:false).",
+  "apiSla": false,
+  "scenario": {
+    "executor": "ramping-vus",
+    "startVUs": 1, "gracefulRampDown": "30s",
+    "stages": [
+      { "duration": "60s", "target": 10 }, { "duration": "300s", "target": 10 },
+      { "duration": "60s", "target": 20 }, { "duration": "300s", "target": 20 },
+      { "duration": "60s", "target": 40 }, { "duration": "300s", "target": 40 },
+      { "duration": "60s", "target": 80 }, { "duration": "300s", "target": 80 }
+    ]
+  },
+  "thresholds": {
+    "perf_business_success": [
+      { "threshold": "rate>0.50", "abortOnFail": true, "delayAbortEval": "3m" }
+    ]
+  }
+}

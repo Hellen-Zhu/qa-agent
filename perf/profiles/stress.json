@@ -1,0 +1,23 @@
+{
+  "name": "stress",
+  "description": "Open-model step doubling — how the system collapses beyond the knee (under arrival-rate, queues genuinely pile up).",
+  "_verdict": "The lenient abort-threshold line is evaluated on perf_business_success (which includes technical failures) — if the overall failure rate stays above 50% past the knee, the run is aborted after delayAbortEval 3m (shared-environment protection, while still capturing >=3 minutes of post-knee data); no verdict line and no API SLA are attached (apiSla:false).",
+  "apiSla": false,
+  "scenario": {
+    "executor": "ramping-arrival-rate",
+    "startRate": 0, "timeUnit": "1s",
+    "preAllocatedVUs": 50, "maxVUs": 200,
+    "stages": [
+      { "duration": "2m", "target": 20 },
+      { "duration": "2m", "target": 40 },
+      { "duration": "2m", "target": 60 },
+      { "duration": "2m", "target": 80 },
+      { "duration": "1m", "target": 0 }
+    ]
+  },
+  "thresholds": {
+    "perf_business_success": [
+      { "threshold": "rate>0.50", "abortOnFail": true, "delayAbortEval": "3m" }
+    ]
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "name": "soak",
+  "description": "Sustained moderate load for >=2 hours — degradation of the leak / resource-exhaustion kind.",
+  "_data": "Stale static data manifests as wholesale business rejection — the lenient abort-threshold line cuts losses within minutes whether the failure happens at startup or in hour 3 (preflight only checks 'is it filled in', not 'is it still valid today').",
+  "scenario": {
+    "executor": "constant-arrival-rate",
+    "rate": 10, "timeUnit": "1s", "duration": "2h",
+    "preAllocatedVUs": 30, "maxVUs": 100
+  },
+  "thresholds": {
+    "perf_business_success": [
+      { "threshold": "rate>0.99" },
+      { "threshold": "rate>0.50", "abortOnFail": true, "delayAbortEval": "3m" }
+    ]
+  }
+}

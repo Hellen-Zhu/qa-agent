@@ -1,0 +1,6 @@
+{
+  "_comment": "Pending CHK task ids consumed by the checker-approve scenario (one id per request). Produce with: ./run.sh seed-approve-pool <env> seed ITERATIONS=<n>, then cp the extracted seed-pool.json here. Single-use: re-seed after every measurement round.",
+  "ids": [
+    "TBC-RUN-SEED-PIPELINE-FIRST"
+  ]
+}

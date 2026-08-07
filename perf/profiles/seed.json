@@ -1,0 +1,18 @@
+{
+  "name": "seed",
+  "description": "Seed-pipeline profile — a shared-iterations pool producer, not a measurement round. ITERATIONS= sets the pool size target (each iteration yields at most one SEEDID line; the runner extracts them into seed-pool.json).",
+  "_verdict": "apiSla:false and no verdict line — a seed round's success measure is the extracted pool size the runner prints. The loose breaker only stops a hopeless run (dead service, broken data) early instead of burning the full iteration budget.",
+  "_sizing": "Size ITERATIONS at planned measurement iterations x 1.3: the consumable preflight wants a 1.2x pool, and some seed iterations fail (business rejects, missing TaskId).",
+  "apiSla": false,
+  "scenario": {
+    "executor": "shared-iterations",
+    "vus": 10,
+    "iterations": 1000,
+    "maxDuration": "30m"
+  },
+  "thresholds": {
+    "perf_business_success": [
+      { "threshold": "rate>0.20", "abortOnFail": true, "delayAbortEval": "2m" }
+    ]
+  }
+}

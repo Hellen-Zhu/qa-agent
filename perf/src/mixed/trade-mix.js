@@ -1,0 +1,126 @@
+/*
+ * Mixed-API workload — THE outward-facing scenario (agreed methodology 2026-08-07): realistic
+ * API RATIOS, no ordering (order is deliberately out of scope), scaled in business-volume
+ * MULTIPLES to find how much the system bears. Five P0 endpoints run CONCURRENTLY as
+ * independent k6 scenarios with zero inter-step dependency. Verdict caliber is unchanged:
+ * per-API SLA thresholds are name-tagged, so each endpoint is judged under mixed load against
+ * its own SLA.
+ *
+ * The profile supplies ONE total volume — an arrival rate (mix.json for probing, mix-ref.json
+ * for the fixed-rate baseline reference; RATE= overrides the total) or an iterations count
+ * (smoke: one request per flow) — and this file splits it by the ratio table below.
+ * Business-volume anchoring: once volumetrics land, derive the 1x TOTAL rate and the ratios
+ * from the traffic profile (business flows/hour expanded to endpoint calls on paper), set them
+ * here/in the profile, and RATE= becomes the multiplier knob (1x/2x/10x ladder = mix-ladder or
+ * per-round RATE overrides). MIX ratios are PLACEHOLDERS pending that input (test-plan gap #1);
+ * approve should track create+update (every write spawns exactly one checker task).
+ *
+ * Cursor correctness: exec.scenario.iterationInTest counts PER SCENARIO (verified against
+ * k6 v2.1.0, two-scenario experiment 2026-08-06), so each consumable pool keeps its
+ * exactly-once guarantee as long as it is consumed by exactly ONE scenario — update-mix owns
+ * update-ids, approve-mix owns approve-tasks. Pool demand per round = ratio × total rate ×
+ * duration × 1.2; a mixed round dirties BOTH pools (re-seed before rerun).
+ */
+import exec from 'k6/execution';
+import { cfg, loadData, buildOptionsMulti, plannedIterations } from '../lib/bootstrap.js';
+import { splitByRatio } from '../lib/mix.js';
+import { pickUser } from '../lib/users.js';
+import { pickAt } from '../lib/data.js';
+import { pickCase } from '../pools/worker-svc/trade/create-data.js';
+import { pickTradeId, tradeIdsPreflight } from '../pools/worker-svc/trade/ids-data.js';
+import { createTrade } from '../api/worker-svc/trade/create.js';
+import { updateTrade } from '../api/worker-svc/trade/update.js';
+import { approveTask } from '../api/worker-svc/checker-flow/tasks.js';
+import { queryTrades } from '../api/worker-svc/trade/query.js';
+import { getTrade } from '../api/worker-svc/trade/detail.js';
+import { loadPool, consumablePreflight, takeUnique } from '../pools/worker-svc/trade/consumable-ids.js';
+import { createTradePreflight } from '../pools/worker-svc/trade/create-trade-preflight.js';
+
+// PLACEHOLDER ratios (must sum to 1) — replace with the production traffic profile when it lands
+const MIX = { query: 0.4, detail: 0.2, create: 0.1, update: 0.15, approve: 0.15 };
+
+const QUERY_DATA = loadData('worker-svc/trade/trades-query');
+const UPDATE_DATA = loadData('worker-svc/trade/update-payload');
+const UPDATE_CASES = UPDATE_DATA.cases.map((c, n) => Object.assign({ __row: n + 1 }, c));
+const UPDATE_POOL = loadPool('update-ids');
+const APPROVE_POOL = loadPool('approve-tasks');
+
+const base = buildOptionsMulti(
+  [
+    ['worker-svc/trade', 'query'],
+    ['worker-svc/trade', 'detail'],
+    ['worker-svc/trade', 'create'],
+    ['worker-svc/trade', 'update'],
+    ['worker-svc/checker-flow', 'approve'],
+  ],
+  // Same empty-DB guard as the single-API query scenario
+  { perf_trades_rows: ['avg>0'] },
+);
+
+base.scenarios = splitByRatio(base.scenarios.main, [
+  { name: 'query-mix', exec: 'queryMix', ratio: MIX.query },
+  { name: 'detail-mix', exec: 'detailMix', ratio: MIX.detail },
+  { name: 'create-mix', exec: 'createMix', ratio: MIX.create },
+  { name: 'update-mix', exec: 'updateMix', ratio: MIX.update },
+  { name: 'approve-mix', exec: 'approveMix', ratio: MIX.approve },
+]);
+export const options = base;
+
+// Captured at init: k6 replaces the exported options binding with its consolidated version
+// after init, so reading options.scenarios inside setup() is not safe
+const PLANNED_UPDATE = plannedIterations({ scenarios: { main: base.scenarios['update-mix'] } });
+const PLANNED_APPROVE = plannedIterations({ scenarios: { main: base.scenarios['approve-mix'] } });
+
+export function setup() {
+  const seeded = createTradePreflight();
+  tradeIdsPreflight();
+  consumablePreflight(UPDATE_POOL, PLANNED_UPDATE, 'update-ids');
+  consumablePreflight(APPROVE_POOL, PLANNED_APPROVE, 'approve-tasks');
+  return seeded;
+}
+
+export function queryMix() {
+  const i = exec.scenario.iterationInTest;
+  queryTrades(cfg, pickAt(QUERY_DATA.filters, i), pickUser(cfg, 'maker', __VU));
+}
+
+export function detailMix() {
+  getTrade(cfg, pickTradeId(exec.scenario.iterationInTest), pickUser(cfg, 'maker', __VU));
+}
+
+export function createMix() {
+  createTrade(cfg, pickCase(exec.scenario.iterationInTest), pickUser(cfg, 'maker', __VU), 'main');
+}
+
+let warnedUpdateExhausted = false;
+
+export function updateMix() {
+  const i = exec.scenario.iterationInTest;
+  const id = takeUnique(UPDATE_POOL);
+  if (id === null) {
+    // Skip, never recycle — a second update on the same id measures the state machine, not the system
+    if (!warnedUpdateExhausted) {
+      console.warn('update-ids pool exhausted — remaining update-mix iterations are skipped (re-seed a bigger pool)');
+      warnedUpdateExhausted = true;
+    }
+    return;
+  }
+  updateTrade(cfg, id, pickAt(UPDATE_CASES, i), pickUser(cfg, 'maker', __VU), 'main');
+}
+
+let warnedApproveExhausted = false;
+
+export function approveMix() {
+  const taskId = takeUnique(APPROVE_POOL);
+  if (taskId === null) {
+    // Skip, never recycle — re-approving a consumed task is an http-400 state conflict, not load
+    if (!warnedApproveExhausted) {
+      console.warn('approve-tasks pool exhausted — remaining approve-mix iterations are skipped (re-seed a bigger pool)');
+      warnedApproveExhausted = true;
+    }
+    return;
+  }
+  approveTask(cfg, taskId, pickUser(cfg, 'checker', __VU), 'main');
+}
+
+export { stdHandleSummary as handleSummary } from '../lib/bootstrap.js';

@@ -14,7 +14,7 @@
  * journey costs 4 requests of checker rate-limit budget.
  */
 import exec from 'k6/execution';
-import { Trend, Rate } from 'k6/metrics';
+import { journeyDuration, journeySuccess } from '../lib/journey-metrics.js';
 import { cfg, loadData, buildOptionsMulti, plannedIterations } from '../lib/bootstrap.js';
 import { pickUser } from '../lib/users.js';
 import { pickAt } from '../lib/data.js';
@@ -26,9 +26,6 @@ import { ERR } from '../lib/errors.js';
 
 const QUERY_DATA = loadData('worker-svc/trade/trades-query');
 const POOL = loadPool('approve-tasks');
-
-const journeyDuration = new Trend('perf_journey_duration', true);
-const journeySuccess = new Rate('perf_journey_success');
 
 export const options = buildOptionsMulti(
   [
@@ -50,7 +47,10 @@ export function setup() {
 let warnedExhausted = false;
 let warnedNoRows = false;
 
-export default function () {
+/** Flow body, importable by the flow-level mix (journey-mix) — the pool cursor and pickAt index
+ *  use the CALLING scenario's iterationInTest, so the exactly-once guarantee holds as long as
+ *  approve-tasks is consumed by exactly one scenario per run. */
+export function checkerWorkflowFlow() {
   const i = exec.scenario.iterationInTest;
   const checker = pickUser(cfg, 'checker', __VU);
 
@@ -89,6 +89,10 @@ export default function () {
 
   journeySuccess.add(true);
   journeyDuration.add(Date.now() - t0);
+}
+
+export default function () {
+  checkerWorkflowFlow();
 }
 
 export { stdHandleSummary as handleSummary } from '../lib/bootstrap.js';

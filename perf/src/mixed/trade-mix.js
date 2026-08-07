@@ -19,6 +19,7 @@
  */
 import exec from 'k6/execution';
 import { cfg, loadData, buildOptionsMulti, plannedIterations } from '../lib/bootstrap.js';
+import { splitByRatio } from '../lib/mix.js';
 import { pickUser } from '../lib/users.js';
 import { pickAt } from '../lib/data.js';
 import { pickCase } from '../api/worker-svc/trade/create-data.js';
@@ -49,41 +50,12 @@ const base = buildOptionsMulti(
   { perf_trades_rows: ['avg>0'] },
 );
 
-const main = base.scenarios.main;
-// Splittable profiles: a scalar rate (open model — mix.json / mix-ref.json) or a scalar
-// iterations count (shared-iterations — smoke's one-request-per-flow link check). Closed
-// vus-only executors (baseline/ladder) stay rejected: their iteration volume is unknowable
-// up front, so the consumable-pool preflight cannot budget and the mix ratio would silently
-// drift once a pool runs dry.
-if (main.rate === undefined && main.iterations === undefined) {
-  throw new Error(
-    'trade-mix requires a profile with a scalar rate (mix/mix-ref) or iterations (smoke); ' +
-    'closed vus-only profiles cannot preflight consumable pools'
-  );
-}
-
-// Rounding may make the effective total drift a request or two from the profile rate — irrelevant
-// at capacity caliber; the floor of 1 keeps every flow present even at tiny trial rates.
-function slice(ratio, execName) {
-  const s = Object.assign({}, main);
-  if (main.rate !== undefined) {
-    s.rate = Math.max(1, Math.round(main.rate * ratio));
-  } else {
-    s.iterations = Math.max(1, Math.round(main.iterations * ratio));
-    if (s.vus !== undefined) s.vus = Math.max(1, Math.min(Math.round(main.vus * ratio), s.iterations));
-  }
-  if (s.preAllocatedVUs !== undefined) s.preAllocatedVUs = Math.max(2, Math.round(main.preAllocatedVUs * ratio));
-  if (s.maxVUs !== undefined) s.maxVUs = Math.max(5, Math.round(main.maxVUs * ratio));
-  s.exec = execName;
-  return s;
-}
-
-base.scenarios = {
-  'query-mix': slice(MIX.query, 'queryMix'),
-  'create-mix': slice(MIX.create, 'createMix'),
-  'update-mix': slice(MIX.update, 'updateMix'),
-  'approve-mix': slice(MIX.approve, 'approveMix'),
-};
+base.scenarios = splitByRatio(base.scenarios.main, [
+  { name: 'query-mix', exec: 'queryMix', ratio: MIX.query },
+  { name: 'create-mix', exec: 'createMix', ratio: MIX.create },
+  { name: 'update-mix', exec: 'updateMix', ratio: MIX.update },
+  { name: 'approve-mix', exec: 'approveMix', ratio: MIX.approve },
+]);
 export const options = base;
 
 // Captured at init: k6 replaces the exported options binding with its consolidated version

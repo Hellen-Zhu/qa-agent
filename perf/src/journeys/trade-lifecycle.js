@@ -21,7 +21,7 @@
  * Steps run back-to-back with no think time — deliberately measuring machine time only.
  */
 import exec from 'k6/execution';
-import { Trend, Rate } from 'k6/metrics';
+import { journeyDuration, journeySuccess } from '../lib/journey-metrics.js';
 import { cfg, loadData, buildOptionsMulti } from '../lib/bootstrap.js';
 import { pickUser } from '../lib/users.js';
 import { pickAt } from '../lib/data.js';
@@ -34,9 +34,6 @@ import { ERR } from '../lib/errors.js';
 
 const UPDATE_DATA = loadData('worker-svc/trade/update-payload');
 const UPDATE_CASES = UPDATE_DATA.cases.map((c, n) => Object.assign({ __row: n + 1 }, c));
-
-const journeyDuration = new Trend('perf_journey_duration', true);
-const journeySuccess = new Rate('perf_journey_success');
 
 export const options = buildOptionsMulti([
   ['worker-svc/trade', 'create'],

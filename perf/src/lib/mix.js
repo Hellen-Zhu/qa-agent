@@ -44,3 +44,61 @@ export function splitByRatio(template, table) {
   }
   return out;
 }
+
+/*
+ * Flow-table expansion (business-mix): flows are ACCOUNTING units, not execution units.
+ * Each flow row declares its 1x business rate (flows per second at production projection) and
+ * the endpoint calls one flow induces (the multiplication table, captured from DevTools counts).
+ * Endpoint 1x rate = Σ flow.rate × multiplicity; the profile's rate/stage targets act as a
+ * MULTIPLIER (1 = 1x business volume, RATE=10 → 10x). Execution stays unordered API-level —
+ * no sequencing, no data hand-off between endpoints.
+ * Rates are emitted on a 60s timeUnit so fractional per-second endpoint rates stay precise at
+ * 1x (0.083/s → 5 per 60s); k6 spaces starts evenly inside the timeUnit, so the stream is
+ * smooth, not bursty. Smoke (iterations template) degrades to one call per endpoint.
+ */
+const FLOW_TU_SEC = 60;
+
+export function expandFlows(template, flows, execMap) {
+  if (template.rate === undefined && template.stages === undefined && template.iterations === undefined) {
+    throw new Error(
+      'flow expansion requires a profile with a scalar rate (multiplier), open-model stages ' +
+      '(multiplier ladder) or iterations (smoke); closed vus-only profiles cannot preflight consumable pools'
+    );
+  }
+  if (template.stages !== undefined && template.executor !== 'ramping-arrival-rate') {
+    throw new Error(`flow expansion only accepts OPEN-model stages (ramping-arrival-rate), got '${template.executor}'`);
+  }
+  const perSec = {};
+  for (const f of Object.values(flows)) {
+    for (const ep of Object.keys(f.calls)) perSec[ep] = (perSec[ep] || 0) + f.rate * f.calls[ep];
+  }
+  const totalPerSec = Object.values(perSec).reduce((a, b) => a + b, 0);
+  const out = {};
+  for (const ep of Object.keys(perSec)) {
+    const execName = execMap[ep];
+    if (!execName) throw new Error(`flow table references endpoint '${ep}' but no exec function is mapped`);
+    const r = perSec[ep];
+    const frac = r / totalPerSec;
+    const s = { executor: template.executor, exec: execName };
+    if (template.iterations !== undefined) {
+      s.iterations = 1;
+      s.vus = 1;
+      if (template.maxDuration) s.maxDuration = template.maxDuration;
+    } else {
+      s.timeUnit = `${FLOW_TU_SEC}s`;
+      if (template.preAllocatedVUs !== undefined) s.preAllocatedVUs = Math.max(2, Math.round(template.preAllocatedVUs * frac));
+      if (template.maxVUs !== undefined) s.maxVUs = Math.max(5, Math.round(template.maxVUs * frac));
+      if (template.rate !== undefined) {
+        s.rate = Math.max(1, Math.round(template.rate * r * FLOW_TU_SEC));
+        s.duration = template.duration;
+      } else {
+        s.startRate = Math.round((template.startRate || 0) * r * FLOW_TU_SEC);
+        s.stages = template.stages.map((st) =>
+          Object.assign({}, st, { target: st.target > 0 ? Math.max(1, Math.round(st.target * r * FLOW_TU_SEC)) : 0 })
+        );
+      }
+    }
+    out[ep] = s;
+  }
+  return out;
+}

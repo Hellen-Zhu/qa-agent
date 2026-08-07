@@ -96,12 +96,23 @@ function durationSeconds(d) {
 }
 
 /** Planned iteration count for this round — consumable-pool preflights size against it.
- *  Returns 0 when the executor's volume is unknowable up front (e.g. ramping-vus): the
- *  volume check is skipped and only the placeholder check applies. */
+ *  ramping-arrival-rate is integrated stage by stage (k6 interpolates the rate linearly from
+ *  the previous level to each stage target → trapezoid area; timeUnit assumed 1s, as in every
+ *  profile). Returns 0 when the executor's volume is unknowable up front (e.g. ramping-vus):
+ *  the volume check is skipped and only the placeholder check applies. */
 export function plannedIterations(opts) {
   const sc = opts.scenarios.main;
   if (sc.iterations !== undefined) return sc.iterations;
   if (sc.rate !== undefined && sc.duration) return Math.ceil(sc.rate * durationSeconds(sc.duration));
+  if (sc.executor === 'ramping-arrival-rate' && Array.isArray(sc.stages)) {
+    let prev = sc.startRate || 0;
+    let total = 0;
+    for (const st of sc.stages) {
+      total += ((prev + st.target) / 2) * durationSeconds(st.duration);
+      prev = st.target;
+    }
+    return Math.ceil(total);
+  }
   return 0;
 }
 

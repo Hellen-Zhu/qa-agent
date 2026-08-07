@@ -1,0 +1,28 @@
+{
+  "name": "mix-ladder",
+  "description": "Open-model TOTAL-rate ladder for mixed entries: stepped flow rate at FIXED ratios (5 -> 10 -> 20 -> 40 per second, 1m ramp + 3m plateau each) — locates the knee of the mixed shape, contention included. Stages are literals: RATE=/DURATION= do not apply; to change the shape edit this file or copy a variant.",
+  "_verdict": "Same doctrine as ladder.json: a measurement round, not a judgment round — apiSla:false, no strict verdict line; the lenient breaker protects the shared environment while still capturing post-knee data. Read each plateau from Grafana (manifest epochMillis brackets the windows); if 429s appear, the curve is valid only up to the last clean step.",
+  "_pools": "Pool demand = the pool-owning flow's INTEGRAL over all stages x 1.2 (plannedIterations integrates trapezoids, preflight enforces). journey-mix example (amend/checker ratio 0.2 -> per-flow targets 1/2/4/8): ~3360 flows each -> pools >= 4032 each (seed ITERATIONS~5300). Budget HTTP RPS at the top step, not the flow rate (journey-mix top: ~88 req/s).",
+  "apiSla": false,
+  "scenario": {
+    "executor": "ramping-arrival-rate",
+    "startRate": 0, "timeUnit": "1s",
+    "preAllocatedVUs": 40, "maxVUs": 150,
+    "stages": [
+      { "duration": "1m", "target": 5 },
+      { "duration": "3m", "target": 5 },
+      { "duration": "1m", "target": 10 },
+      { "duration": "3m", "target": 10 },
+      { "duration": "1m", "target": 20 },
+      { "duration": "3m", "target": 20 },
+      { "duration": "1m", "target": 40 },
+      { "duration": "3m", "target": 40 }
+    ]
+  },
+  "thresholds": {
+    "_circuitBreaker": "Breaker only: wholesale business rejection aborts after delayAbortEval; no verdict line — the knee is the deliverable, not PASS/FAIL.",
+    "perf_business_success": [
+      { "threshold": "rate>0.50", "abortOnFail": true, "delayAbortEval": "3m" }
+    ]
+  }
+}

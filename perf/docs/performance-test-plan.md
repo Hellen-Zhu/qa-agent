@@ -173,6 +173,7 @@ Observed component fan-out under load (backend dashboards): Gateway → Workers 
 |---|---|---|---|---|
 | Trade booking journey (Maker) | Refdata lookups (contracts TBC) | Risk calc (calculate-risk) | dat-to-JSON conversion (contract TBC) | Create trade |
 | Checker workflow journey (Checker) — implemented | Trades list (query) | Open trade (detail) | Approve | Re-read trade (detail) |
+| Maker amend journey (Maker) — implemented | Trades list (query) | Open trade (detail) | Amend (update) | Re-read trade (detail) |
 | Lifecycle event journey (Maker, P1) | Read original trade | Trigger cancel / novation / termination | Verify resulting state | |
 | Trade lifecycle (E2E cross-role probe, P1) | Create (Maker) | Approve (Checker) | Update (Maker) | Approve (Checker) |
 | Single-API rounds | one action per scenario (isolation for attribution) | | | |

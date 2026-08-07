@@ -173,6 +173,7 @@ create (maker) ──► PENDING APPROVAL ──► approve (checker) ──► 
 |---|---|---|---|---|
 | 建单 journey（Maker） | 查 refdata（契约 TBC） | risk-calc 风险计算 | datToJson 转换（契约 TBC） | Create trade |
 | checker workflow journey（Checker）——已实现 | 查交易列表（query） | 打开详情（detail） | Approve | 复查详情（detail） |
+| amend journey（Maker）——已实现 | 查交易列表（query） | 打开详情（detail） | 改单（update） | 复查详情（detail） |
 | lifecycle event journey（Maker，P1） | 查原交易 | 触发 cancel / novation / termination | 查后续状态 | |
 | 交易生命周期（E2E 跨角色探针，P1） | Create（Maker） | Approve（Checker） | Update（Maker） | Approve（Checker） |
 | 单 API 轮次 | 每场景单一动作（隔离以保证归因） | | | |

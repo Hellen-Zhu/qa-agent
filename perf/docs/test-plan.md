@@ -6,8 +6,8 @@
 场景分类法（与 `performance-test-plan.md` Purpose 对齐）。分界原则：**负载模型与测量模型分离**——一个场景的并发形态在生产中不存在，就不得用它出容量结论：
 
 - **单 API 轮次**（负载模型，归因单元）——每轮一个端点，容量摸底、SLA 达标、回归基线（阶段 1–2）；
-- **Journey · 单角色业务流**（负载模型，**真实负载单元**）——一个角色完成一次业务动作的完整调用流：主 API + 界面实际发出的伴随调用。生产并发的真实形态就是 N 个角色各自跑流，所以 journey 可以承载负载。三条 P0 journey（步骤为初稿，按 DevTools 抓包校准）：**建单 journey**（maker：查 refdata → risk-calc → datToJson → create trade）、**checker workflow journey**（checker：查列表 → 开详情 → approve → 复查详情——**已实现 2026-08-06**，四步契约全部已知，免抓包）、**lifecycle event journey**（maker：查原交易 → 触发 cancel/novation/termination → 查后续状态，P1）；
-- **混合负载**（负载模型，容量与达标结论的权威）——按生产配比并发注入（阶段 3，配比被流量画像 gap #1 阻塞）。终态是**按 journey 配比混合**——生产里 create 从不独行，总带着 refdata/risk-calc 伴随调用；伴随调用契约齐前先按 API 配比过渡（现 trade-mix）；
+- **Journey · 单角色业务流**（负载模型，**真实负载单元**）——一个角色完成一次业务动作的完整调用流：主 API + 界面实际发出的伴随调用。生产并发的真实形态就是 N 个角色各自跑流，所以 journey 可以承载负载。三条 P0 journey（步骤为初稿，按 DevTools 抓包校准）：**建单 journey**（maker：查 refdata → risk-calc → datToJson → create trade）、**checker workflow journey**（checker：查列表 → 开详情 → approve → 复查详情——**已实现 2026-08-06**）、**amend journey**（maker：查列表 → 开详情 → update → 复查详情——**已实现 2026-08-07**，全用既有契约）、**lifecycle event journey**（maker：查原交易 → 触发 cancel/novation/termination → 查后续状态，P1）；
+- **混合负载**（负载模型，容量与达标结论的权威）——按生产配比并发注入（阶段 3，配比被流量画像 gap #1 阻塞）。终态是**按 journey 配比混合**——生产里 create 从不独行，总带着 refdata/risk-calc 伴随调用；伴随调用契约齐前先按 API 配比过渡（trade-mix）；**流级骨架已落地**（journey-mix：query 底噪流 + amend 流 + checker 流，2026-08-07）；
 - **E2E 跨角色链**（**测量探针，非负载模型**）——create→approve→update→approve 跨 maker/checker 紧连在生产中没有对应物（真实审批间隔是人的时延），永不高并发施压。用法：smoke 链检（零铺底全链契约回归）、单用户 baseline（整笔业务机器侧耗时）、低速探针伴随 mixed 峰值。
 
 stress/spike/soak 叠加于负载模型之上（阶段 4）。
@@ -19,7 +19,7 @@ stress/spike/soak 叠加于负载模型之上（阶段 4）。
 | **0 · 就绪** | 环境/数据/账号/监控/目标负载五项就位 | env-checklist 全绿；**生产峰值流量画像**（每接口预期 TPS）与 **SLA 正式值**到手 | 🟡 约 60% |
 | **1 · 摸底与基线** | 每个 P0 接口：拐点 K + 工作点 + 基线晋升 | 每接口 baseline 文件 + 容量表（K、标称容量、瓶颈层） | 🟡 约 30% |
 | **2 · 达标验证** | 预估生产峰值 × 安全系数（1.5–2×）下 SLA 全绿 | 达标报告：verdict PASS × 3 轮稳态 | ⚪ 未开始（被阶段 0 的流量画像阻塞） |
-| **3 · 组合与情景** | journey 场景落地（建单/checker/事件三流）+ 混合流量达标（终态按 journey 配比）+ E2E 探针伴跑 + 峰值日模拟 | mixed 达标；峰值负载下整笔业务耗时（探针读数）+ 全链路延迟分解 | 🟡 API 级 mixed、E2E 探针、checker journey 已实现（2026-08-06）；建单/事件 journey 待伴随调用契约抓包；配比与达标待流量画像 |
+| **3 · 组合与情景** | journey 场景落地（建单/checker/事件三流）+ 混合流量达标（终态按 journey 配比）+ E2E 探针伴跑 + 峰值日模拟 | mixed 达标；峰值负载下整笔业务耗时（探针读数）+ 全链路延迟分解 | 🟡 API 级与流级 mixed、E2E 探针、checker/amend journey 已实现（2026-08-07）；建单/事件 journey 待伴随调用契约抓包；配比与达标待流量画像 |
 | **4 · 极限与弹性** | stress 过载行为、spike 突发恢复、soak 8h+ 无衰减 | 三份专项结论：崩塌形态 / 恢复时间 / 无泄漏证明 | ⚪ 未开始（profile 已备） |
 | **5 · 门禁与回归** | 上线 go/no-go 标准 + 长效回归机制 | go/no-go 清单签字；CI 定时回归运行 | ⚪ 未开始 |
 
@@ -31,7 +31,7 @@ stress/spike/soak 叠加于负载模型之上（阶段 4）。
 
 **阶段 0（约 60%）**：监控串联已通（k6 与服务端同 Prometheus，CPU/DB 池面板就位）；身份池方案落地（差 20 账号审批）；数据纪律成文。缺：流量画像、SLA 正式值、存量数据量级确认、限流口径决策。
 
-**阶段 1（约 35%）**：10 个入口可跑——7 个单 API 场景（query/detail/risk-metrics/unread-count/create/**update/approve**，query/create/update/approve 契约均经真实响应校准，错误语义 403/400 实测落定）+ checker workflow journey（查列表→开详情→approve→复查详情）+ E2E 跨角色探针（trade-lifecycle）+ 混合负载（trade-mix，含 smoke/mix/mix-ref 三档 profile）；ladder 摸底两轮（发现并定位网关 per-user 限流；服务端 U 证据显示仍在线性区）。缺：拐点未真正到达、基线零晋升。
+**阶段 1（约 35%）**：12 个入口可跑——7 个单 API 场景（query/detail/risk-metrics/unread-count/create/**update/approve**，query/create/update/approve 契约均经真实响应校准，错误语义 403/400 实测落定）+ 两条 journey（checker workflow / amend）+ E2E 跨角色探针（trade-lifecycle）+ 两级混合（API 级 trade-mix / 流级 journey-mix，均支持 smoke/mix/mix-ref 三档 profile）；ladder 摸底两轮（发现并定位网关 per-user 限流；服务端 U 证据显示仍在线性区）。缺：拐点未真正到达、基线零晋升。
 
 ## 3. Gap 清单（按阻塞程度排序）
 

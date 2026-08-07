@@ -26,7 +26,7 @@ import { pickAt } from '../lib/data.js';
 import { queryTrades } from '../api/worker-svc/trade/query.js';
 import { amendTradeFlow } from '../journeys/amend-trade.js';
 import { checkerWorkflowFlow } from '../journeys/checker-workflow.js';
-import { loadPool, consumablePreflight } from '../api/worker-svc/trade/consumable-ids.js';
+import { loadPool, consumablePreflight } from '../pools/worker-svc/trade/consumable-ids.js';
 
 // PLACEHOLDER ratios (must sum to 1) — replace with the production traffic profile when it lands
 const FLOWS = { query: 0.6, amend: 0.2, checker: 0.2 };

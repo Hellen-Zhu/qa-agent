@@ -1,7 +1,7 @@
 import exec from 'k6/execution';
 import { cfg, buildOptions } from '../lib/bootstrap.js';
 import { pickUser } from '../lib/users.js';
-import { pickTradeId, tradeIdsPreflight } from '../api/worker-svc/trade/ids-data.js';
+import { pickTradeId, tradeIdsPreflight } from '../pools/worker-svc/trade/ids-data.js';
 import { getTrade } from '../api/worker-svc/trade/detail.js';
 
 // P0 · worker-svc/trade · read path (single-trade detail)

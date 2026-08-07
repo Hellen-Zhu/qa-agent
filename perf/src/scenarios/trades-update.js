@@ -2,7 +2,7 @@ import exec from 'k6/execution';
 import { cfg, loadData, buildOptions, plannedIterations } from '../lib/bootstrap.js';
 import { pickUser } from '../lib/users.js';
 import { pickAt } from '../lib/data.js';
-import { loadPool, consumablePreflight, takeUnique } from '../api/worker-svc/trade/consumable-ids.js';
+import { loadPool, consumablePreflight, takeUnique } from '../pools/worker-svc/trade/consumable-ids.js';
 import { updateTrade } from '../api/worker-svc/trade/update.js';
 
 // P0 · worker-svc/trade · write path (high-frequency amend — consumes one LIVE id per request)

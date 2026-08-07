@@ -1,9 +1,9 @@
 import exec from 'k6/execution';
 import { cfg, buildOptions } from '../lib/bootstrap.js';
 import { pickUser } from '../lib/users.js';
-import { pickCase } from '../api/worker-svc/trade/create-data.js';
+import { pickCase } from '../pools/worker-svc/trade/create-data.js';
 import { createTrade } from '../api/worker-svc/trade/create.js';
-import { createTradePreflight } from '../setup/create-trade-preflight.js';
+import { createTradePreflight } from '../pools/worker-svc/trade/create-trade-preflight.js';
 
 // P0 · worker-svc/trade · write path
 

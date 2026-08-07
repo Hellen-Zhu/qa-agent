@@ -2,7 +2,7 @@ import http from 'k6/http';
 import * as client from '../../../lib/http.js';
 import { classifyResponse, reasonFrom } from '../../../lib/errors.js';
 import { extractTaskId } from '../checker-flow/tasks.js';
-import { getDat, datName } from './create-data.js';
+import { getDat, datName } from '../../../pools/worker-svc/trade/create-data.js';
 
 const SVC = 'worker-svc';
 const MOD = 'trade';

@@ -23,7 +23,7 @@ import { pickAt } from '../lib/data.js';
 import { queryTrades } from '../api/worker-svc/trade/query.js';
 import { getTrade } from '../api/worker-svc/trade/detail.js';
 import { updateTrade } from '../api/worker-svc/trade/update.js';
-import { loadPool, consumablePreflight, takeUnique } from '../api/worker-svc/trade/consumable-ids.js';
+import { loadPool, consumablePreflight, takeUnique } from '../pools/worker-svc/trade/consumable-ids.js';
 import { ERR } from '../lib/errors.js';
 
 const QUERY_DATA = loadData('worker-svc/trade/trades-query');

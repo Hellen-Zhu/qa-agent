@@ -22,13 +22,13 @@ import { cfg, loadData, buildOptionsMulti, plannedIterations } from '../lib/boot
 import { splitByRatio } from '../lib/mix.js';
 import { pickUser } from '../lib/users.js';
 import { pickAt } from '../lib/data.js';
-import { pickCase } from '../api/worker-svc/trade/create-data.js';
+import { pickCase } from '../pools/worker-svc/trade/create-data.js';
 import { createTrade } from '../api/worker-svc/trade/create.js';
 import { updateTrade } from '../api/worker-svc/trade/update.js';
 import { approveTask } from '../api/worker-svc/checker-flow/tasks.js';
 import { queryTrades } from '../api/worker-svc/trade/query.js';
-import { loadPool, consumablePreflight, takeUnique } from '../api/worker-svc/trade/consumable-ids.js';
-import { createTradePreflight } from '../setup/create-trade-preflight.js';
+import { loadPool, consumablePreflight, takeUnique } from '../pools/worker-svc/trade/consumable-ids.js';
+import { createTradePreflight } from '../pools/worker-svc/trade/create-trade-preflight.js';
 
 // PLACEHOLDER ratios (must sum to 1) — replace with the production traffic profile when it lands
 const MIX = { query: 0.6, create: 0.1, update: 0.15, approve: 0.15 };

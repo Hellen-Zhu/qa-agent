@@ -8,8 +8,8 @@
  * long-run circuit-breaker line (see data/worker-svc/trade/README.md).
  */
 import exec from 'k6/execution';
-import { createCases, pickCase, DATA_FILE } from '../api/worker-svc/trade/create-data.js';
-import { validateInputs } from '../api/worker-svc/trade/create.js';
+import { createCases, pickCase, DATA_FILE } from './create-data.js';
+import { validateInputs } from '../../../api/worker-svc/trade/create.js';
 
 export function createTradePreflight() {
   console.log('── preflight: local validation of the create case pool ──');

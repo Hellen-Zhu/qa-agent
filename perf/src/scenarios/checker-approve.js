@@ -1,6 +1,6 @@
 import { cfg, buildOptions, plannedIterations } from '../lib/bootstrap.js';
 import { pickUser } from '../lib/users.js';
-import { loadPool, consumablePreflight, takeUnique } from '../api/worker-svc/trade/consumable-ids.js';
+import { loadPool, consumablePreflight, takeUnique } from '../pools/worker-svc/trade/consumable-ids.js';
 import { approveTask } from '../api/worker-svc/checker-flow/tasks.js';
 
 // P0 · worker-svc/checker-flow · write path (single-task approve — consumes one pending task per request)

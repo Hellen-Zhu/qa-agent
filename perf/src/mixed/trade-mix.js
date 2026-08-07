@@ -1,15 +1,19 @@
 /*
- * Mixed-API workload: the four P0 flows injected CONCURRENTLY as independent k6 scenarios —
- * no inter-step dependency (that's the journey's job, src/journeys/). This measures capacity
- * under cross-endpoint resource contention (shared DB pools / CPU / locks), which single-API
- * rounds cannot see. Verdict caliber is unchanged: per-API SLA thresholds are name-tagged, so
- * each endpoint is judged under mixed load against its own SLA.
+ * Mixed-API workload — THE outward-facing scenario (agreed methodology 2026-08-07): realistic
+ * API RATIOS, no ordering (order is deliberately out of scope), scaled in business-volume
+ * MULTIPLES to find how much the system bears. Five P0 endpoints run CONCURRENTLY as
+ * independent k6 scenarios with zero inter-step dependency. Verdict caliber is unchanged:
+ * per-API SLA thresholds are name-tagged, so each endpoint is judged under mixed load against
+ * its own SLA.
  *
  * The profile supplies ONE total volume — an arrival rate (mix.json for probing, mix-ref.json
  * for the fixed-rate baseline reference; RATE= overrides the total) or an iterations count
- * (smoke: one request per flow) — and this file splits it by the ratio table below. MIX ratios are PLACEHOLDERS pending the
- * production traffic profile (test-plan gap #1) — once volumetrics land, approve should track
- * create+update (every write spawns exactly one checker task).
+ * (smoke: one request per flow) — and this file splits it by the ratio table below.
+ * Business-volume anchoring: once volumetrics land, derive the 1x TOTAL rate and the ratios
+ * from the traffic profile (business flows/hour expanded to endpoint calls on paper), set them
+ * here/in the profile, and RATE= becomes the multiplier knob (1x/2x/10x ladder = mix-ladder or
+ * per-round RATE overrides). MIX ratios are PLACEHOLDERS pending that input (test-plan gap #1);
+ * approve should track create+update (every write spawns exactly one checker task).
  *
  * Cursor correctness: exec.scenario.iterationInTest counts PER SCENARIO (verified against
  * k6 v2.1.0, two-scenario experiment 2026-08-06), so each consumable pool keeps its
@@ -23,15 +27,17 @@ import { splitByRatio } from '../lib/mix.js';
 import { pickUser } from '../lib/users.js';
 import { pickAt } from '../lib/data.js';
 import { pickCase } from '../pools/worker-svc/trade/create-data.js';
+import { pickTradeId, tradeIdsPreflight } from '../pools/worker-svc/trade/ids-data.js';
 import { createTrade } from '../api/worker-svc/trade/create.js';
 import { updateTrade } from '../api/worker-svc/trade/update.js';
 import { approveTask } from '../api/worker-svc/checker-flow/tasks.js';
 import { queryTrades } from '../api/worker-svc/trade/query.js';
+import { getTrade } from '../api/worker-svc/trade/detail.js';
 import { loadPool, consumablePreflight, takeUnique } from '../pools/worker-svc/trade/consumable-ids.js';
 import { createTradePreflight } from '../pools/worker-svc/trade/create-trade-preflight.js';
 
 // PLACEHOLDER ratios (must sum to 1) — replace with the production traffic profile when it lands
-const MIX = { query: 0.6, create: 0.1, update: 0.15, approve: 0.15 };
+const MIX = { query: 0.4, detail: 0.2, create: 0.1, update: 0.15, approve: 0.15 };
 
 const QUERY_DATA = loadData('worker-svc/trade/trades-query');
 const UPDATE_DATA = loadData('worker-svc/trade/update-payload');
@@ -42,6 +48,7 @@ const APPROVE_POOL = loadPool('approve-tasks');
 const base = buildOptionsMulti(
   [
     ['worker-svc/trade', 'query'],
+    ['worker-svc/trade', 'detail'],
     ['worker-svc/trade', 'create'],
     ['worker-svc/trade', 'update'],
     ['worker-svc/checker-flow', 'approve'],
@@ -52,6 +59,7 @@ const base = buildOptionsMulti(
 
 base.scenarios = splitByRatio(base.scenarios.main, [
   { name: 'query-mix', exec: 'queryMix', ratio: MIX.query },
+  { name: 'detail-mix', exec: 'detailMix', ratio: MIX.detail },
   { name: 'create-mix', exec: 'createMix', ratio: MIX.create },
   { name: 'update-mix', exec: 'updateMix', ratio: MIX.update },
   { name: 'approve-mix', exec: 'approveMix', ratio: MIX.approve },
@@ -65,6 +73,7 @@ const PLANNED_APPROVE = plannedIterations({ scenarios: { main: base.scenarios['a
 
 export function setup() {
   const seeded = createTradePreflight();
+  tradeIdsPreflight();
   consumablePreflight(UPDATE_POOL, PLANNED_UPDATE, 'update-ids');
   consumablePreflight(APPROVE_POOL, PLANNED_APPROVE, 'approve-tasks');
   return seeded;
@@ -73,6 +82,10 @@ export function setup() {
 export function queryMix() {
   const i = exec.scenario.iterationInTest;
   queryTrades(cfg, pickAt(QUERY_DATA.filters, i), pickUser(cfg, 'maker', __VU));
+}
+
+export function detailMix() {
+  getTrade(cfg, pickTradeId(exec.scenario.iterationInTest), pickUser(cfg, 'maker', __VU));
 }
 
 export function createMix() {

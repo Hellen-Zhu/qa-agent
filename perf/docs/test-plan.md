@@ -7,7 +7,7 @@
 
 - **单 API 轮次**（负载模型，归因单元）——每轮一个端点，容量摸底、SLA 达标、回归基线（阶段 1–2）；
 - **Journey · 单角色业务流**（负载模型，**真实负载单元**）——一个角色完成一次业务动作的完整调用流：主 API + 界面实际发出的伴随调用。生产并发的真实形态就是 N 个角色各自跑流，所以 journey 可以承载负载。三条 P0 journey（步骤为初稿，按 DevTools 抓包校准）：**建单 journey**（maker：查 refdata → risk-calc → datToJson → create trade）、**checker workflow journey**（checker：查列表 → 开详情 → approve → 复查详情——**已实现 2026-08-06**）、**amend journey**（maker：查列表 → 开详情 → update → 复查详情——**已实现 2026-08-07**，全用既有契约）、**lifecycle event journey**（maker：查原交易 → 触发 cancel/novation/termination → 查后续状态，P1）；
-- **混合负载**（负载模型，容量与达标结论的权威，**对外唯一场景**）——**business-mix：业务流量表 × 倍数**（2026-08-07 与管理层对齐后定稿）：FLOWS 表只记账不排序——每类业务动作的 1x 速率（笔/秒，待流量画像）+ 每笔诱发的端点调用数（DevTools 计数），代码自动乘出端点速率，端点间**无序独立**执行（只保比例不保顺序，顺序效应明确不在范围）；profile 速率 = **倍数**（RATE=1/2/10 → 1x/2x/10x；mix-ladder = 倍数阶梯）→ 结论以"系统可承压 Nx 业务量"的业务语言表述。trade-mix（手填 API 配比）与 journey-mix（流级）保留为备选/诊断形态，不在对外路径；
+- **混合负载**（负载模型，容量与达标结论的权威，**对外唯一场景**）——**trade-mix：自由 API 配比 × 业务倍数**（2026-08-07 与管理层对齐后定稿）：五个 P0 端点（query/detail/create/update/approve）按配比表无序独立并发（只保比例不保顺序，顺序效应明确不在范围）；配比与 1x 总速率待流量画像（业务量在纸面展开为端点比例后填入，gap #1）；`RATE=` 即倍数旋钮（1x/2x/10x），mix-ladder 为倍数阶梯 → 结论以"系统可承压 Nx 业务量"表述。journey-mix（流级）保留为备选/诊断形态，不在对外路径；
 - **E2E 跨角色链**（**测量探针，非负载模型**）——create→approve→update→approve 跨 maker/checker 紧连在生产中没有对应物（真实审批间隔是人的时延），永不高并发施压。用法：smoke 链检（零铺底全链契约回归）、单用户 baseline（整笔业务机器侧耗时）、低速探针伴随 mixed 峰值。
 
 stress/spike/soak 叠加于负载模型之上（阶段 4）。
